@@ -28,5 +28,20 @@ go.work.sum
 .env
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
+
+# System
+.DS_Store
+
+# AI Tools
+.claude/
+.cursor/
+.windsurf/
+.continue/
+.cline/
+.roo/
+.roo-code/
+.openhands/
+.augment/
+.commandcode/
