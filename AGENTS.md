@@ -73,6 +73,7 @@ Build and run with the Go toolchain:
   - `--output` (`-o`) — write lyrics to this file; if omitted, print to stdout.
   - `--timestamp` (`-t`) — request timestamped (LRC) lyrics when the source supports it; falls back to plain lyrics with a stderr warning otherwise.
   - `--help` (`-h`) — print help information and exit with code 0. The help text includes the sorted list of registered sources.
+  - `--version` (`-v`) — print version and exit with code 0.
 
 **Note on flag forms:** Go's `flag` package accepts both `--flag` and `-flag`. The CLI does **not** intercept this; both work.
 
@@ -128,6 +129,7 @@ Adding a new built-in source means: create `internal/source/<name>/` implementin
 **Coverage in `main_test.go` includes:**
 - Missing song → exit 2 with the required-song stderr message.
 - `--help` and `-h` → exit 0; stdout lists `stub`, `lrclib`, `lyricsovh`.
+- `--version` and `-v` → exit 0; stdout contains the version string.
 - Default stdout sink and `--output` file sink paths.
 - Unsupported `--album` / `--iswc` warnings on `stub` (which advertises only `ParamAuthor`).
 - Unknown source name → exit 3 with the unknown-source message.
@@ -143,7 +145,7 @@ Adding a new built-in source means: create `internal/source/<name>/` implementin
 
 **Naming:**
 - Standard Go: `CamelCase` for exported, `camelCase` for unexported.
-- CLI flag names match the spec: `source`, `author`, `album`, `iswc`, `output`, `timestamp`, `help`.
+- CLI flag names match the spec: `source`, `author`, `album`, `iswc`, `output`, `timestamp`, `help`, `version`.
 - Source adapter `Name()` returns a stable lowercase identifier (e.g. `"lrclib"`, `"lyricsovh"`).
 
 **Imports / Modules:**
@@ -191,6 +193,7 @@ Adding a new built-in source means: create `internal/source/<name>/` implementin
 - `go vet ./...` is clean
 - Missing song title produces exit code 2 with the required-song stderr message
 - `--help` / `-h` prints usage and the sorted list of registered sources, exit 0
+- `--version` prints version string and exits 0
 - Unknown `--source` produces exit code 3
 - Source requiring a missing parameter produces exit code 6 with `source "<name>" requires --<flag>`
 - Unsupported `--album`/`--iswc` produces a stderr warning for the relevant source

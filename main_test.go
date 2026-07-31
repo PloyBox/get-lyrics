@@ -48,6 +48,28 @@ func TestRun_HelpShortFlagAlsoWorks(t *testing.T) {
 	}
 }
 
+func TestRun_VersionFlagExitsZero(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--version"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), version) {
+		t.Fatalf("stdout missing version %q: %q", version, stdout.String())
+	}
+}
+
+func TestRun_VersionShortFlagAlsoWorks(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"-v"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d; want 0", code)
+	}
+	if !strings.Contains(stdout.String(), version) {
+		t.Fatalf("stdout missing version %q: %q", version, stdout.String())
+	}
+}
+
 func TestRun_WritesLyricsToStdoutByDefault(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"--source", "stub", "--author", "TEST_AUTHOR", "TEST_SONG"}, &stdout, &stderr)

@@ -16,10 +16,10 @@ import (
 	"io"
 	"os"
 
+	"github.com/PloyBox/get-lyrics/internal/bootstrap"
 	"github.com/PloyBox/get-lyrics/internal/fetch"
 	"github.com/PloyBox/get-lyrics/internal/output"
 	"github.com/PloyBox/get-lyrics/internal/source"
-	"github.com/PloyBox/get-lyrics/internal/bootstrap"
 )
 
 // Exit codes documented for shell consumers:
@@ -39,6 +39,10 @@ const (
 	exitOutputFailed = 5
 	exitRequired     = 6
 )
+
+// version is stamped at release build time via
+// -ldflags "-X main.version=<tag>"; "dev" is the local-build default.
+var version = "dev"
 
 // registry is populated at package-init time so RegisterAll runs
 // before main() — matches the "init()-style" plan without hidden globals
@@ -65,6 +69,7 @@ type parsedFlags struct {
 	output    string
 	timestamp bool
 	help      bool
+	version   bool
 }
 
 // Run is the testable core: it takes argv (excluding the program name)
@@ -78,6 +83,10 @@ func Run(argv []string, stdout, stderr io.Writer) int {
 	}
 	if parsed.help {
 		printUsage(stdout, registry)
+		return exitOK
+	}
+	if parsed.version {
+		fmt.Fprintf(stdout, "get-lyrics %s\n", version)
 		return exitOK
 	}
 	if song == "" {
@@ -152,6 +161,7 @@ func printUsage(w io.Writer, reg *source.Registry) {
 	fmt.Fprintln(&b, "  --output <file>, -o <file>   Write lyrics to file (default: stdout)")
 	fmt.Fprintln(&b, "  --timestamp,    -t           Request timestamped (LRC) lyrics when supported")
 	fmt.Fprintln(&b, "  --help, -h                   Show this help and exit")
+	fmt.Fprintln(&b, "  --version                    Print version and exit")
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "Positionals:")
 	fmt.Fprintln(&b, "  <song>                       Song title (required)")
@@ -200,6 +210,8 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	fs.BoolVar(&f.timestamp, "t", false, "request timestamped lyrics (short)")
 	fs.BoolVar(&f.help, "help", false, "show help")
 	fs.BoolVar(&f.help, "h", false, "show help (short)")
+	fs.BoolVar(&f.version, "version", false, "print version and exit")
+	fs.BoolVar(&f.version, "v", false, "print version and exit (short)")
 
 	if err := fs.Parse(argv); err != nil {
 		return parsedFlags{}, "", err

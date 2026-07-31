@@ -54,6 +54,7 @@ get-lyrics --help
 | `--output` | `-o` | Write lyrics to file (default: stdout) |
 | `--timestamp` | `-t` | Request LRC timestamped lyrics |
 | `--help` | `-h` | Show help and exit |
+| `--version` | `-v` | Print version and exit |
 
 Both `--flag` and `-flag` forms are accepted.
 
