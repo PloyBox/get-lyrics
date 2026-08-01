@@ -21,17 +21,17 @@ const (
 	ParamAuthor Param = 1 << iota
 	ParamAlbum
 	ParamISWC
-	ParamTimestamp // source 是否能返回带时间戳的歌词
+	ParamTimestamp // whether the source can return timestamped lyrics
 )
 
 // Request is the input to a Source.Fetch call. Song is required;
 // Author/Album/ISWC are optional refinements and may be empty strings.
 type Request struct {
-	Song      string // 必填
+	Song      string // required
 	Author    string
 	Album     string
 	ISWC      string
-	Timestamp bool // 是否请求带时间戳的歌词（来自 --timestamp）
+	Timestamp bool // whether to request timestamped lyrics (from --timestamp)
 }
 
 // Result carries the fetched lyrics together with the metadata that
@@ -39,17 +39,18 @@ type Request struct {
 // only populated when the source supports ParamTimestamp and the request
 // asked for it.
 type Result struct {
-	// 两条歌词轨道互斥：source 按能力二选一返回。
-	// 主选 Lyrics：纯文本，去时间戳、可直接 cat 输出。
-	// 备选 SyncedLyrics：LRC 风格（[mm:ss.xx] 行），仅在 source 同时声明
-	// 支持 ParamTimestamp 且 Request.Timestamp==true 时填充。
-	Lyrics       string // 已规范化、可直接写入的纯文本（始终填）
-	SyncedLyrics string // LRC 风格时间戳歌词；不支持时为空串
+	// The two lyrics tracks are mutually exclusive: a source returns one
+	// based on its capability. Lyrics is the primary track — plain text,
+	// free of timestamps and safe to cat directly. SyncedLyrics is the
+	// secondary track — LRC-style ([mm:ss.xx] lines) — populated only when
+	// the source supports ParamTimestamp and Request.Timestamp is true.
+	Lyrics       string // normalized plain text, always populated
+	SyncedLyrics string // LRC-style timestamped lyrics; empty when unsupported
 	Title        string
 	Artist       string
 	Album        string
 	ISWC         string
-	Source       string // 由 fetch 层回填，保证非空
+	Source       string // backfilled by the fetch layer so it is never empty
 }
 
 // Source is the contract every lyrics adapter must satisfy.

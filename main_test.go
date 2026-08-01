@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -192,6 +191,3 @@ func TestRun_SourceRequiresAuthorExitsSix(t *testing.T) {
 		t.Fatalf("stderr missing %q; got %q", wantSub, stderr.String())
 	}
 }
-
-// guard that we don't import io in case of edits
-var _ = io.Discard
