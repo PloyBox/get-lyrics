@@ -131,8 +131,14 @@ func Run(argv []string, stdout, stderr io.Writer) int {
 
 	src, _ := registry.Get(parsed.source)
 	mode := output.ModePlain
-	if parsed.timestamp && src != nil && src.SupportedParams()&source.ParamTimestamp != 0 && res.SyncedLyrics != "" {
+	srcSupportsTimestamp := src != nil && src.SupportedParams()&source.ParamTimestamp != 0
+	if parsed.timestamp && srcSupportsTimestamp && res.SyncedLyrics != "" {
 		mode = output.ModeSynced
+	} else if parsed.timestamp && srcSupportsTimestamp && res.SyncedLyrics == "" {
+		// The source honors --timestamp but had no synced (LRC) lyrics
+		// for this track; fall back to plain output and say so instead
+		// of silently downgrading.
+		fmt.Fprintln(stderr, `warning: source "`+parsed.source+`" returned no timestamped lyrics; using plain lyrics`)
 	}
 	if werr := output.Write(out, res, mode); werr != nil {
 		fmt.Fprintln(stderr, "error:", werr)

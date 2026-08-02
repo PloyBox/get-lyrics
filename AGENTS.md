@@ -113,7 +113,7 @@ Thin CLI layer over a pluggable lyrics-source abstraction, with explicit registr
 ### Built-in sources
 
 - **`stub`** — Offline, deterministic. Advertises `ParamAuthor` and **requires** it: a fetch without `--author` returns `RequiredParamError` and the CLI exits with code 6. Used by the test suite to exercise both the unsupported-warning path and the required-parameter path without network access.
-- **`lrclib`** — Real adapter against `https://lrclib.net`. Picks `/api/get` when `--author` is supplied (structured `track_name`/`artist_name` query), otherwise `/api/search` with freeform `q=`. Supports `ParamAuthor | ParamTimestamp`; honors `SyncedLyrics` from the response when `--timestamp` was requested. 10-second per-request timeout.
+- **`lrclib`** — Real adapter against `https://lrclib.net`. Picks `/api/get` when `--author` is supplied (structured `track_name`/`artist_name`/`album_name` query), otherwise `/api/search` with freeform `q=`. Supports `ParamAuthor | ParamAlbum | ParamTimestamp` (`album` only acts on the `/api/get` path); honors `SyncedLyrics` from the response when `--timestamp` was requested. 10-second per-request timeout.
 - **`lyricsovh`** — Real adapter against `https://api.lyrics.ovh/v1/{artist}/{title}`. Supports `ParamAuthor` and **requires** it (the path cannot be built without an artist). Surfaces the API's 404 as a not-found error rather than a generic HTTP-status failure. 10-second per-request timeout.
 
 Adding a new built-in source means: create `internal/source/<name>/` implementing `source.Source`, then add an import and `r.Register(<name>.New())` line to `internal/bootstrap/bootstrap.go`. No CLI-layer changes are required.

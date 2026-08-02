@@ -30,16 +30,16 @@ func TestLrclib_Name(t *testing.T) {
 	}
 }
 
-func TestLrclib_SupportedParamsIsAuthorPlusTimestamp(t *testing.T) {
+func TestLrclib_SupportedParamsIsAuthorAlbumPlusTimestamp(t *testing.T) {
 	got := New().SupportedParams()
 	if got&source.ParamAuthor == 0 {
 		t.Fatalf("missing ParamAuthor bit: %b", got)
 	}
+	if got&source.ParamAlbum == 0 {
+		t.Fatalf("missing ParamAlbum bit: %b", got)
+	}
 	if got&source.ParamTimestamp == 0 {
 		t.Fatalf("missing ParamTimestamp bit: %b", got)
-	}
-	if got&source.ParamAlbum != 0 {
-		t.Fatalf("should not advertise ParamAlbum: %b", got)
 	}
 	if got&source.ParamISWC != 0 {
 		t.Fatalf("should not advertise ParamISWC: %b", got)
@@ -107,6 +107,26 @@ func TestLrclib_FetchWithAuthorUsesGetEndpoint(t *testing.T) {
 	}
 }
 
+func TestLrclib_FetchWithAlbumSendsAlbumNameOnGetEndpoint(t *testing.T) {
+	var gotQuery url.Values
+	a := newTestAdapter(t, "/api/get", func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"trackName":"Blinding Lights","artistName":"The Weeknd","albumName":"After Hours","plainLyrics":"I said, ooh I'm blinded by the lights"}`)
+	})
+
+	res, err := a.Fetch(context.Background(), source.Request{Song: "Blinding Lights", Author: "The Weeknd", Album: "After Hours"})
+	if err != nil {
+		t.Fatalf("Fetch err: %v", err)
+	}
+	if gotQuery.Get("album_name") != "After Hours" {
+		t.Fatalf("album_name = %q; want After Hours", gotQuery.Get("album_name"))
+	}
+	if res.Album != "After Hours" {
+		t.Fatalf("Album = %q; want After Hours", res.Album)
+	}
+}
+
 func TestLrclib_FetchFillsSyncedOnlyWhenTimestampRequested(t *testing.T) {
 	a := newTestAdapter(t, "/api/search", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -142,6 +162,47 @@ func TestLrclib_FetchEmptyResultReturnsError(t *testing.T) {
 	_, err := a.Fetch(context.Background(), source.Request{Song: "nope"})
 	if err == nil || !strings.Contains(err.Error(), "no lyrics") {
 		t.Fatalf("err = %v; want 'no lyrics' message", err)
+	}
+}
+
+func TestLrclib_FetchSearchPrettyPrintedArrayParses(t *testing.T) {
+	// A pretty-printed array (leading whitespace/newline) must still be
+	// parsed as a search result — parsing is endpoint-driven, not body-sniffed.
+	a := newTestAdapter(t, "/api/search", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, "\n\n[\n  {\"trackName\":\"X\",\"plainLyrics\":\"some lyrics\"}\n]\n")
+	})
+	res, err := a.Fetch(context.Background(), source.Request{Song: "X"})
+	if err != nil {
+		t.Fatalf("Fetch err: %v", err)
+	}
+	if res.Lyrics != "some lyrics" {
+		t.Fatalf("Lyrics = %q; want some lyrics", res.Lyrics)
+	}
+}
+
+func TestLrclib_FetchGetEndpointRejectsArrayResponse(t *testing.T) {
+	// /api/get always decodes as a single object; an array body is a
+	// shape mismatch and must error rather than fall through to the
+	// search-array parser.
+	a := newTestAdapter(t, "/api/get", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `[{"id":1,"trackName":"X","plainLyrics":"some lyrics"}]`)
+	})
+	_, err := a.Fetch(context.Background(), source.Request{Song: "X", Author: "Who"})
+	if err == nil {
+		t.Fatalf("expected decode error for array on /api/get, got nil")
+	}
+}
+
+func TestLrclib_FetchGetEndpointRejectsGarbageBody(t *testing.T) {
+	a := newTestAdapter(t, "/api/get", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `not json at all`)
+	})
+	_, err := a.Fetch(context.Background(), source.Request{Song: "X", Author: "Who"})
+	if err == nil || !strings.Contains(err.Error(), "decode response") {
+		t.Fatalf("err = %v; want decode response error", err)
 	}
 }
 

@@ -54,9 +54,10 @@ func New() *Adapter { return &Adapter{} }
 func (a *Adapter) Name() string { return "lrclib" }
 
 // SupportedParams declares which optional Request fields this adapter
-// uses: author filter, plus timestamped (LRC) output.
+// uses: author and album filters (on the /api/get endpoint), plus
+// timestamped (LRC) output.
 func (a *Adapter) SupportedParams() source.Param {
-	return source.ParamAuthor | source.ParamTimestamp
+	return source.ParamAuthor | source.ParamAlbum | source.ParamTimestamp
 }
 
 // Fetch calls lrclib /api/search, picks the best candidate, and
@@ -92,9 +93,14 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		return source.Result{}, fmt.Errorf("lrclib: HTTP %d: %s", resp.StatusCode, truncate(body, 200))
 	}
 
+	// The response shape is dictated by the endpoint, not by sniffing
+	// the body: /api/get returns a single object, /api/search returns an
+	// array. Branch on the same condition endpoint()/buildQuery() use so
+	// a server that pretty-prints (leading whitespace/newline) cannot
+	// confuse the two.
 	usedGetEndpoint := strings.TrimSpace(req.Author) != ""
 	var hits []lrclibHit
-	if usedGetEndpoint && !strings.HasPrefix(strings.TrimSpace(string(body)), "[") {
+	if usedGetEndpoint {
 		var single lrclibHit
 		if err := json.Unmarshal(body, &single); err != nil {
 			return source.Result{}, fmt.Errorf("lrclib: decode response: %w", err)
