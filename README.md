@@ -8,7 +8,7 @@ Fetch song lyrics from the command line. Supports multiple backend sources with 
 go install github.com/PloyBox/get-lyrics@latest
 ```
 
-Requires Go 1.25+.
+Requires Go 1.25.10+.
 
 ## Usage
 
@@ -71,13 +71,12 @@ Both `--flag` and `-flag` forms are accepted.
 
 ## Built-in Sources
 
-- **`lrclib`** — Searches [lrclib.net](https://lrclib.net). Supports `--author` and `--timestamp`. Uses `/api/get` when artist is given, `/api/search` otherwise.
+- **`lrclib`** — Searches [lrclib.net](https://lrclib.net). Supports `--author`, `--album` and `--timestamp`. Uses `/api/get` when artist is given, `/api/search` otherwise.
 - **`lyricsovh`** — Uses [api.lyrics.ovh](https://api.lyrics.ovh). Requires `--author`. Plain text only.
-- **`stub`** — Offline deterministic adapter for testing. Returns placeholder lyrics. Requires `--author`.
 
-## Adding a New Source
+## Add New Source (Fork)
 
-1. Create `internal/source/<name>/` implementing `source.Source`.
+1. Create `internal/source/real/<name>/` implementing `source.Source`.
 2. Add an import and `r.Register(<name>.New())` to `internal/bootstrap/bootstrap.go`.
 
 No changes needed in the CLI layer — `--help` automatically lists the new source.

@@ -8,7 +8,6 @@ package bootstrap
 
 import (
 	"github.com/PloyBox/get-lyrics/internal/source"
-	"github.com/PloyBox/get-lyrics/internal/source/mock/stub"
 	"github.com/PloyBox/get-lyrics/internal/source/real/lrclib"
 	"github.com/PloyBox/get-lyrics/internal/source/real/lyricsovh"
 )
@@ -16,9 +15,6 @@ import (
 // RegisterAll registers every built-in adapter into r. main calls this
 // exactly once during startup (via a package-level var initializer).
 func RegisterAll(r *source.Registry) error {
-	if err := r.Register(stub.New()); err != nil {
-		return err
-	}
 	if err := r.Register(lrclib.New()); err != nil {
 		return err
 	}

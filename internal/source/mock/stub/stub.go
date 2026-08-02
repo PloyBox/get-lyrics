@@ -1,6 +1,8 @@
+//go:build test
+
 // Package stub is a stub implementation of the Source contract.
 // It self-registers nothing; registration happens explicitly in
-// internal/bootstrap.RegisterAll.
+// internal/bootstrap.RegisterAllMock.
 //
 // The stub now exercises the "source-required parameter" path: it
 // advertises support for --author and refuses any fetch where Author

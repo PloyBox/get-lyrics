@@ -20,25 +20,29 @@ get-lyrics/
 ├── LICENSE                     # Apache 2.0
 ├── README.md                   # Usage examples and build instructions
 ├── main.go                     # CLI wiring: argv parsing, exit-code mapping, output routing
-├── main_test.go                # End-to-end tests for Run(argv, stdout, stderr)
+├── main_test.go                # End-to-end tests for Run(argv, stdout, stderr); registers
+│                               # mock sources via init() + bootstrap.RegisterAllMock
 ├── go.mod                      # Module: github.com/PloyBox/get-lyrics (Go 1.25)
 ├── AGENTS.md                   # This file
 └── internal/
     ├── bootstrap/
-    │   └── bootstrap.go        # RegisterAll(r *Registry) — single wiring point
+    │   ├── bootstrap.go        # RegisterAll(r *Registry) — registers real (production) sources
+    │   └── bootstrap_mock.go   # RegisterAllMock(r *Registry) — registers mock/test-only sources
     ├── source/
     │   ├── source.go           # Source interface, Request, Result, Param bitmask,
     │   │                       # Registry, RequiredParamError, ErrNotFound/ErrDuplicate
     │   ├── source_test.go
-    │   ├── stub/
-    │   │   ├── stub.go         # Offline deterministic adapter; exercises required-param path
-    │   │   └── stub_test.go
-    │   ├── lrclib/
-    │   │   ├── lrclib.go       # Adapter for https://lrclib.net (search + get endpoints)
-    │   │   └── lrclib_test.go
-    │   └── lyricsovh/
-    │       ├── lyricsovh.go    # Adapter for https://api.lyrics.ovh (artist/title path)
-    │       └── lyricsovh_test.go
+    │   ├── mock/
+    │   │   └── stub/
+    │   │       ├── stub.go     # Offline deterministic adapter; exercises required-param path
+    │   │       └── stub_test.go
+    │   └── real/
+    │       ├── lrclib/
+    │       │   ├── lrclib.go   # Adapter for https://lrclib.net (search + get endpoints)
+    │       │   └── lrclib_test.go
+    │       └── lyricsovh/
+    │           ├── lyricsovh.go # Adapter for https://api.lyrics.ovh (artist/title path)
+    │           └── lyricsovh_test.go
     ├── fetch/
     │   ├── fetch.go            # Fetch(ctx, req, sourceName) — registry lookup + warnings
     │   └── fetch_test.go
@@ -52,7 +56,7 @@ get-lyrics/
 Build and run with the Go toolchain:
 - `go build ./...` — compile the project
 - `go run . --source <name> [--author <name>] <song>` — run against a song title
-- `go test ./...` — run the test suite
+- `go test -tags test ./...` — run the test suite
 - `go vet ./...` — static checks
 
 **Prerequisites:**
@@ -112,17 +116,24 @@ Thin CLI layer over a pluggable lyrics-source abstraction, with explicit registr
 
 ### Built-in sources
 
-- **`stub`** — Offline, deterministic. Advertises `ParamAuthor` and **requires** it: a fetch without `--author` returns `RequiredParamError` and the CLI exits with code 6. Used by the test suite to exercise both the unsupported-warning path and the required-parameter path without network access.
 - **`lrclib`** — Real adapter against `https://lrclib.net`. Picks `/api/get` when `--author` is supplied (structured `track_name`/`artist_name`/`album_name` query), otherwise `/api/search` with freeform `q=`. Supports `ParamAuthor | ParamAlbum | ParamTimestamp` (`album` only acts on the `/api/get` path); honors `SyncedLyrics` from the response when `--timestamp` was requested. 10-second per-request timeout.
 - **`lyricsovh`** — Real adapter against `https://api.lyrics.ovh/v1/{artist}/{title}`. Supports `ParamAuthor` and **requires** it (the path cannot be built without an artist). Surfaces the API's 404 as a not-found error rather than a generic HTTP-status failure. 10-second per-request timeout.
 
-Adding a new built-in source means: create `internal/source/<name>/` implementing `source.Source`, then add an import and `r.Register(<name>.New())` line to `internal/bootstrap/bootstrap.go`. No CLI-layer changes are required.
+Adding a new built-in source means: create `internal/source/real/<name>/` implementing `source.Source`, then add an import and `r.Register(<name>.New())` line to `internal/bootstrap/bootstrap.go`. No CLI-layer changes are required.
+
+### Mock/Test-Only Sources
+
+- **`stub`** — Offline, deterministic, registered only during tests via `bootstrap.RegisterAllMock` (never in production). Advertises `ParamAuthor` and **requires** it: a fetch without `--author` returns `RequiredParamError`. Exercises both the unsupported-warning path and the required-parameter path without network access.
+
+- All mock/test-only source names must start with the `mock-` prefix (e.g. `mock-stub`, `mock-myadapter`). This distinguishes them from real sources in the registry at a glance.
 
 ## Testing
 
 **Test conventions:**
 - Tests live alongside the code as `*_test.go` files.
-- `main_test.go` drives the public `Run(argv, stdout, stderr) int` entry point with `bytes.Buffer` writers so exit codes, stdout, and stderr are all asserted independently.
+- `main_test.go` drives the public `Run(argv, stdout, stderr) int` entry point with `bytes.Buffer` writers so exit codes, stdout, and stderr are all asserted independently. It registers mock/test-only sources via `init() + bootstrap.RegisterAllMock`.
+- Mock/test-only source files (under `internal/source/mock/`) carry `//go:build test` and are only compiled during `go test`.
+- `bootstrap/bootstrap_mock.go` also carries `//go:build test`, so mock sources are never linked into production binaries.
 - Adapter tests use `httptest` servers pointed at via the `Endpoint` field on each adapter struct.
 - `internal/source/source_test.go` covers the `Registry` itself (register/lookup/duplicate/unregister).
 
@@ -189,8 +200,9 @@ Adding a new built-in source means: create `internal/source/<name>/` implementin
 
 **Verification Checklist:**
 - `go build ./...` succeeds
-- `go test ./...` passes
+- `go test -tags test ./...` passes
 - `go vet ./...` is clean
+- `gofmt -l .` produces no output (or `gofmt -d .` shows no diffs)
 - Missing song title produces exit code 2 with the required-song stderr message
 - `--help` / `-h` prints usage and the sorted list of registered sources, exit 0
 - `--version` prints version string and exits 0

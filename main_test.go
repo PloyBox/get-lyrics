@@ -6,7 +6,16 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/PloyBox/get-lyrics/internal/bootstrap"
 )
+
+// init registers mock/test-only sources so they are available during tests.
+func init() {
+	if err := bootstrap.RegisterAllMock(registry); err != nil {
+		panic(err)
+	}
+}
 
 func TestRun_MissingSongExitsTwo(t *testing.T) {
 	var stdout, stderr bytes.Buffer
