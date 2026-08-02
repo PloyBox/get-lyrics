@@ -2,15 +2,15 @@
 // main only needs one call to wire them all up.
 //
 // Adding a new built-in source means:
-//  1. create internal/source/<name>, implementing source.Source
+//  1. create internal/source/<real|mock>/<name>, implementing source.Source
 //  2. add an import here and call r.Register(<name>.New()) in RegisterAll
 package bootstrap
 
 import (
 	"github.com/PloyBox/get-lyrics/internal/source"
-	"github.com/PloyBox/get-lyrics/internal/source/lrclib"
-	"github.com/PloyBox/get-lyrics/internal/source/lyricsovh"
-	"github.com/PloyBox/get-lyrics/internal/source/stub"
+	"github.com/PloyBox/get-lyrics/internal/source/mock/stub"
+	"github.com/PloyBox/get-lyrics/internal/source/real/lrclib"
+	"github.com/PloyBox/get-lyrics/internal/source/real/lyricsovh"
 )
 
 // RegisterAll registers every built-in adapter into r. main calls this
