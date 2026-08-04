@@ -33,9 +33,12 @@ get-lyrics/
     │   │                       # Registry, RequiredParamError, ErrNotFound/ErrDuplicate
     │   ├── source_test.go
     │   ├── mock/
-    │   │   └── stub/
-    │   │       ├── stub.go     # Offline deterministic adapter; exercises required-param path
-    │   │       └── stub_test.go
+    │   │   ├── success/        # mock-success: happy path; ParamAuthor, requires --author
+    │   │   ├── require/        # mock-require: RequiredParamError path; Param(0), requires --author
+    │   │   ├── nosupport/      # mock-nosupport: Param(0), requires nothing, always succeeds
+    │   │   ├── fail/           # mock-fail: always errors; exercises exit code 4
+    │   │   ├── lrc/            # mock-lrc: ParamTimestamp, returns SyncedLyrics when asked
+    │   │   └── nosync/         # mock-nosync: ParamTimestamp but never returns SyncedLyrics
     │   └── real/
     │       ├── lrclib/
     │       │   ├── lrclib.go   # Adapter for https://lrclib.net (search + get endpoints)
@@ -57,11 +60,11 @@ Build and run with the Go toolchain:
 - `go build ./...` — compile the project
 - `go run . --source <name> [--author <name>] <song>` — run against a song title
 - `go test -tags test ./...` — run the test suite
-- `go vet ./...` — static checks
+- `go vet -tags test ./...` — static checks (test tag required, same as `go test`: `main_test.go` references mock adapters compiled only under it)
 
 **Prerequisites:**
 - Go toolchain installed (recent stable release; module declares Go 1.25.10)
-- Network access to configured lyrics sources at runtime (`lrclib`, `lyricsovh`); the `stub` source is offline-only
+- Network access to configured lyrics sources at runtime (`lrclib`, `lyricsovh`); the `mock-*` sources are offline-only and never registered in production builds
 
 **Environment Variables:**
 - None required.
@@ -90,7 +93,7 @@ Build and run with the Go toolchain:
 | 3 | Unknown `--source` name |
 | 4 | Fetch failure (network, parse, no usable lyrics) |
 | 5 | Output failure (file create or write) |
-| 6 | Source-required parameter missing (e.g. `--author` not supplied to `stub` or `lyricsovh`) |
+| 6 | Source-required parameter missing (e.g. `--author` not supplied to `mock-require` or `lyricsovh`) |
 
 Warnings about **unsupported** parameters (a flag was supplied but the source does not honor it) are emitted to **stderr** alongside the successful stdout output — they do not change the exit code.
 
@@ -123,9 +126,16 @@ Adding a new built-in source means: create `internal/source/real/<name>/` implem
 
 ### Mock/Test-Only Sources
 
-- **`stub`** — Offline, deterministic, registered only during tests via `bootstrap.RegisterAllMock` (never in production). Advertises `ParamAuthor` and **requires** it: a fetch without `--author` returns `RequiredParamError`. Exercises both the unsupported-warning path and the required-parameter path without network access.
+Registered only during tests via `bootstrap.RegisterAllMock` (never in production). Each mock covers one dedicated testing concern:
 
-- All mock/test-only source names must start with the `mock-` prefix (e.g. `mock-stub`, `mock-myadapter`). This distinguishes them from real sources in the registry at a glance.
+- **`mock-success`** — Happy-path adapter. Advertises `ParamAuthor` and **requires** it: a fetch without `--author` returns `RequiredParamError`; with it, returns deterministic lyrics. Drives stdout/file output, single-dash long-form flags, and unsupported `--album`/`--iswc`/`--timestamp` warnings.
+- **`mock-require`** — Exercises the `RequiredParamError` path in isolation. Advertises `Param(0)` (no optional params) but **requires** `--author`: a fetch without it returns `RequiredParamError`, with it succeeds. Drives exit code 6.
+- **`mock-nosupport`** — Advertises `Param(0)` and requires nothing; fetch always succeeds. Proves the no-`--author` path and that every optional flag trips an unsupported-parameter warning.
+- **`mock-fail`** — Advertises `ParamAuthor` but always returns a fetch error. Drives the exit code 4 (fetch failure) path at the CLI level.
+- **`mock-lrc`** — Advertises `ParamTimestamp` and requires nothing; with `--timestamp` it returns LRC-style `SyncedLyrics` (plain `Lyrics` otherwise). Drives the `ModeSynced` output path at the CLI level.
+- **`mock-nosync`** — Advertises `ParamTimestamp` but never returns `SyncedLyrics`: a `--timestamp` fetch succeeds with plain `Lyrics` only. Drives the "source returned no timestamped lyrics; using plain lyrics" stderr fallback warning.
+
+All mock/test-only source names must start with the `mock-` prefix (e.g. `mock-success`, `mock-fail`). This distinguishes them from real sources in the registry at a glance.
 
 ## Testing
 
@@ -139,15 +149,20 @@ Adding a new built-in source means: create `internal/source/real/<name>/` implem
 
 **Coverage in `main_test.go` includes:**
 - Missing song → exit 2 with the required-song stderr message.
-- `--help` and `-h` → exit 0; stdout lists `stub`, `lrclib`, `lyricsovh`.
+- `--help` and `-h` → exit 0; stdout lists `mock-success`, `lrclib`, `lyricsovh`.
 - `--version` and `-v` → exit 0; stdout contains the version string.
 - Default stdout sink and `--output` file sink paths.
-- Unsupported `--album` / `--iswc` warnings on `stub` (which advertises only `ParamAuthor`).
+- Unsupported `--album` / `--iswc` warnings on `mock-success` (which advertises only `ParamAuthor`).
 - Unknown source name → exit 3 with the unknown-source message.
-- Unwritable `--output` path → exit 5 before any fetch is attempted.
 - Single-dash long-form flags (`-source`, `-author`) are accepted.
 - `--timestamp` on a source without `ParamTimestamp` falls back to plain lyrics with a stderr warning.
-- `stub` without `--author` → exit 6 with the canonical `source "stub" requires --author` message.
+- `mock-require` without `--author` → exit 6 with the canonical `source "mock-require" requires --author` message.
+- Fetch failure via `mock-fail` → exit 4 with the adapter's error on stderr.
+- `mock-require` with `--author` → exit 0 (the required-param mock succeeds when the flag is supplied).
+- `mock-nosupport` without `--author` → exit 0 (a source can succeed without any optional params).
+- Unknown/typo flag (e.g. `--bogus`) → exit 2 with the flag package's parse error on stderr.
+- `--timestamp` on `mock-lrc` → exit 0 with LRC timestamped lyrics on stdout.
+- `--timestamp` on `mock-nosync` → exit 0, plain lyrics with the "returned no timestamped lyrics" stderr warning.
 
 **CI Pipeline:**
 - Not yet defined.
@@ -185,7 +200,7 @@ Adding a new built-in source means: create `internal/source/real/<name>/` implem
 ## Agent-Specific Guidance
 
 **Preferred Tools:**
-- `go build`, `go test`, `go vet`, `gofmt` for verification.
+- `go build`, `go test -tags test`, `go vet -tags test`, `gofmt` for verification.
 
 **Things to Avoid:**
 - Do not add a TUI or GUI — CLI only.
@@ -201,7 +216,7 @@ Adding a new built-in source means: create `internal/source/real/<name>/` implem
 **Verification Checklist:**
 - `go build ./...` succeeds
 - `go test -tags test ./...` passes
-- `go vet ./...` is clean
+- `go vet -tags test ./...` is clean
 - `gofmt -l .` produces no output (or `gofmt -d .` shows no diffs)
 - Missing song title produces exit code 2 with the required-song stderr message
 - `--help` / `-h` prints usage and the sorted list of registered sources, exit 0
