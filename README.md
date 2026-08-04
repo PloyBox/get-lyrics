@@ -4,6 +4,12 @@ Fetch song lyrics from the command line. Supports multiple backend sources with 
 
 ## Install
 
+### Option 1: Download a prebuilt binary from Releases
+
+Prebuilt binaries are attached to each [Release](https://github.com/PloyBox/get-lyrics/releases) — no Go toolchain needed.
+
+### Option 2: Build from source with `go install`
+
 ```sh
 go install github.com/PloyBox/get-lyrics@latest
 ```
