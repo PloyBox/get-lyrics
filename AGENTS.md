@@ -69,7 +69,7 @@ Build and run with the Go toolchain:
 
 ## CLI Surface
 
-- **Positional argument (required):** `<song>` — the song title to fetch lyrics for.
+- **Positional argument (required):** `<song>` — the song title to fetch lyrics for. Multiple positional arguments are joined with spaces into a single title (e.g. `get-lyrics --source mock-success Bohemian Rhapsody` and `get-lyrics --source mock-success "Bohemian Rhapsody"` are equivalent).
 - **Named flags (long form shown; short form in parentheses is also accepted):**
   - `--source` (`-s`) — which lyrics source to use. **Required in practice** (without it the help text lists available sources, but no lyrics are fetched).
   - `--author` (`-a`) — author/artist filter.

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/PloyBox/get-lyrics/internal/bootstrap"
 	"github.com/PloyBox/get-lyrics/internal/fetch"
@@ -226,5 +227,5 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	if len(positional) == 0 {
 		return f, "", nil
 	}
-	return f, positional[0], nil
+	return f, strings.Join(positional, " "), nil
 }

@@ -89,6 +89,20 @@ func TestRun_WritesLyricsToStdoutByDefault(t *testing.T) {
 	}
 }
 
+// TestRun_JoinsMultiplePositionalArgsAsSong verifies that all positional
+// arguments are joined with spaces into a single song title instead of
+// only the first one being used.
+func TestRun_JoinsMultiplePositionalArgsAsSong(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-success", "--author", "TEST_AUTHOR", "Bohemian", "Rhapsody", "by", "Queen"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "lyrics for: Bohemian Rhapsody by Queen") {
+		t.Fatalf("stdout missing joined song title: %q", stdout.String())
+	}
+}
+
 func TestRun_WritesLyricsToFileWhenOutputSet(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "lyrics.txt")
