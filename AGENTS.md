@@ -41,11 +41,9 @@ get-lyrics/
     │   │   └── nosync/         # mock-nosync: ParamTimestamp but never returns SyncedLyrics
     │   └── real/
     │       ├── lrclib/
-    │       │   ├── lrclib.go   # Adapter for https://lrclib.net (search + get endpoints)
-    │       │   └── lrclib_test.go
+    │       │   └── lrclib.go   # Adapter for https://lrclib.net (search + get endpoints)
     │       └── lyricsovh/
-    │           ├── lyricsovh.go # Adapter for https://api.lyrics.ovh (artist/title path)
-    │           └── lyricsovh_test.go
+    │           └── lyricsovh.go # Adapter for https://api.lyrics.ovh (artist/title path)
     ├── fetch/
     │   ├── fetch.go            # Fetch(ctx, req, sourceName) — registry lookup + warnings
     │   └── fetch_test.go
@@ -144,7 +142,7 @@ All mock/test-only source names must start with the `mock-` prefix (e.g. `mock-s
 - `main_test.go` drives the public `Run(argv, stdout, stderr) int` entry point with `bytes.Buffer` writers so exit codes, stdout, and stderr are all asserted independently. It registers mock/test-only sources via `init() + bootstrap.RegisterAllMock`.
 - Mock/test-only source files (under `internal/source/mock/`) carry `//go:build test` and are only compiled during `go test`.
 - `bootstrap/bootstrap_mock.go` also carries `//go:build test`, so mock sources are never linked into production binaries.
-- Adapter tests use `httptest` servers pointed at via the `Endpoint` field on each adapter struct.
+- **Real sources are NOT covered by automated tests.** `lrclib` and `lyricsovh` have no `*_test.go` files (0% statement coverage) and are exercised only manually against their live endpoints. Only the mock adapters and the CLI/fetch/output layers are under automated test.
 - `internal/source/source_test.go` covers the `Registry` itself (register/lookup/duplicate/unregister).
 
 **Coverage in `main_test.go` includes:**
