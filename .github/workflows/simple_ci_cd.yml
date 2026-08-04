@@ -21,7 +21,9 @@ jobs:
           cache: true
 
       - name: Test
-        run: go test ./...
+        run: |
+          go test -tags test ./...
+          go vet -tags test ./...
 
       - name: Build
         env:
