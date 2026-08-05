@@ -227,6 +227,6 @@ All mock/test-only source names must start with the `mock-` prefix (e.g. `mock-s
 
 ## Pointers
 
-- `README.md` — minimal placeholder; usage examples and build instructions not yet written
+- `README.md` — full usage guide: install (prebuilt binaries from Releases + `go install`), usage examples with flags, exit-code table, built-in sources, and how to add a new source
 - `CONTRIBUTING.md` — contribution guidelines (not yet written)
 - `docs/` — additional design or source-integration documentation (not yet written)
