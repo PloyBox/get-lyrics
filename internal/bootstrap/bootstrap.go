@@ -8,6 +8,7 @@ package bootstrap
 
 import (
 	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/internal/source/real/lrccx"
 	"github.com/PloyBox/get-lyrics/internal/source/real/lrclib"
 	"github.com/PloyBox/get-lyrics/internal/source/real/lyricsovh"
 )
@@ -19,6 +20,9 @@ func RegisterAll(r *source.Registry) error {
 		return err
 	}
 	if err := r.Register(lyricsovh.New()); err != nil {
+		return err
+	}
+	if err := r.Register(lrccx.New()); err != nil {
 		return err
 	}
 	// future: r.Register(musixmatch.New()), ...

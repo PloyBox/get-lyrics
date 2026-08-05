@@ -40,6 +40,8 @@ get-lyrics/
     │   │   ├── lrc/            # mock-lrc: ParamTimestamp, returns SyncedLyrics when asked
     │   │   └── nosync/         # mock-nosync: ParamTimestamp but never returns SyncedLyrics
     │   └── real/
+    │       ├── lrccx/
+    │       │   └── lrccx.go   # Adapter for https://api.lrc.cx/jsonapi (legacy API)
     │       ├── lrclib/
     │       │   └── lrclib.go   # Adapter for https://lrclib.net (search + get endpoints)
     │       └── lyricsovh/
@@ -62,7 +64,7 @@ Build and run with the Go toolchain:
 
 **Prerequisites:**
 - Go toolchain installed (recent stable release; module declares Go 1.25.10)
-- Network access to configured lyrics sources at runtime (`lrclib`, `lyricsovh`); the `mock-*` sources are offline-only and never registered in production builds
+- Network access to configured lyrics sources at runtime (`lrclib`, `lyricsovh`, `lrccx`); the `mock-*` sources are offline-only and never registered in production builds
 
 **Environment Variables:**
 - None required.
@@ -119,6 +121,7 @@ Thin CLI layer over a pluggable lyrics-source abstraction, with explicit registr
 
 - **`lrclib`** — Real adapter against `https://lrclib.net`. Picks `/api/get` when `--author` is supplied (structured `track_name`/`artist_name`/`album_name` query), otherwise `/api/search` with freeform `q=`. Supports `ParamAuthor | ParamAlbum | ParamTimestamp` (`album` only acts on the `/api/get` path); honors `SyncedLyrics` from the response when `--timestamp` was requested. 10-second per-request timeout.
 - **`lyricsovh`** — Real adapter against `https://api.lyrics.ovh/v1/{artist}/{title}`. Supports `ParamAuthor` and **requires** it (the path cannot be built without an artist). Surfaces the API's 404 as a not-found error rather than a generic HTTP-status failure. 10-second per-request timeout.
+- **`lrccx`** — Real adapter against the legacy `https://api.lrc.cx/jsonapi` endpoint. GETs `title`/`artist`/`album` query params (`artist` optional; `album` value `[Unknown Album]` treated as empty; the API's `path` param is never sent) and picks the first hit whose `lrc` field is non-empty from the score-descending JSON array. Supports `ParamAuthor | ParamAlbum | ParamTimestamp`. The response is always LRC-flavoured text: plain `Lyrics` are produced by stripping `[mm:ss]` timestamps and section/marker tags (`[Verse]`, `[!text]`, ...), while `SyncedLyrics` carries the raw text only when `--timestamp` was requested AND the text actually contains timestamped lines — unsynced `[!text]` entries fall back to plain lyrics. The `lrc` field may be `null` (instrumental entries). 10-second per-request timeout.
 
 Adding a new built-in source means: create `internal/source/real/<name>/` implementing `source.Source`, then add an import and `r.Register(<name>.New())` line to `internal/bootstrap/bootstrap.go`. No CLI-layer changes are required.
 

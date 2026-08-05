@@ -46,6 +46,9 @@ func TestRun_HelpFlagExitsZeroAndListsSources(t *testing.T) {
 	if !strings.Contains(stdout.String(), "lyricsovh") {
 		t.Fatalf("stdout missing registered source 'lyricsovh': %q", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "lrccx") {
+		t.Fatalf("stdout missing registered source 'lrccx': %q", stdout.String())
+	}
 }
 
 func TestRun_HelpShortFlagAlsoWorks(t *testing.T) {

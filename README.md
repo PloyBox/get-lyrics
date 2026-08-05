@@ -90,6 +90,7 @@ Both `--flag` and `-flag` forms are accepted.
 
 - **`lrclib`** — Searches [lrclib.net](https://lrclib.net). Supports `--author`, `--album` and `--timestamp`. Uses `/api/get` when artist is given, `/api/search` otherwise.
 - **`lyricsovh`** — Uses [api.lyrics.ovh](https://api.lyrics.ovh). Requires `--author`. Plain text only.
+- **`lrccx`** — Searches [lrc.cx](https://lrc.cx) via its legacy `/jsonapi` endpoint. Supports `--author`, `--album` and `--timestamp`; the response is always LRC-flavoured text, stripped of timestamps for plain output.
 
 ## Add New Source (Fork)
 
