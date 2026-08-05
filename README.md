@@ -16,6 +16,17 @@ go install github.com/PloyBox/get-lyrics@latest
 
 Requires Go 1.25.10+.
 
+### Option 3: Build from source with a downgraded Go version
+
+If your Go toolchain is older than the version pinned in `go.mod`, you can lower the `go` directive and compile from source:
+
+```sh
+go mod edit -go=1.22
+go install .
+```
+
+No compatibility is guaranteed with older Go toolchains — the code is developed against the version pinned in `go.mod`, and downgrading may fail to build or misbehave at runtime.
+
 ## Usage
 
 **Basic:**
