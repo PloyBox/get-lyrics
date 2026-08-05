@@ -163,7 +163,8 @@ All mock/test-only source names must start with the `mock-` prefix (e.g. `mock-s
 - `--timestamp` on `mock-nosync` → exit 0, plain lyrics with the "returned no timestamped lyrics" stderr warning.
 
 **CI Pipeline:**
-- Not yet defined.
+- The only workflow is `.github/workflows/simple_ci_cd.yml` ("Simple CI/CD"). It is **release-only**: it triggers on `v*` tag pushes; there is no CI on ordinary pushes to `main` or on pull requests.
+- On a release tag it: checks out the repo, sets up Go 1.25 (`actions/setup-go@v5` with cache), runs `go test -tags test ./...` and `go vet -tags test ./...`, cross-compiles release binaries for `linux/amd64`, `linux/arm64`, `darwin/arm64`, `windows/amd64`, `windows/arm64` (`CGO_ENABLED=0`, `-trimpath`, `-ldflags "-s -w -X main.version=<tag>"`), writes `checksums.txt` via `sha256sum`, then publishes assets with `softprops/action-gh-release@v3` (auto-generated release notes). The workflow declares `permissions: contents: write`.
 
 ## Code Style & Conventions
 
