@@ -178,7 +178,7 @@ func TestRun_AcceptsSingleDashLongForm(t *testing.T) {
 
 func TestRun_TimestampOnUnsupportedSourceFallsBackToPlain(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-success", "--author", "TEST_AUTHOR", "--timestamp", "TEST_SONG"}, &stdout, &stderr)
+	code := Run([]string{"--source", "mock-success", "--author", "TEST_AUTHOR", "--timestamp", "line", "TEST_SONG"}, &stdout, &stderr)
 	if code != exitOK {
 		t.Fatalf("code = %d; want 0", code)
 	}
@@ -257,7 +257,7 @@ func TestRun_UnknownFlagExitsTwo(t *testing.T) {
 // SyncedLyrics when --timestamp is set.
 func TestRun_TimestampWritesSyncedLyrics(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-lrc", "--timestamp", "TEST_SONG"}, &stdout, &stderr)
+	code := Run([]string{"--source", "mock-lrc", "--timestamp", "line", "TEST_SONG"}, &stdout, &stderr)
 	if code != exitOK {
 		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
 	}
@@ -275,7 +275,7 @@ func TestRun_TimestampWritesSyncedLyrics(t *testing.T) {
 // SyncedLyrics: output falls back to plain text with a stderr warning.
 func TestRun_TimestampSupportedButNoSyncedLyricsFallsBackToPlain(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-nosync", "--timestamp", "TEST_SONG"}, &stdout, &stderr)
+	code := Run([]string{"--source", "mock-nosync", "--timestamp", "line", "TEST_SONG"}, &stdout, &stderr)
 	if code != exitOK {
 		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
 	}

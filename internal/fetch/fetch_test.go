@@ -35,7 +35,7 @@ func newRegistry(t *testing.T, ss ...source.Source) *source.Registry {
 func TestFetch_UnknownSourceReturnsErrNotFound(t *testing.T) {
 	r := newRegistry(t, &fakeSrc{name: "known"})
 	svc := New(r)
-	_, warnings, err := svc.Fetch(context.Background(), source.Request{Song: "S"}, "nope")
+	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Source: []string{"nope"}})
 	if !errors.Is(err, source.ErrNotFound) {
 		t.Fatalf("err = %v; want ErrNotFound", err)
 	}
@@ -55,8 +55,8 @@ func TestFetch_AllParamsUnsupportedEmitsThreeWarnings(t *testing.T) {
 	r := newRegistry(t, stub)
 	svc := New(r)
 
-	req := source.Request{Song: "Song", Author: "A", Album: "B", ISWC: "I"}
-	res, warnings, err := svc.Fetch(context.Background(), req, "stub")
+	params := Params{Song: "Song", Author: "A", Album: "B", ISWC: "I", Source: []string{"stub"}}
+	res, warnings, err := svc.Fetch(context.Background(), params)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -84,8 +84,8 @@ func TestFetch_AllParamsSupportedEmitsNoWarnings(t *testing.T) {
 	r := newRegistry(t, full)
 	svc := New(r)
 
-	req := source.Request{Song: "S", Author: "A", Album: "B", ISWC: "I", Timestamp: true}
-	res, warnings, err := svc.Fetch(context.Background(), req, "full")
+	params := Params{Song: "S", Author: "A", Album: "B", ISWC: "I", Timestamp: []string{"line"}, Source: []string{"full"}}
+	res, warnings, err := svc.Fetch(context.Background(), params)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -108,12 +108,12 @@ func TestFetch_TimestampUnsupportedAddsWarning(t *testing.T) {
 	r := newRegistry(t, stub)
 	svc := New(r)
 
-	res, warnings, err := svc.Fetch(context.Background(), source.Request{Song: "S", Timestamp: true}, "stub")
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"line"}, Source: []string{"stub"}})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if res.SyncedLyrics != "" {
-		t.Fatalf("SyncedLyrics should be empty")
+	if res.Synced {
+		t.Fatalf("Synced should be false when source does not support timestamp")
 	}
 	if len(warnings) != 1 || warnings[0].Param != source.ParamTimestamp {
 		t.Fatalf("warnings = %+v; want one timestamp warning", warnings)
@@ -131,8 +131,8 @@ func TestFetch_AdapterErrorDiscardsWarnings(t *testing.T) {
 	r := newRegistry(t, stub)
 	svc := New(r)
 
-	req := source.Request{Song: "S", Author: "A"}
-	_, warnings, err := svc.Fetch(context.Background(), req, "stub")
+	params := Params{Song: "S", Author: "A", Source: []string{"stub"}}
+	_, warnings, err := svc.Fetch(context.Background(), params)
 	if err == nil {
 		t.Fatalf("want non-nil err")
 	}

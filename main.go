@@ -19,7 +19,6 @@ import (
 
 	"github.com/PloyBox/get-lyrics/internal/bootstrap"
 	"github.com/PloyBox/get-lyrics/internal/fetch"
-	"github.com/PloyBox/get-lyrics/internal/output"
 	"github.com/PloyBox/get-lyrics/internal/source"
 )
 
@@ -68,7 +67,7 @@ type parsedFlags struct {
 	album     string
 	iswc      string
 	output    string
-	timestamp bool
+	timestamp string
 	help      bool
 	version   bool
 }
@@ -104,14 +103,8 @@ func Run(argv []string, stdout, stderr io.Writer) int {
 	defer func() { _ = closer() }()
 
 	svc := fetch.New(registry)
-	req := source.Request{
-		Song:      song,
-		Author:    parsed.author,
-		Album:     parsed.album,
-		ISWC:      parsed.iswc,
-		Timestamp: parsed.timestamp,
-	}
-	res, warnings, err := svc.Fetch(context.Background(), req, parsed.source)
+	params := parsedFlagsToParams(parsed, song)
+	res, warnings, err := svc.Fetch(context.Background(), params)
 	if errors.Is(err, source.ErrNotFound) {
 		fmt.Fprintf(stderr, "error: unknown source %q\n", parsed.source)
 		return exitUnknownSrc
@@ -130,18 +123,10 @@ func Run(argv []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, w.Message)
 	}
 
-	src, _ := registry.Get(parsed.source)
-	mode := output.ModePlain
-	srcSupportsTimestamp := src != nil && src.SupportedParams()&source.ParamTimestamp != 0
-	if parsed.timestamp && srcSupportsTimestamp && res.SyncedLyrics != "" {
-		mode = output.ModeSynced
-	} else if parsed.timestamp && srcSupportsTimestamp && res.SyncedLyrics == "" {
-		// The source honors --timestamp but had no synced (LRC) lyrics
-		// for this track; fall back to plain output and say so instead
-		// of silently downgrading.
-		fmt.Fprintln(stderr, `warning: source "`+parsed.source+`" returned no timestamped lyrics; using plain lyrics`)
+	if res.Downgraded {
+		fmt.Fprintln(stderr, fetch.FormatNoSyncedWarning(parsed.source))
 	}
-	if werr := output.Write(out, res, mode); werr != nil {
+	if _, werr := io.WriteString(out, res.Lyrics); werr != nil {
 		fmt.Fprintln(stderr, "error:", werr)
 		return exitOutputFailed
 	}
@@ -153,20 +138,34 @@ func main() {
 	os.Exit(code)
 }
 
+// parsedFlagsToParams converts the raw CLI flags and positional song
+// argument into the fetch.Params struct, without applying defaults
+// (those live in parseFlags).
+func parsedFlagsToParams(f parsedFlags, song string) fetch.Params {
+	return fetch.Params{
+		Song:      song,
+		Source:    strings.Split(f.source, ","),
+		Author:    f.author,
+		Album:     f.album,
+		ISWC:      f.iswc,
+		Timestamp: strings.Split(f.timestamp, ","),
+	}
+}
+
 // printUsage writes the help text. Examples use the long (--) form per
 // the plan; the underlying flag library also accepts short forms.
 func printUsage(w io.Writer, reg *source.Registry) {
 	var b bytes.Buffer
-	fmt.Fprintln(&b, "Usage: get-lyrics --source <name> [--author <name>] [--album <name>]")
-	fmt.Fprintln(&b, "                   [--iswc <code>] [--output <file>] [--timestamp] <song>")
+	fmt.Fprintln(&b, "Usage: get-lyrics [--source <names>] [--author <name>] [--album <name>]")
+	fmt.Fprintln(&b, "                   [--iswc <code>] [--output <file>] [--timestamp <fmts>] <song>")
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "Options:")
-	fmt.Fprintln(&b, "  --source <name>, -s <name>   Lyrics source name (required)")
-	fmt.Fprintln(&b, "  --author <name>, -a <name>   Author / artist filter")
-	fmt.Fprintln(&b, "  --album <name>,  -A <name>   Album filter")
-	fmt.Fprintln(&b, "  --iswc <code>,  -i <code>    ISWC identifier")
-	fmt.Fprintln(&b, "  --output <file>, -o <file>   Write lyrics to file (default: stdout)")
-	fmt.Fprintln(&b, "  --timestamp,    -t           Request timestamped (LRC) lyrics when supported")
+	fmt.Fprintln(&b, "  --source <names>, -s <names> Lyrics source names (default: lrclib)")
+	fmt.Fprintln(&b, "  --author <name>,  -a <name>  Author / artist filter")
+	fmt.Fprintln(&b, "  --album <name>,   -A <name>  Album filter")
+	fmt.Fprintln(&b, "  --iswc <code>,    -i <code>  ISWC identifier")
+	fmt.Fprintln(&b, "  --output <file>,  -o <file>  Write lyrics to file (default: stdout)")
+	fmt.Fprintln(&b, "  --timestamp <fmts>, -t <fmts> Timestamp formats (default: line,none)")
 	fmt.Fprintln(&b, "  --help, -h                   Show this help and exit")
 	fmt.Fprintln(&b, "  --version                    Print version and exit")
 	fmt.Fprintln(&b, "")
@@ -203,8 +202,8 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	// Silence flag's own usage writer; Run writes its own on error.
 	fs.SetOutput(io.Discard)
 	var f parsedFlags
-	fs.StringVar(&f.source, "source", "", "lyrics source name")
-	fs.StringVar(&f.source, "s", "", "lyrics source name (short)")
+	fs.StringVar(&f.source, "source", "lrclib", "lyrics source name")
+	fs.StringVar(&f.source, "s", "lrclib", "lyrics source name (short)")
 	fs.StringVar(&f.author, "author", "", "author/artist filter")
 	fs.StringVar(&f.author, "a", "", "author/artist filter (short)")
 	fs.StringVar(&f.album, "album", "", "album filter")
@@ -213,8 +212,8 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	fs.StringVar(&f.iswc, "i", "", "ISWC identifier (short)")
 	fs.StringVar(&f.output, "output", "", "output file path")
 	fs.StringVar(&f.output, "o", "", "output file path (short)")
-	fs.BoolVar(&f.timestamp, "timestamp", false, "request timestamped lyrics")
-	fs.BoolVar(&f.timestamp, "t", false, "request timestamped lyrics (short)")
+	fs.StringVar(&f.timestamp, "timestamp", "line,none", "request timestamped lyrics")
+	fs.StringVar(&f.timestamp, "t", "line,none", "request timestamped lyrics (short)")
 	fs.BoolVar(&f.help, "help", false, "show help")
 	fs.BoolVar(&f.help, "h", false, "show help (short)")
 	fs.BoolVar(&f.version, "version", false, "print version and exit")
