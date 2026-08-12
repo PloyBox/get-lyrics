@@ -32,11 +32,11 @@ No compatibility is guaranteed with older Go toolchains — the code is develope
 **Basic:**
 
 ```sh
-# Search lrclib for "Bohemian Rhapsody" (no artist needed)
-get-lyrics --source lrclib "Bohemian Rhapsody"
+# Search lrclib for "Bohemian Rhapsody" (default source)
+get-lyrics "Bohemian Rhapsody"
 
 # Narrow by artist
-get-lyrics --source lrclib --author "Queen" "Bohemian Rhapsody"
+get-lyrics --author "Queen" "Bohemian Rhapsody"
 
 # Use lyrics.ovh (requires --author)
 get-lyrics --source lyricsovh --author "Queen" "Bohemian Rhapsody"
@@ -45,13 +45,13 @@ get-lyrics --source lyricsovh --author "Queen" "Bohemian Rhapsody"
 **Output to file:**
 
 ```sh
-get-lyrics --source lrclib --author "Queen" --output lyrics.txt "Bohemian Rhapsody"
+get-lyrics --author "Queen" --output lyrics.txt "Bohemian Rhapsody"
 ```
 
 **Timestamped (LRC) lyrics:**
 
 ```sh
-get-lyrics --source lrclib --author "Queen" --timestamp "Bohemian Rhapsody"
+get-lyrics --author "Queen" --timestamp line "Bohemian Rhapsody"
 ```
 
 **List available sources:**
@@ -64,12 +64,12 @@ get-lyrics --help
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--source` | `-s` | Lyrics source name (required) |
+| `--source` | `-s` | Comma-separated lyrics source names (default: `lrclib`) |
 | `--author` | `-a` | Artist / author filter |
 | `--album` | `-A` | Album filter |
 | `--iswc` | `-i` | ISWC identifier |
 | `--output` | `-o` | Write lyrics to file (default: stdout) |
-| `--timestamp` | `-t` | Request LRC timestamped lyrics |
+| `--timestamp` | `-t` | Comma-separated timestamp formats (default: `line,none`; `line` enables LRC) |
 | `--help` | `-h` | Show help and exit |
 | `--version` | `-v` | Print version and exit |
 

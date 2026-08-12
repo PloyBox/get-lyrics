@@ -47,11 +47,9 @@ get-lyrics/
     │       └── lyricsovh/
     │           └── lyricsovh.go # Adapter for https://api.lyrics.ovh (artist/title path)
     ├── fetch/
-    │   ├── fetch.go            # Fetch(ctx, req, sourceName) — registry lookup + warnings
+    │   ├── fetch.go            # Fetch(ctx, params) — registry lookup, warnings,
+    │   │                       # synced-vs-plain resolution, FormatNoSyncedWarning
     │   └── fetch_test.go
-    └── output/
-        ├── output.go           # Write(w, res, mode) — plain or LRC (synced) output
-        └── output_test.go
 ```
 
 ## Setup & Build
@@ -73,12 +71,12 @@ Build and run with the Go toolchain:
 
 - **Positional argument (required):** `<song>` — the song title to fetch lyrics for. Multiple positional arguments are joined with spaces into a single title (e.g. `get-lyrics --source mock-success Bohemian Rhapsody` and `get-lyrics --source mock-success "Bohemian Rhapsody"` are equivalent).
 - **Named flags (long form shown; short form in parentheses is also accepted):**
-  - `--source` (`-s`) — which lyrics source to use. **Required in practice** (without it the help text lists available sources, but no lyrics are fetched).
+  - `--source` (`-s`) — comma-separated lyrics source names. Defaults to `lrclib`; currently only the first name is used.
   - `--author` (`-a`) — author/artist filter.
   - `--album` (`-A`) — album filter.
   - `--iswc` (`-i`) — ISWC identifier.
   - `--output` (`-o`) — write lyrics to this file; if omitted, print to stdout.
-  - `--timestamp` (`-t`) — request timestamped (LRC) lyrics when the source supports it; falls back to plain lyrics with a stderr warning otherwise.
+  - `--timestamp` (`-t`) — comma-separated timestamp formats. Defaults to `line,none` (`line` enables LRC lyrics, `none` disables); falls back to plain lyrics with a stderr warning when the source supports timestamped output but returned none.
   - `--help` (`-h`) — print help information and exit with code 0. The help text includes the sorted list of registered sources.
   - `--version` (`-v`) — print version and exit with code 0.
 
@@ -99,15 +97,16 @@ Warnings about **unsupported** parameters (a flag was supplied but the source do
 
 ## Architecture
 
-Thin CLI layer over a pluggable lyrics-source abstraction, with explicit registry wiring and a small fetch/output split:
+Thin CLI layer over a pluggable lyrics-source abstraction, with explicit registry wiring and a unified fetch layer:
 
 1. **Package init (in `main.go`)** — `var registry = mustRegisterAll()` runs `bootstrap.RegisterAll(r)` exactly once before `main()`. Adapter init failure panics (programmer error).
-2. **Parse arguments** — required positional `<song>`, plus named flags via `flag.NewFlagSet`. Both `--x` and `-x` forms are accepted.
-3. **Open output sink** — stdout by default; if `--output` is set, `os.Create(path)`; the closer is deferred.
-4. **Resolve source by name** — `fetch.New(registry).Fetch(ctx, req, parsed.source)` looks up via `*source.Registry`, returning `source.ErrNotFound` for unknown names.
+2. **Parse arguments** — required positional `<song>`, plus named flags via `flag.NewFlagSet`. Both `--x` and `-x` forms are accepted. Defaults: `--source`=`lrclib`, `--timestamp`=`line,none`.
+3. **Convert flags** — `parsedFlagsToParams` splits comma-separated `--source` and `--timestamp` into `[]string` and builds a `fetch.Params`.
+4. **Resolve source by name** — `fetch.New(registry).Fetch(ctx, params)` looks up `params.Source[0]` via `*source.Registry`, returning `source.ErrNotFound` for unknown names.
 5. **Compute warnings** — the fetch layer compares the requested `Request` fields against `Source.SupportedParams()` and returns one warning per unsupported field.
-6. **Emit warnings to stderr** before writing the result.
-7. **Route lyrics** — `output.Write(out, res, mode)` writes either plain (`ModePlain`) or LRC (`ModeSynced`) text. `ModeSynced` is selected only when `--timestamp` was set AND the source supports `ParamTimestamp` AND `result.SyncedLyrics` is non-empty; otherwise plain mode is used and a stderr warning is emitted.
+6. **Resolve synced vs plain** — fetch determines whether to use `SyncedLyrics` or plain `Lyrics`, populating `fetch.Result` with a single `Lyrics` field and `Synced`/`Downgraded` flags.
+7. **Emit warnings to stderr** before writing the result. `FormatNoSyncedWarning` is called when `Downgraded` is true.
+8. **Write lyrics** — `io.WriteString` writes directly from `fetch.Result.Lyrics`.
 
 **Key types (in `internal/source/source.go`):**
 - `Param uint` — bitmask of `ParamAuthor | ParamAlbum | ParamISWC | ParamTimestamp`.
@@ -116,6 +115,10 @@ Thin CLI layer over a pluggable lyrics-source abstraction, with explicit registr
 - `Source` interface — `Name() string`, `SupportedParams() Param`, `Fetch(ctx, req) (Result, error)`.
 - `Registry` — concurrency-safe name→`Source` map; populated by `bootstrap.RegisterAll`.
 - `RequiredParamError{Source, Param, Flag}` — typed error for the missing-required-parameter case; `Unwrap()` returns `ErrRequiredParam`.
+
+**Key types (in `internal/fetch/fetch.go`):**
+- `Params{Song, Source, Author, Album, ISWC, Timestamp}` — unified input bundle. `Source` and `Timestamp` are `[]string` to support future multi-source dispatch and format splitting; today only the first element of each is used.
+- `Result{Lyrics, Title, Artist, Album, ISWC, Source, Synced, Downgraded}` — single-lyrics output. `Synced` is true when `Lyrics` contains LRC content. `Downgraded` is true when synced was requested and the source supports it, but returned none — callers should emit `FormatNoSyncedWarning(sourceName)`.
 
 ### Built-in sources
 
@@ -133,7 +136,7 @@ Registered only during tests via `bootstrap.RegisterAllMock` (never in productio
 - **`mock-require`** — Exercises the `RequiredParamError` path in isolation. Advertises `Param(0)` (no optional params) but **requires** `--author`: a fetch without it returns `RequiredParamError`, with it succeeds. Drives exit code 6.
 - **`mock-nosupport`** — Advertises `Param(0)` and requires nothing; fetch always succeeds. Proves the no-`--author` path and that every optional flag trips an unsupported-parameter warning.
 - **`mock-fail`** — Advertises `ParamAuthor` but always returns a fetch error. Drives the exit code 4 (fetch failure) path at the CLI level.
-- **`mock-lrc`** — Advertises `ParamTimestamp` and requires nothing; with `--timestamp` it returns LRC-style `SyncedLyrics` (plain `Lyrics` otherwise). Drives the `ModeSynced` output path at the CLI level.
+- **`mock-lrc`** — Advertises `ParamTimestamp` and requires nothing; with `--timestamp` it returns LRC-style `SyncedLyrics` (plain `Lyrics` otherwise). Drives the `Synced` output path at the CLI level.
 - **`mock-nosync`** — Advertises `ParamTimestamp` but never returns `SyncedLyrics`: a `--timestamp` fetch succeeds with plain `Lyrics` only. Drives the "source returned no timestamped lyrics; using plain lyrics" stderr fallback warning.
 
 All mock/test-only source names must start with the `mock-` prefix (e.g. `mock-success`, `mock-fail`). This distinguishes them from real sources in the registry at a glance.
@@ -145,7 +148,7 @@ All mock/test-only source names must start with the `mock-` prefix (e.g. `mock-s
 - `main_test.go` drives the public `Run(argv, stdout, stderr) int` entry point with `bytes.Buffer` writers so exit codes, stdout, and stderr are all asserted independently. It registers mock/test-only sources via `init() + bootstrap.RegisterAllMock`.
 - Mock/test-only source files (under `internal/source/mock/`) carry `//go:build test` and are only compiled during `go test`.
 - `bootstrap/bootstrap_mock.go` also carries `//go:build test`, so mock sources are never linked into production binaries.
-- **Real sources are NOT covered by automated tests.** `lrclib` and `lyricsovh` have no `*_test.go` files (0% statement coverage) and are exercised only manually against their live endpoints. Only the mock adapters and the CLI/fetch/output layers are under automated test.
+- **Real sources are NOT covered by automated tests.** `lrclib` and `lyricsovh` have no `*_test.go` files (0% statement coverage) and are exercised only manually against their live endpoints. Only the mock adapters and the CLI/fetch layers are under automated test.
 - `internal/source/source_test.go` covers the `Registry` itself (register/lookup/duplicate/unregister).
 
 **Coverage in `main_test.go` includes:**
@@ -162,8 +165,8 @@ All mock/test-only source names must start with the `mock-` prefix (e.g. `mock-s
 - `mock-require` with `--author` → exit 0 (the required-param mock succeeds when the flag is supplied).
 - `mock-nosupport` without `--author` → exit 0 (a source can succeed without any optional params).
 - Unknown/typo flag (e.g. `--bogus`) → exit 2 with the flag package's parse error on stderr.
-- `--timestamp` on `mock-lrc` → exit 0 with LRC timestamped lyrics on stdout.
-- `--timestamp` on `mock-nosync` → exit 0, plain lyrics with the "returned no timestamped lyrics" stderr warning.
+- `--timestamp line` on `mock-lrc` → exit 0 with LRC timestamped lyrics on stdout.
+- `--timestamp line` on `mock-nosync` → exit 0, plain lyrics with the "returned no timestamped lyrics" stderr warning.
 
 **CI Pipeline:**
 - The only workflow is `.github/workflows/simple_ci_cd.yml` ("Simple CI/CD"). It is **release-only**: it triggers on `v*` tag pushes; there is no CI on ordinary pushes to `main` or on pull requests.
