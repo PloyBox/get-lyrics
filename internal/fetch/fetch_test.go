@@ -92,8 +92,34 @@ func TestFetch_AllParamsSupportedEmitsNoWarnings(t *testing.T) {
 	if res.Source != "full" {
 		t.Fatalf("Source = %q; want full (backfill)", res.Source)
 	}
+	if res.SubSource != "" {
+		t.Fatalf("SubSource = %q; want empty for standalone adapter", res.SubSource)
+	}
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %+v; want none", warnings)
+	}
+}
+
+func TestFetch_AggregateSourceSubSource(t *testing.T) {
+	agg := &fakeSrc{
+		name: "agg",
+		sup:  source.ParamAuthor,
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			return source.Result{Lyrics: "x", Source: "sub"}, nil
+		},
+	}
+	r := newRegistry(t, agg)
+	svc := New(r)
+
+	res, _, err := svc.Fetch(context.Background(), Params{Song: "S", Source: []string{"agg"}})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.Source != "agg" {
+		t.Fatalf("Source = %q; want agg", res.Source)
+	}
+	if res.SubSource != "sub" {
+		t.Fatalf("SubSource = %q; want sub (no concatenation)", res.SubSource)
 	}
 }
 

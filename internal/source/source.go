@@ -52,9 +52,8 @@ type Result struct {
 	ISWC         string
 	// Source is reserved for aggregate sources: it identifies the
 	// sub-source that produced this result. Standalone adapters leave
-	// it empty — the fetch layer backfills it with the adapter's Name().
-	// An aggregate source sets it to the sub-source identifier, and the
-	// fetch layer prefixes it with the aggregate's Name() (e.g. "name#sub").
+	// it empty — the fetch layer backfills it into Result.SubSource
+	// and keeps Result.Source set to the adapter's Name().
 	Source string
 }
 

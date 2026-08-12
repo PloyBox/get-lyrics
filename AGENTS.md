@@ -118,7 +118,7 @@ Thin CLI layer over a pluggable lyrics-source abstraction, with explicit registr
 
 **Key types (in `internal/fetch/fetch.go`):**
 - `Params{Song, Source, Author, Album, ISWC, Timestamp}` — unified input bundle. `Source` and `Timestamp` are `[]string` to support future multi-source dispatch and format splitting; today only the first element of each is used.
-- `Result{Lyrics, Title, Artist, Album, ISWC, Source, Synced, Downgraded}` — single-lyrics output. `Source` is filled by the fetch layer: `src.Name()` when the adapter left `source.Result.Source` empty, else `src.Name() + "#" + <sub-source>`. `Synced` is true when `Lyrics` contains LRC content. `Downgraded` is true when synced was requested and the source supports it, but returned none — callers should emit `FormatNoSyncedWarning(sourceName)`.
+- `Result{Lyrics, Title, Artist, Album, ISWC, Source, SubSource, Synced, Downgraded}` — single-lyrics output. `Source` is always the adapter's `Name()`. `SubSource` carries the sub-source identifier when the adapter is an aggregate (`source.Result.Source`), else empty. `Synced` is true when `Lyrics` contains LRC content. `Downgraded` is true when synced was requested and the source supports it, but returned none — callers should emit `FormatNoSyncedWarning(sourceName)`.
 
 ### Built-in sources
 
@@ -217,7 +217,7 @@ All mock/test-only source names must start with the `mock-` prefix (e.g. `mock-s
 - Source adapters must self-declare `SupportedParams()` so the CLI can warn accurately about **unsupported** (not just unused) parameters.
 - Source adapters that **require** a parameter must return `source.RequiredParamError` (not a generic error) so the CLI can emit exit code 6 with a stable, greppable message.
 - Adapters must respect `ctx` for cancellation/deadlines and should not panic on missing `Song`.
-- Standalone adapters must leave `source.Result.Source` empty; only aggregate sources set it to their sub-source identifier, and the fetch layer fills `Result.Source` itself.
+- Standalone adapters must leave `source.Result.Source` empty; only aggregate sources set it to their sub-source identifier, and the fetch layer copies it to `Result.SubSource` while keeping `Result.Source` set to the adapter's `Name()`.
 
 **Verification Checklist:**
 - `go build ./...` succeeds

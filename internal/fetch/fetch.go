@@ -37,13 +37,18 @@ type Params struct {
 // synced (LRC) content. Downgraded is true when synced was requested
 // and the source supports it, but returned no synced lyrics — the
 // caller should emit a FormatNoSyncedWarning.
+//
+// Source always names the adapter that produced the result. SubSource
+// is the sub-source identifier reported by aggregate sources (e.g. a
+// multi-provider aggregator); standalone adapters leave it empty.
 type Result struct {
 	Lyrics     string
 	Title      string
 	Artist     string
 	Album      string
 	ISWC       string
-	Source     string
+	Source     string // adapter that produced the result
+	SubSource  string // sub-source for aggregate adapters; empty otherwise
 	Synced     bool
 	Downgraded bool
 }
@@ -96,13 +101,6 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 		return Result{}, nil, err
 	}
 
-	resultSource := sr.Source
-	if resultSource == "" {
-		resultSource = src.Name()
-	} else {
-		resultSource = src.Name() + "#" + resultSource
-	}
-
 	srcSupportsTS := src.SupportedParams()&source.ParamTimestamp != 0
 	synced := wantSynced && srcSupportsTS && sr.SyncedLyrics != ""
 	downgraded := wantSynced && srcSupportsTS && sr.SyncedLyrics == ""
@@ -118,7 +116,8 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 		Artist:     sr.Artist,
 		Album:      sr.Album,
 		ISWC:       sr.ISWC,
-		Source:     resultSource,
+		Source:     src.Name(),
+		SubSource:  sr.Source,
 		Synced:     synced,
 		Downgraded: downgraded,
 	}, warnings, nil
