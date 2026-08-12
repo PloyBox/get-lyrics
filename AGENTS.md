@@ -104,21 +104,21 @@ Thin CLI layer over a pluggable lyrics-source abstraction, with explicit registr
 3. **Convert flags** — `parsedFlagsToParams` splits comma-separated `--source` and `--timestamp` into `[]string` and builds a `fetch.Params`.
 4. **Resolve source by name** — `fetch.New(registry).Fetch(ctx, params)` looks up `params.Source[0]` via `*source.Registry`, returning `source.ErrNotFound` for unknown names.
 5. **Compute warnings** — the fetch layer compares the requested `Request` fields against `Source.SupportedParams()` and returns one warning per unsupported field.
-6. **Resolve synced vs plain** — fetch determines whether to use `SyncedLyrics` or plain `Lyrics`, populating `fetch.Result` with a single `Lyrics` field and `Synced`/`Downgraded` flags.
+6. **Resolve synced vs plain** — fetch determines whether to use `SyncedLyrics` or plain `Lyrics`, populating `fetch.Result` with a single `Lyrics` field, `Synced`/`Downgraded` flags, and a `Source` backfilled from the adapter (see below).
 7. **Emit warnings to stderr** before writing the result. `FormatNoSyncedWarning` is called when `Downgraded` is true.
 8. **Write lyrics** — `io.WriteString` writes directly from `fetch.Result.Lyrics`.
 
 **Key types (in `internal/source/source.go`):**
 - `Param uint` — bitmask of `ParamAuthor | ParamAlbum | ParamISWC | ParamTimestamp`.
 - `Request{Song, Author, Album, ISWC, Timestamp}` — input to `Source.Fetch`. `Song` is required.
-- `Result{Lyrics, SyncedLyrics, Title, Artist, Album, ISWC, Source}` — fetched output. `Lyrics` is always populated when `Fetch` returns nil; `SyncedLyrics` is populated only when timestamped output was requested and the source supports it.
+- `Result{Lyrics, SyncedLyrics, Title, Artist, Album, ISWC, Source}` — fetched output. `Lyrics` is always populated when `Fetch` returns nil; `SyncedLyrics` is populated only when timestamped output was requested and the source supports it. `Source` is reserved for aggregate sources to identify their sub-source; standalone adapters leave it empty and the fetch layer fills it in.
 - `Source` interface — `Name() string`, `SupportedParams() Param`, `Fetch(ctx, req) (Result, error)`.
 - `Registry` — concurrency-safe name→`Source` map; populated by `bootstrap.RegisterAll`.
 - `RequiredParamError{Source, Param, Flag}` — typed error for the missing-required-parameter case; `Unwrap()` returns `ErrRequiredParam`.
 
 **Key types (in `internal/fetch/fetch.go`):**
 - `Params{Song, Source, Author, Album, ISWC, Timestamp}` — unified input bundle. `Source` and `Timestamp` are `[]string` to support future multi-source dispatch and format splitting; today only the first element of each is used.
-- `Result{Lyrics, Title, Artist, Album, ISWC, Source, Synced, Downgraded}` — single-lyrics output. `Synced` is true when `Lyrics` contains LRC content. `Downgraded` is true when synced was requested and the source supports it, but returned none — callers should emit `FormatNoSyncedWarning(sourceName)`.
+- `Result{Lyrics, Title, Artist, Album, ISWC, Source, Synced, Downgraded}` — single-lyrics output. `Source` is filled by the fetch layer: `src.Name()` when the adapter left `source.Result.Source` empty, else `src.Name() + "#" + <sub-source>`. `Synced` is true when `Lyrics` contains LRC content. `Downgraded` is true when synced was requested and the source supports it, but returned none — callers should emit `FormatNoSyncedWarning(sourceName)`.
 
 ### Built-in sources
 
@@ -217,6 +217,7 @@ All mock/test-only source names must start with the `mock-` prefix (e.g. `mock-s
 - Source adapters must self-declare `SupportedParams()` so the CLI can warn accurately about **unsupported** (not just unused) parameters.
 - Source adapters that **require** a parameter must return `source.RequiredParamError` (not a generic error) so the CLI can emit exit code 6 with a stable, greppable message.
 - Adapters must respect `ctx` for cancellation/deadlines and should not panic on missing `Song`.
+- Standalone adapters must leave `source.Result.Source` empty; only aggregate sources set it to their sub-source identifier, and the fetch layer fills `Result.Source` itself.
 
 **Verification Checklist:**
 - `go build ./...` succeeds
