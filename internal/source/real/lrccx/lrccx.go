@@ -141,7 +141,6 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		Title:  firstNonEmpty(hit.Title, req.Song),
 		Artist: firstNonEmpty(hit.Artist, req.Author),
 		Lyrics: stripLRC(raw),
-		Source: a.Name(),
 	}
 	if req.Timestamp && hasTimestampLines(raw) {
 		res.SyncedLyrics = raw

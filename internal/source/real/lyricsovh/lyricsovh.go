@@ -126,7 +126,6 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		Lyrics: out.Lyrics,
 		Title:  req.Song,
 		Artist: req.Author,
-		Source: a.Name(),
 	}, nil
 }
 

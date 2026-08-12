@@ -50,7 +50,12 @@ type Result struct {
 	Artist       string
 	Album        string
 	ISWC         string
-	Source       string // backfilled by the fetch layer so it is never empty
+	// Source is reserved for aggregate sources: it identifies the
+	// sub-source that produced this result. Standalone adapters leave
+	// it empty — the fetch layer backfills it with the adapter's Name().
+	// An aggregate source sets it to the sub-source identifier, and the
+	// fetch layer prefixes it with the aggregate's Name() (e.g. "name#sub").
+	Source string
 }
 
 // Source is the contract every lyrics adapter must satisfy.

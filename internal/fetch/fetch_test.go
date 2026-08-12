@@ -49,7 +49,7 @@ func TestFetch_AllParamsUnsupportedEmitsThreeWarnings(t *testing.T) {
 		name: "stub",
 		sup:  0,
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
-			return source.Result{Lyrics: "L", Title: r.Song, Source: "stub"}, nil
+			return source.Result{Lyrics: "L", Title: r.Song}, nil
 		},
 	}
 	r := newRegistry(t, stub)
@@ -102,7 +102,7 @@ func TestFetch_TimestampUnsupportedAddsWarning(t *testing.T) {
 		name: "stub",
 		sup:  0,
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
-			return source.Result{Lyrics: "x", Title: r.Song, Source: "stub"}, nil
+			return source.Result{Lyrics: "x", Title: r.Song}, nil
 		},
 	}
 	r := newRegistry(t, stub)

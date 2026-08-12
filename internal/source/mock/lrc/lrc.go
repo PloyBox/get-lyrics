@@ -20,7 +20,6 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	res := source.Result{
 		Lyrics: "[mock-lrc] lyrics for: " + req.Song + "\n",
 		Title:  req.Song,
-		Source: a.Name(),
 	}
 	if req.Timestamp {
 		res.SyncedLyrics = "[00:00.00] [mock-lrc] first line for: " + req.Song + "\n" +

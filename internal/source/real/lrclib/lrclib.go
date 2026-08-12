@@ -136,7 +136,6 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		Artist: firstNonEmpty(hit.ArtistName, req.Author),
 		Album:  hit.AlbumName,
 		Lyrics: hit.PlainLyrics,
-		Source: a.Name(),
 	}
 	if req.Timestamp && strings.TrimSpace(hit.SyncedLyrics) != "" {
 		res.SyncedLyrics = hit.SyncedLyrics

@@ -22,6 +22,5 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	return source.Result{
 		Lyrics: "[mock-nosync] lyrics for: " + req.Song + "\n",
 		Title:  req.Song,
-		Source: a.Name(),
 	}, nil
 }

@@ -18,5 +18,5 @@ func (a *Adapter) SupportedParams() source.Param { return 0 }
 
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	lyrics := "[mock-nosupport] lyrics for: " + req.Song + "\n"
-	return source.Result{Lyrics: lyrics, Title: req.Song, Source: a.Name()}, nil
+	return source.Result{Lyrics: lyrics, Title: req.Song}, nil
 }

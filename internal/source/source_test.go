@@ -15,7 +15,7 @@ type fakeSource struct {
 func (f *fakeSource) Name() string           { return f.name }
 func (f *fakeSource) SupportedParams() Param { return f.sup }
 func (f *fakeSource) Fetch(ctx context.Context, req Request) (Result, error) {
-	return Result{Lyrics: "hi", Source: f.name}, nil
+	return Result{Lyrics: "hi"}, nil
 }
 
 func TestRegistry_RegisterAndGet(t *testing.T) {

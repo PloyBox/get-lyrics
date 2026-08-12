@@ -96,8 +96,11 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 		return Result{}, nil, err
 	}
 
-	if sr.Source == "" {
-		sr.Source = src.Name()
+	resultSource := sr.Source
+	if resultSource == "" {
+		resultSource = src.Name()
+	} else {
+		resultSource = src.Name() + "#" + resultSource
 	}
 
 	srcSupportsTS := src.SupportedParams()&source.ParamTimestamp != 0
@@ -115,7 +118,7 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 		Artist:     sr.Artist,
 		Album:      sr.Album,
 		ISWC:       sr.ISWC,
-		Source:     sr.Source,
+		Source:     resultSource,
 		Synced:     synced,
 		Downgraded: downgraded,
 	}, warnings, nil
