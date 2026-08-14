@@ -10,14 +10,18 @@ import (
 )
 
 type fakeSrc struct {
-	name  string
-	sup   source.Param
-	fetch func(context.Context, source.Request) (source.Result, error)
+	name       string
+	sup        source.Param
+	required   source.Param
+	fetch      func(context.Context, source.Request) (source.Result, error)
+	fetchCalls int
 }
 
 func (f *fakeSrc) Name() string                  { return f.name }
 func (f *fakeSrc) SupportedParams() source.Param { return f.sup }
+func (f *fakeSrc) RequiredParams() source.Param  { return f.required }
 func (f *fakeSrc) Fetch(ctx context.Context, r source.Request) (source.Result, error) {
+	f.fetchCalls++
 	return f.fetch(ctx, r)
 }
 
@@ -39,6 +43,10 @@ func TestFetch_UnknownSourceReturnsErrNotFound(t *testing.T) {
 	if !errors.Is(err, source.ErrNotFound) {
 		t.Fatalf("err = %v; want ErrNotFound", err)
 	}
+	var unk UnknownSourceError
+	if !errors.As(err, &unk) || unk.Name != "nope" {
+		t.Fatalf("err = %v; want UnknownSourceError{Name: nope}", err)
+	}
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %v; want none", warnings)
 	}
@@ -55,7 +63,7 @@ func TestFetch_AllParamsUnsupportedEmitsThreeWarnings(t *testing.T) {
 	r := newRegistry(t, stub)
 	svc := New(r)
 
-	params := Params{Song: "Song", Author: "A", Album: "B", ISWC: "I", Source: []string{"stub"}}
+	params := Params{Song: "Song", Author: "A", Album: "B", ISWC: "I", Timestamp: []string{"none"}, Source: []string{"stub"}}
 	res, warnings, err := svc.Fetch(context.Background(), params)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -71,6 +79,11 @@ func TestFetch_AllParamsUnsupportedEmitsThreeWarnings(t *testing.T) {
 	if !reflect.DeepEqual(gotParams, wantParams) {
 		t.Fatalf("warnings order = %v; want %v", gotParams, wantParams)
 	}
+	for _, w := range warnings {
+		if w.Kind != UnsupportedParam {
+			t.Fatalf("warning %+v; want Kind UnsupportedParam", w)
+		}
+	}
 }
 
 func TestFetch_AllParamsSupportedEmitsNoWarnings(t *testing.T) {
@@ -78,7 +91,11 @@ func TestFetch_AllParamsSupportedEmitsNoWarnings(t *testing.T) {
 		name: "full",
 		sup:  source.ParamAuthor | source.ParamAlbum | source.ParamISWC | source.ParamTimestamp,
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
-			return source.Result{Lyrics: "x", Title: r.Song}, nil
+			res := source.Result{Lyrics: "x", Title: r.Song}
+			if r.Timestamp {
+				res.SyncedLyrics = "[00:00.00] x"
+			}
+			return res, nil
 		},
 	}
 	r := newRegistry(t, full)
@@ -111,7 +128,7 @@ func TestFetch_AggregateSourceSubSource(t *testing.T) {
 	r := newRegistry(t, agg)
 	svc := New(r)
 
-	res, _, err := svc.Fetch(context.Background(), Params{Song: "S", Source: []string{"agg"}})
+	res, _, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"none"}, Source: []string{"agg"}})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -123,7 +140,11 @@ func TestFetch_AggregateSourceSubSource(t *testing.T) {
 	}
 }
 
-func TestFetch_TimestampUnsupportedAddsWarning(t *testing.T) {
+// TestFetch_SyncedRequestOnPlainOnlySourceDowngrades drives the
+// Downgraded path in isolation: a synced-only request on a plain-only
+// source produces the warning, and with no "none" iteration left to
+// match the cached plain result, Fetch ends in NoResultError.
+func TestFetch_SyncedRequestOnPlainOnlySourceDowngrades(t *testing.T) {
 	stub := &fakeSrc{
 		name: "stub",
 		sup:  0,
@@ -135,35 +156,272 @@ func TestFetch_TimestampUnsupportedAddsWarning(t *testing.T) {
 	svc := New(r)
 
 	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"line"}, Source: []string{"stub"}})
-	if err != nil {
-		t.Fatalf("err: %v", err)
+	if res.Lyrics != "" {
+		t.Fatalf("res = %+v; want empty result on NoResultError", res)
 	}
-	if res.Synced {
-		t.Fatalf("Synced should be false when source does not support timestamp")
+	var noRes NoResultError
+	if !errors.As(err, &noRes) {
+		t.Fatalf("err = %v; want NoResultError", err)
 	}
-	if len(warnings) != 1 || warnings[0].Param != source.ParamTimestamp {
-		t.Fatalf("warnings = %+v; want one timestamp warning", warnings)
+	if len(warnings) != 1 || warnings[0].Kind != Downgraded {
+		t.Fatalf("warnings = %+v; want one Downgraded warning", warnings)
 	}
 }
 
-func TestFetch_AdapterErrorDiscardsWarnings(t *testing.T) {
+// TestFetch_DefaultLineNoneReusesDowngradedResult proves the per-call
+// cache: after the "line" iteration stores the plain result (Downgraded
+// warning), the "none" iteration matches it and returns without a
+// second adapter call.
+func TestFetch_DefaultLineNoneReusesDowngradedResult(t *testing.T) {
 	stub := &fakeSrc{
 		name: "stub",
 		sup:  0,
-		fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
-			return source.Result{}, errors.New("boom")
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			return source.Result{Lyrics: "plain", Title: r.Song}, nil
 		},
 	}
 	r := newRegistry(t, stub)
 	svc := New(r)
 
-	params := Params{Song: "S", Author: "A", Source: []string{"stub"}}
-	_, warnings, err := svc.Fetch(context.Background(), params)
-	if err == nil {
-		t.Fatalf("want non-nil err")
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"line", "none"}, Source: []string{"stub"}})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.Synced || res.Lyrics != "plain" {
+		t.Fatalf("res = %+v; want plain lyrics", res)
+	}
+	if stub.fetchCalls != 1 {
+		t.Fatalf("fetchCalls = %d; want 1 (cache hit on second iteration)", stub.fetchCalls)
+	}
+	if len(warnings) != 1 || warnings[0].Kind != Downgraded {
+		t.Fatalf("warnings = %+v; want one Downgraded warning", warnings)
+	}
+}
+
+// TestFetch_AdapterErrorFailsOverToNextSource verifies that a failing
+// adapter produces a FetchFailed warning and the loop moves on to the
+// next source instead of aborting.
+func TestFetch_AdapterErrorFailsOverToNextSource(t *testing.T) {
+	bad := &fakeSrc{
+		name: "bad",
+		fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
+			return source.Result{}, errors.New("boom")
+		},
+	}
+	ok := &fakeSrc{
+		name: "ok",
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			return source.Result{Lyrics: "L", Title: r.Song}, nil
+		},
+	}
+	r := newRegistry(t, bad, ok)
+	svc := New(r)
+
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"none"}, Source: []string{"bad", "ok"}})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.Source != "ok" || res.Lyrics != "L" {
+		t.Fatalf("res = %+v; want result from ok", res)
+	}
+	if len(warnings) != 1 || warnings[0].Kind != FetchFailed || warnings[0].Source != "bad" {
+		t.Fatalf("warnings = %+v; want one FetchFailed warning for bad", warnings)
+	}
+}
+
+func TestFetch_AllSourcesFailReturnsNoResult(t *testing.T) {
+	bad := &fakeSrc{
+		name: "bad",
+		fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
+			return source.Result{}, errors.New("boom")
+		},
+	}
+	r := newRegistry(t, bad)
+	svc := New(r)
+
+	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"none"}, Source: []string{"bad"}})
+	var noRes NoResultError
+	if !errors.As(err, &noRes) {
+		t.Fatalf("err = %v; want NoResultError", err)
+	}
+	if len(warnings) != 1 || warnings[0].Kind != FetchFailed {
+		t.Fatalf("warnings = %+v; want one FetchFailed warning", warnings)
+	}
+}
+
+// TestFetch_StrictPrecheckRequiredParamFailsFast proves the strict
+// precheck aborts on the first missing required parameter without
+// fetching any source — not even earlier eligible ones.
+func TestFetch_StrictPrecheckRequiredParamFailsFast(t *testing.T) {
+	ok := &fakeSrc{
+		name: "ok",
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			return source.Result{Lyrics: "L"}, nil
+		},
+	}
+	req := &fakeSrc{
+		name:     "req",
+		required: source.ParamAuthor,
+		fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
+			return source.Result{Lyrics: "R"}, nil
+		},
+	}
+	r := newRegistry(t, ok, req)
+	svc := New(r)
+
+	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Source: []string{"ok", "req"}})
+	var reqErr source.RequiredParamError
+	if !errors.As(err, &reqErr) {
+		t.Fatalf("err = %v; want RequiredParamError", err)
+	}
+	if reqErr.Source != "req" || reqErr.Param != source.ParamAuthor || reqErr.Flag != "--author" {
+		t.Fatalf("reqErr = %+v; want author-required for req", reqErr)
 	}
 	if len(warnings) != 0 {
-		t.Fatalf("warnings = %+v; want none on hard failure", warnings)
+		t.Fatalf("warnings = %+v; want none on strict precheck failure", warnings)
+	}
+	if ok.fetchCalls != 0 {
+		t.Fatalf("ok.fetchCalls = %d; want 0 (fail-fast before any fetch)", ok.fetchCalls)
+	}
+}
+
+func TestFetch_StrictPrecheckUnknownSourceFailsFast(t *testing.T) {
+	ok := &fakeSrc{
+		name: "ok",
+		fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
+			return source.Result{Lyrics: "L"}, nil
+		},
+	}
+	r := newRegistry(t, ok)
+	svc := New(r)
+
+	_, _, err := svc.Fetch(context.Background(), Params{Song: "S", Source: []string{"ok", "nope"}})
+	if !errors.Is(err, source.ErrNotFound) {
+		t.Fatalf("err = %v; want ErrNotFound", err)
+	}
+	if ok.fetchCalls != 0 {
+		t.Fatalf("ok.fetchCalls = %d; want 0 (fail-fast before any fetch)", ok.fetchCalls)
+	}
+}
+
+// TestFetch_LenientSkipsProblemSources verifies --lenient semantics:
+// sources failing precheck are skipped with a PreCheck warning, the
+// eligible ones proceed.
+func TestFetch_LenientSkipsProblemSources(t *testing.T) {
+	req := &fakeSrc{
+		name:     "req",
+		required: source.ParamAuthor,
+	}
+	nosup := &fakeSrc{
+		name: "nosup",
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			return source.Result{Lyrics: "N", Title: r.Song}, nil
+		},
+	}
+	r := newRegistry(t, req, nosup)
+	svc := New(r)
+
+	params := Params{Song: "S", Timestamp: []string{"none"}, Source: []string{"req", "nope", "nosup"}, Lenient: true}
+	res, warnings, err := svc.Fetch(context.Background(), params)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.Source != "nosup" {
+		t.Fatalf("res.Source = %q; want nosup", res.Source)
+	}
+	wantKinds := []WarningKind{PreCheck, PreCheck}
+	gotKinds := make([]WarningKind, len(warnings))
+	for i, w := range warnings {
+		gotKinds[i] = w.Kind
+	}
+	if !reflect.DeepEqual(gotKinds, wantKinds) {
+		t.Fatalf("warning kinds = %v; want %v", gotKinds, wantKinds)
+	}
+	if warnings[0].Source != "req" || warnings[1].Source != "nope" {
+		t.Fatalf("precheck warnings = %+v; want req then nope", warnings)
+	}
+}
+
+func TestFetch_LenientAllSkippedReturnsNoResult(t *testing.T) {
+	req := &fakeSrc{
+		name:     "req",
+		required: source.ParamAuthor,
+	}
+	r := newRegistry(t, req)
+	svc := New(r)
+
+	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Source: []string{"req", "nope"}, Lenient: true})
+	var noRes NoResultError
+	if !errors.As(err, &noRes) {
+		t.Fatalf("err = %v; want NoResultError", err)
+	}
+	if len(warnings) != 2 {
+		t.Fatalf("warnings = %+v; want two PreCheck warnings", warnings)
+	}
+	for _, w := range warnings {
+		if w.Kind != PreCheck {
+			t.Fatalf("warning %+v; want Kind PreCheck", w)
+		}
+	}
+}
+
+// TestFetch_TimestampOrderDeterminesPriority proves the user-given
+// timestamp order is the priority: with "none,line" a plain result from
+// the first iteration matches and is returned before any synced request.
+func TestFetch_TimestampOrderDeterminesPriority(t *testing.T) {
+	lrc := &fakeSrc{
+		name: "lrc",
+		sup:  source.ParamTimestamp,
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			res := source.Result{Lyrics: "plain", Title: r.Song}
+			if r.Timestamp {
+				res.SyncedLyrics = "[00:00.00] synced"
+			}
+			return res, nil
+		},
+	}
+	r := newRegistry(t, lrc)
+	svc := New(r)
+
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"none", "line"}, Source: []string{"lrc"}})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.Synced || res.Lyrics != "plain" {
+		t.Fatalf("res = %+v; want plain lyrics from the first iteration", res)
+	}
+	if lrc.fetchCalls != 1 {
+		t.Fatalf("fetchCalls = %d; want 1", lrc.fetchCalls)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %+v; want none", warnings)
+	}
+}
+
+func TestFetch_SyncedSourceMatchesLineIteration(t *testing.T) {
+	lrc := &fakeSrc{
+		name: "lrc",
+		sup:  source.ParamTimestamp,
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			res := source.Result{Lyrics: "plain", Title: r.Song}
+			if r.Timestamp {
+				res.SyncedLyrics = "[00:00.00] synced"
+			}
+			return res, nil
+		},
+	}
+	r := newRegistry(t, lrc)
+	svc := New(r)
+
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"line"}, Source: []string{"lrc"}})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.Synced || res.Lyrics != "[00:00.00] synced" {
+		t.Fatalf("res = %+v; want synced lyrics", res)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %+v; want none", warnings)
 	}
 }
 
@@ -171,27 +429,88 @@ func TestDetectUnsupported_EmptyRequestYieldsNoWarnings(t *testing.T) {
 	stub := &fakeSrc{name: "stub", sup: 0, fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
 		return source.Result{}, nil
 	}}
-	got := detectUnsupported(source.Request{Song: "S"}, stub)
+	got := detectUnsupported(Params{Song: "S"}, stub)
 	if len(got) != 0 {
 		t.Fatalf("got %+v; want none", got)
 	}
 }
 
 func TestDetectUnsupported_ParamOrder(t *testing.T) {
-	// Lock in stable warning ordering: author, album, iswc, timestamp.
+	// Lock in stable warning ordering: author, album, iswc. The
+	// timestamp format is intentionally absent — it is covered by the
+	// Downgraded warning instead.
 	stub := &fakeSrc{name: "stub", sup: 0, fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
 		return source.Result{}, nil
 	}}
 	got := detectUnsupported(
-		source.Request{Song: "S", Author: "A", Album: "B", ISWC: "I", Timestamp: true},
+		Params{Song: "S", Author: "A", Album: "B", ISWC: "I", Timestamp: []string{"line"}},
 		stub,
 	)
-	want := []source.Param{source.ParamAuthor, source.ParamAlbum, source.ParamISWC, source.ParamTimestamp}
+	want := []source.Param{source.ParamAuthor, source.ParamAlbum, source.ParamISWC}
 	gotParams := make([]source.Param, len(got))
 	for i, w := range got {
 		gotParams[i] = w.Param
 	}
 	if !reflect.DeepEqual(gotParams, want) {
 		t.Fatalf("got order %v; want %v", gotParams, want)
+	}
+}
+
+func TestFetch_DuplicateSourceStrictReturnsUsageError(t *testing.T) {
+	src := &fakeSrc{
+		name: "a",
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			return source.Result{Lyrics: "L"}, nil
+		},
+	}
+	r := newRegistry(t, src)
+	svc := New(r)
+
+	_, _, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"none"}, Source: []string{"a", "a"}})
+	var dup DuplicateSourceError
+	if !errors.As(err, &dup) || dup.Name != "a" {
+		t.Fatalf("err = %v; want DuplicateSourceError{Name: a}", err)
+	}
+	if src.fetchCalls != 0 {
+		t.Fatalf("fetchCalls = %d; want 0", src.fetchCalls)
+	}
+}
+
+func TestFetch_DuplicateSourceLenientDedupes(t *testing.T) {
+	src := &fakeSrc{
+		name: "a",
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			return source.Result{Lyrics: "L", Title: r.Song}, nil
+		},
+	}
+	r := newRegistry(t, src)
+	svc := New(r)
+
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"none"}, Source: []string{"a", "a"}, Lenient: true})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.Source != "a" || res.Lyrics != "L" {
+		t.Fatalf("res = %+v; want result from a", res)
+	}
+	if src.fetchCalls != 1 {
+		t.Fatalf("fetchCalls = %d; want 1 (duplicate dropped)", src.fetchCalls)
+	}
+	if len(warnings) != 1 || warnings[0].Kind != PreCheck || warnings[0].Source != "a" {
+		t.Fatalf("warnings = %+v; want one duplicate PreCheck warning for a", warnings)
+	}
+}
+
+func TestDetectUnsupported_WhitespaceOnlyParamsIgnored(t *testing.T) {
+	stub := &fakeSrc{
+		name: "stub",
+		sup:  0,
+		fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
+			return source.Result{}, nil
+		},
+	}
+	got := detectUnsupported(Params{Song: "S", Author: " ", Album: "\t", ISWC: "  "}, stub)
+	if len(got) != 0 {
+		t.Fatalf("got %+v; want none for whitespace-only params", got)
 	}
 }

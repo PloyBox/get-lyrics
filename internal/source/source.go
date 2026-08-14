@@ -35,16 +35,18 @@ type Request struct {
 }
 
 // Result carries the fetched lyrics together with the metadata that
-// identifies the matched song. Lyrics is always populated; SyncedLyrics is
+// identifies the matched song. Lyrics is populated whenever plain lyrics
+// are available; a synced-only source may leave it empty, in which case
+// the fetch layer selects SyncedLyrics as the output. SyncedLyrics is
 // only populated when the source supports ParamTimestamp and the request
 // asked for it.
 type Result struct {
-	// The two lyrics tracks are mutually exclusive: a source returns one
-	// based on its capability. Lyrics is the primary track — plain text,
-	// free of timestamps and safe to cat directly. SyncedLyrics is the
-	// secondary track — LRC-style ([mm:ss.xx] lines) — populated only when
-	// the source supports ParamTimestamp and Request.Timestamp is true.
-	Lyrics       string // normalized plain text, always populated
+	// Lyrics is the plain-text track, free of timestamps and safe to cat
+	// directly. It is empty only for synced-only hits; the fetch layer
+	// then uses SyncedLyrics as the final output. SyncedLyrics is the
+	// LRC-style ([mm:ss.xx] lines) track, populated only when the source
+	// supports ParamTimestamp and Request.Timestamp is true.
+	Lyrics       string // normalized plain text; may be empty for synced-only hits
 	SyncedLyrics string // LRC-style timestamped lyrics; empty when unsupported
 	Title        string
 	Artist       string
@@ -68,6 +70,12 @@ type Source interface {
 	// against the user-supplied Request to produce per-field warnings.
 	SupportedParams() Param
 
+	// RequiredParams declares which optional Request fields this adapter
+	// *requires* to be non-empty. The fetch layer enforces this during
+	// precheck by building a RequiredParamError for the first missing
+	// field; adapters must NOT raise it themselves in Fetch.
+	RequiredParams() Param
+
 	// Fetch performs the lyrics lookup. It must respect ctx for
 	// cancellation/deadlines. A non-nil error means the lookup failed
 	// and no lyrics are available; warnings about unsupported parameters
@@ -82,34 +90,27 @@ var ErrNotFound = errors.New("source: not found")
 // same Name() is already registered.
 var ErrDuplicate = errors.New("source: duplicate registration")
 
-// ErrRequiredParam is the sentinel adapters return (or wrap) when the
-// caller failed to supply a parameter the source *requires* — as
-// opposed to merely *supports*. Today no built-in adapter triggers it;
-// it is reserved for future providers that refuse lookups without a
-// specific field. Callers should test with errors.Is against this
+// ErrRequiredParam is the sentinel returned when a source requires a
+// parameter the caller did not supply. The fetch layer constructs it
+// during precheck from Source.RequiredParams(); adapters must not raise
+// it themselves. Callers should test with errors.Is against this
 // sentinel and use errors.As to recover the typed RequiredParamError.
 var ErrRequiredParam = errors.New("source: required parameter missing")
 
 // RequiredParamError enriches ErrRequiredParam with the offending
 // parameter so the CLI can render a stable, greppable message.
 //
-// Adapters that need to raise this error should either return a
-// literal:
+// The fetch layer builds it during precheck; adapters never return it:
 //
 //	return source.Result{}, source.RequiredParamError{
-//	    Source: a.Name(),
-//	    Param:  source.ParamAuthor,
-//	    Flag:   "--author",
+//	    Source: src.Name(),
+//	    Param:  missing,
+//	    Flag:   flagForParam(missing),
 //	}
-//
-// or wrap it so errors.Is(err, source.ErrRequiredParam) still matches:
-//
-//	return source.Result{}, fmt.Errorf("musixmatch: %w",
-//	    source.RequiredParamError{Source: "musixmatch", Param: source.ParamISWC, Flag: "--iswc"})
 type RequiredParamError struct {
-	Source string // adapter Name() that raised the error
+	Source string // adapter Name() that requires the parameter
 	Param  Param  // which Param bit is required
-	Flag   string // CLI flag spelling used by the user (e.g. "--author")
+	Flag   string // CLI flag spelling for the missing field (e.g. "--author")
 }
 
 // Error renders a stable message; main formats the same shape.

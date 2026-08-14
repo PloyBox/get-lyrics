@@ -17,6 +17,8 @@ func (a *Adapter) Name() string { return "mock-fail" }
 
 func (a *Adapter) SupportedParams() source.Param { return source.ParamAuthor }
 
+func (a *Adapter) RequiredParams() source.Param { return 0 }
+
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	return source.Result{}, errors.New("mock-fail: intentional fetch failure")
 }

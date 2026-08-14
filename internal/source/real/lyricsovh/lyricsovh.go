@@ -61,20 +61,19 @@ func (a *Adapter) SupportedParams() source.Param {
 	return source.ParamAuthor
 }
 
-// Fetch looks up lyrics via api.lyrics.ovh/v1/{artist}/{title}. It
-// requires both a non-empty Song (validated by the CLI) and a non-empty
-// Author (the API has no title-only search), returning a
-// RequiredParamError when the latter is absent.
+// RequiredParams requires --author: the API has no title-only search,
+// so a fetch without an artist cannot form a valid request. The fetch
+// layer enforces this during precheck (exit code 6).
+func (a *Adapter) RequiredParams() source.Param {
+	return source.ParamAuthor
+}
+
+// Fetch looks up lyrics via api.lyrics.ovh/v1/{artist}/{title}. The
+// author is guaranteed non-empty by the precheck; the adapter no longer
+// validates it itself.
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	if strings.TrimSpace(req.Song) == "" {
 		return source.Result{}, errors.New("lyricsovh: song title is required")
-	}
-	if strings.TrimSpace(req.Author) == "" {
-		return source.Result{}, source.RequiredParamError{
-			Source: a.Name(),
-			Param:  source.ParamAuthor,
-			Flag:   "--author",
-		}
 	}
 
 	reqURL := a.endpoint() + url.PathEscape(strings.TrimSpace(req.Author)) +

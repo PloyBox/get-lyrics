@@ -60,6 +60,8 @@ func (a *Adapter) SupportedParams() source.Param {
 	return source.ParamAuthor | source.ParamAlbum | source.ParamTimestamp
 }
 
+func (a *Adapter) RequiredParams() source.Param { return 0 }
+
 // Fetch calls lrclib /api/search, picks the best candidate, and
 // populates plain/synced lyrics accordingly.
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {

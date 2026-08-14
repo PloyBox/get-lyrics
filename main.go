@@ -25,12 +25,13 @@ import (
 // Exit codes documented for shell consumers:
 //
 //	0 → success (stderr may still carry warnings)
-//	2 → usage error (missing song, unknown flag, etc.)
-//	3 → unknown source
-//	4 → fetch failure (network / parse / synced-empty invariant)
+//	2 → usage error (missing song, unknown/typo flag, invalid --timestamp value)
+//	3 → unknown source (strict precheck)
+//	4 → no valid result: every source skipped (lenient) or failed, or no
+//	     result matched the requested timestamp formats
 //	5 → output failure (file create or write)
-//	6 → source-required parameter missing (e.g. an adapter refused
-//	     because the caller did not supply --author/--iswc/…)
+//	6 → source-required parameter missing in strict precheck (e.g. the
+//	     caller did not supply --author to a source that requires it)
 const (
 	exitOK           = 0
 	exitUsage        = 2
@@ -68,6 +69,7 @@ type parsedFlags struct {
 	iswc      string
 	output    string
 	timestamp string
+	lenient   bool
 	help      bool
 	version   bool
 }
@@ -77,7 +79,7 @@ type parsedFlags struct {
 func Run(argv []string, stdout, stderr io.Writer) int {
 	parsed, song, err := parseFlags(argv)
 	if err != nil {
-		fmt.Fprintln(stderr, "error:", err)
+		fmt.Fprintln(stderr, "error[usage]:", err)
 		printUsage(stderr, nil)
 		return exitUsage
 	}
@@ -90,14 +92,14 @@ func Run(argv []string, stdout, stderr io.Writer) int {
 		return exitOK
 	}
 	if song == "" {
-		fmt.Fprintln(stderr, "error: song title is required")
+		fmt.Fprintln(stderr, "error[usage]: song title is required")
 		printUsage(stderr, nil)
 		return exitUsage
 	}
 
 	out, closer, err := openOutput(parsed.output, stdout)
 	if err != nil {
-		fmt.Fprintln(stderr, "error:", err)
+		fmt.Fprintln(stderr, "error[output]:", err)
 		return exitOutputFailed
 	}
 	defer func() { _ = closer() }()
@@ -105,17 +107,32 @@ func Run(argv []string, stdout, stderr io.Writer) int {
 	svc := fetch.New(registry)
 	params := parsedFlagsToParams(parsed, song)
 	res, warnings, err := svc.Fetch(context.Background(), params)
+	var dupErr fetch.DuplicateSourceError
+	if errors.As(err, &dupErr) {
+		fmt.Fprintln(stderr, "error[usage]:", dupErr.Error())
+		return exitUsage
+	}
 	if errors.Is(err, source.ErrNotFound) {
-		fmt.Fprintf(stderr, "error: unknown source %q\n", parsed.source)
+		fmt.Fprintln(stderr, "error[unknown]:", err.Error())
 		return exitUnknownSrc
 	}
 	var reqErr source.RequiredParamError
 	if errors.As(err, &reqErr) {
-		fmt.Fprintf(stderr, "error: source %q requires %s\n", reqErr.Source, reqErr.Flag)
+		fmt.Fprintln(stderr, "error[required]:", reqErr.Error())
 		return exitRequired
 	}
+	var noRes fetch.NoResultError
+	if errors.As(err, &noRes) {
+		// Failure path: in-flight warnings still tell the user why each
+		// source was skipped or failed, printed before the error.
+		for _, w := range warnings {
+			fmt.Fprintln(stderr, w.Message)
+		}
+		fmt.Fprintln(stderr, "error[no-result]:", noRes.Error())
+		return exitFetchFailed
+	}
 	if err != nil {
-		fmt.Fprintln(stderr, "error:", err)
+		fmt.Fprintln(stderr, "error[fetch]:", err)
 		return exitFetchFailed
 	}
 
@@ -123,11 +140,26 @@ func Run(argv []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, w.Message)
 	}
 
-	if res.Downgraded {
-		fmt.Fprintln(stderr, fetch.FormatNoSyncedWarning(parsed.source))
+	// Only the real output file is truncated here — stdout (the
+	// fallback) must never be truncated or seeked.
+	if parsed.output != "" {
+		if f, ok := out.(*os.File); ok {
+			if err := f.Truncate(0); err != nil {
+				fmt.Fprintln(stderr, "error[output]:", err)
+				return exitOutputFailed
+			}
+			if _, err := f.Seek(0, io.SeekStart); err != nil {
+				fmt.Fprintln(stderr, "error[output]:", err)
+				return exitOutputFailed
+			}
+		}
 	}
 	if _, werr := io.WriteString(out, res.Lyrics); werr != nil {
-		fmt.Fprintln(stderr, "error:", werr)
+		fmt.Fprintln(stderr, "error[output]:", werr)
+		return exitOutputFailed
+	}
+	if err := closer(); err != nil {
+		fmt.Fprintln(stderr, "error[output]:", err)
 		return exitOutputFailed
 	}
 	return exitOK
@@ -140,16 +172,47 @@ func main() {
 
 // parsedFlagsToParams converts the raw CLI flags and positional song
 // argument into the fetch.Params struct, without applying defaults
-// (those live in parseFlags).
+// (those live in parseFlags). Source and timestamp lists are trimmed and
+// empty entries dropped here so they match validateTimestamp's behavior.
 func parsedFlagsToParams(f parsedFlags, song string) fetch.Params {
 	return fetch.Params{
 		Song:      song,
-		Source:    strings.Split(f.source, ","),
+		Source:    splitTrimmed(f.source),
 		Author:    f.author,
 		Album:     f.album,
 		ISWC:      f.iswc,
-		Timestamp: strings.Split(f.timestamp, ","),
+		Timestamp: splitTrimmed(f.timestamp),
+		Lenient:   f.lenient,
 	}
+}
+
+// splitTrimmed splits a comma-separated flag value, trimming whitespace
+// and dropping empty entries.
+func splitTrimmed(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// validateTimestamp rejects any comma-separated --timestamp value other
+// than "line" or "none"; empty entries are ignored.
+func validateTimestamp(s string) error {
+	for _, v := range strings.Split(s, ",") {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if v != "line" && v != "none" {
+			return fmt.Errorf("invalid timestamp value %q (want \"line\" or \"none\")", v)
+		}
+	}
+	return nil
 }
 
 // printUsage writes the help text. Examples use the long (--) form per
@@ -166,6 +229,7 @@ func printUsage(w io.Writer, reg *source.Registry) {
 	fmt.Fprintln(&b, "  --iswc <code>,    -i <code>  ISWC identifier")
 	fmt.Fprintln(&b, "  --output <file>,  -o <file>  Write lyrics to file (default: stdout)")
 	fmt.Fprintln(&b, "  --timestamp <fmts>, -t <fmts> Timestamp formats (default: line,none)")
+	fmt.Fprintln(&b, "  --lenient, -l               Skip invalid sources instead of failing")
 	fmt.Fprintln(&b, "  --help, -h                   Show this help and exit")
 	fmt.Fprintln(&b, "  --version                    Print version and exit")
 	fmt.Fprintln(&b, "")
@@ -182,12 +246,15 @@ func printUsage(w io.Writer, reg *source.Registry) {
 }
 
 // openOutput returns the lyrics sink: stdout when path is empty, an
-// os.File when path is set. The caller must invoke the closer.
+// os.File when path is set. The file is opened for writing without
+// O_TRUNC so a fetch failure leaves existing content intact; the caller
+// truncates it only after a successful fetch. The caller must invoke the
+// closer.
 func openOutput(path string, fallback io.Writer) (io.Writer, func() error, error) {
 	if path == "" {
 		return fallback, func() error { return nil }, nil
 	}
-	f, err := os.Create(path)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, func() error { return nil }, err
 	}
@@ -214,12 +281,17 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	fs.StringVar(&f.output, "o", "", "output file path (short)")
 	fs.StringVar(&f.timestamp, "timestamp", "line,none", "request timestamped lyrics")
 	fs.StringVar(&f.timestamp, "t", "line,none", "request timestamped lyrics (short)")
+	fs.BoolVar(&f.lenient, "lenient", false, "skip invalid sources instead of failing")
+	fs.BoolVar(&f.lenient, "l", false, "skip invalid sources instead of failing (short)")
 	fs.BoolVar(&f.help, "help", false, "show help")
 	fs.BoolVar(&f.help, "h", false, "show help (short)")
 	fs.BoolVar(&f.version, "version", false, "print version and exit")
 	fs.BoolVar(&f.version, "v", false, "print version and exit (short)")
 
 	if err := fs.Parse(argv); err != nil {
+		return parsedFlags{}, "", err
+	}
+	if err := validateTimestamp(f.timestamp); err != nil {
 		return parsedFlags{}, "", err
 	}
 	positional := fs.Args()

@@ -14,6 +14,7 @@ type fakeSource struct {
 
 func (f *fakeSource) Name() string           { return f.name }
 func (f *fakeSource) SupportedParams() Param { return f.sup }
+func (f *fakeSource) RequiredParams() Param  { return 0 }
 func (f *fakeSource) Fetch(ctx context.Context, req Request) (Result, error) {
 	return Result{Lyrics: "hi"}, nil
 }

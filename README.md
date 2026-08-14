@@ -40,6 +40,12 @@ get-lyrics --author "Queen" "Bohemian Rhapsody"
 
 # Use lyrics.ovh (requires --author)
 get-lyrics --source lyricsovh --author "Queen" "Bohemian Rhapsody"
+
+# Try several sources in order (failover)
+get-lyrics --source lrclib,lyricsovh --author "Queen" "Bohemian Rhapsody"
+
+# Skip sources that can't be used instead of failing (precheck only)
+get-lyrics --lenient --source lyricsovh,lrclib "Bohemian Rhapsody"
 ```
 
 **Output to file:**
@@ -64,12 +70,13 @@ get-lyrics --help
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--source` | `-s` | Comma-separated lyrics source names (default: `lrclib`) |
+| `--source` | `-s` | Comma-separated lyrics source names, tried in order (default: `lrclib`) |
 | `--author` | `-a` | Artist / author filter |
 | `--album` | `-A` | Album filter |
 | `--iswc` | `-i` | ISWC identifier |
 | `--output` | `-o` | Write lyrics to file (default: stdout) |
-| `--timestamp` | `-t` | Comma-separated timestamp formats (default: `line,none`; `line` enables LRC) |
+| `--timestamp` | `-t` | Comma-separated timestamp formats (default: `line,none`; `line` enables LRC). User-given order is the priority |
+| `--lenient` | `-l` | Skip invalid sources instead of failing fast (precheck only) |
 | `--help` | `-h` | Show help and exit |
 | `--version` | `-v` | Print version and exit |
 
@@ -80,9 +87,9 @@ Both `--flag` and `-flag` forms are accepted.
 | Code | Meaning |
 |------|---------|
 | 0 | Success (warnings may be on stderr) |
-| 2 | Usage error (missing song, unknown flag) |
+| 2 | Usage error (missing song, unknown flag, invalid `--timestamp` value) |
 | 3 | Unknown `--source` name |
-| 4 | Fetch failure (network, no lyrics found) |
+| 4 | No valid result (all sources failed/skipped, or nothing matched the requested timestamp format) |
 | 5 | Output failure (can't create/write file) |
 | 6 | Source requires a parameter (e.g. `--author` missing for `lyricsovh`) |
 

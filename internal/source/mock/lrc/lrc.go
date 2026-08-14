@@ -16,6 +16,8 @@ func (a *Adapter) Name() string { return "mock-lrc" }
 
 func (a *Adapter) SupportedParams() source.Param { return source.ParamTimestamp }
 
+func (a *Adapter) RequiredParams() source.Param { return 0 }
+
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	res := source.Result{
 		Lyrics: "[mock-lrc] lyrics for: " + req.Song + "\n",

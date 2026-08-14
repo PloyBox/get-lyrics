@@ -2,20 +2,15 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/PloyBox/get-lyrics/internal/bootstrap"
 )
 
-// init registers mock/test-only sources so they are available during tests.
-func init() {
-	if err := bootstrap.RegisterAllMock(registry); err != nil {
-		panic(err)
-	}
-}
+// Mock/test-only sources are registered in main_loadmock.go (build tag
+// "test"), not here.
 
 func TestRun_MissingSongExitsTwo(t *testing.T) {
 	var stdout, stderr bytes.Buffer
@@ -23,7 +18,7 @@ func TestRun_MissingSongExitsTwo(t *testing.T) {
 	if code != exitUsage {
 		t.Fatalf("code = %d; want %d", code, exitUsage)
 	}
-	if !strings.Contains(stderr.String(), "song title is required") {
+	if !strings.Contains(stderr.String(), "error[usage]: song title is required") {
 		t.Fatalf("stderr missing song-required message: %q", stderr.String())
 	}
 }
@@ -48,6 +43,9 @@ func TestRun_HelpFlagExitsZeroAndListsSources(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "lrccx") {
 		t.Fatalf("stdout missing registered source 'lrccx': %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "--lenient") {
+		t.Fatalf("stdout missing --lenient flag: %q", stdout.String())
 	}
 }
 
@@ -81,6 +79,10 @@ func TestRun_VersionShortFlagAlsoWorks(t *testing.T) {
 	}
 }
 
+// TestRun_WritesLyricsToStdoutByDefault exercises the default
+// line,none timestamp order on a plain-only source: the "line"
+// iteration stores the plain result with a downgrade warning, and the
+// "none" iteration matches the cache and returns it.
 func TestRun_WritesLyricsToStdoutByDefault(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"--source", "mock-success", "--author", "TEST_AUTHOR", "TEST_SONG"}, &stdout, &stderr)
@@ -89,6 +91,38 @@ func TestRun_WritesLyricsToStdoutByDefault(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "TEST_SONG") {
 		t.Fatalf("stdout missing lyrics, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "warning[downgraded]") {
+		t.Fatalf("stderr missing downgrade warning: %q", stderr.String())
+	}
+}
+
+// TestRun_RealFileStdout exercises the default stdout sink when the
+// writer is a real *os.File (as in production): the output file must
+// never be truncated or seeked.
+func TestRun_RealFileStdout(t *testing.T) {
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pr.Close()
+	defer pw.Close()
+
+	var stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-nosupport", "TEST_SONG"}, pw, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
+	}
+	// Close the write end so ReadAll returns; Run never closes the
+	// stdout fallback itself.
+	pw.Close()
+
+	b, err := io.ReadAll(pr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "TEST_SONG") {
+		t.Fatalf("stdout missing lyrics, got %q", string(b))
 	}
 }
 
@@ -151,6 +185,9 @@ func TestRun_WritesUnsupportedParamWarningsToStderr(t *testing.T) {
 			t.Fatalf("stderr missing warning for %s: %q", flag, stderr.String())
 		}
 	}
+	if !strings.Contains(stderr.String(), "warning[unsupported]") {
+		t.Fatalf("stderr missing unsupported warning tag: %q", stderr.String())
+	}
 }
 
 func TestRun_UnknownSourceExitsThree(t *testing.T) {
@@ -159,8 +196,8 @@ func TestRun_UnknownSourceExitsThree(t *testing.T) {
 	if code != exitUnknownSrc {
 		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitUnknownSrc, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "unknown source") {
-		t.Fatalf("stderr missing 'unknown source': %q", stderr.String())
+	if !strings.Contains(stderr.String(), `error[unknown]: source "nope" not found`) {
+		t.Fatalf("stderr missing unknown-source message: %q", stderr.String())
 	}
 }
 
@@ -176,22 +213,29 @@ func TestRun_AcceptsSingleDashLongForm(t *testing.T) {
 	}
 }
 
-func TestRun_TimestampOnUnsupportedSourceFallsBackToPlain(t *testing.T) {
+// TestRun_SyncedOnlyRequestOnPlainSourceExitsFour drives the "no result
+// matched the requested flag" path: mock-success is plain-only, so a
+// lone "line" iteration stores the plain result (downgrade warning) and
+// nothing matches — ending in exit 4 with the no-result error.
+func TestRun_SyncedOnlyRequestOnPlainSourceExitsFour(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"--source", "mock-success", "--author", "TEST_AUTHOR", "--timestamp", "line", "TEST_SONG"}, &stdout, &stderr)
-	if code != exitOK {
-		t.Fatalf("code = %d; want 0", code)
+	if code != exitFetchFailed {
+		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitFetchFailed, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "lyrics") {
-		t.Fatalf("stdout missing fallback plain lyrics: %q", stdout.String())
+	if stdout.String() != "" {
+		t.Fatalf("stdout should be empty on failure: %q", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "--timestamp") {
-		t.Fatalf("stderr missing timestamp warning: %q", stderr.String())
+	if !strings.Contains(stderr.String(), "warning[downgraded]") {
+		t.Fatalf("stderr missing downgrade warning: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "error[no-result]: no source returned a valid result") {
+		t.Fatalf("stderr missing no-result error: %q", stderr.String())
 	}
 }
 
 // TestRun_SourceRequiresAuthorExitsSix drives the required-parameter
-// path through mock-require: mock-require requires --author, so a
+// precheck through mock-require: mock-require requires --author, so a
 // fetch without it must surface exit code 6 and the canonical stderr
 // message.
 func TestRun_SourceRequiresAuthorExitsSix(t *testing.T) {
@@ -200,9 +244,24 @@ func TestRun_SourceRequiresAuthorExitsSix(t *testing.T) {
 	if code != exitRequired {
 		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitRequired, stderr.String())
 	}
-	wantSub := `error: source "mock-require" requires --author`
+	wantSub := `error[required]: source "mock-require" requires --author`
 	if !strings.Contains(stderr.String(), wantSub) {
 		t.Fatalf("stderr missing %q; got %q", wantSub, stderr.String())
+	}
+}
+
+// TestRun_StrictPrecheckFailsFastOnLaterSource verifies fail-fast
+// ordering: mock-require's missing --author aborts the strict precheck
+// even though mock-nosupport (listed first) is eligible, and no source
+// is fetched.
+func TestRun_StrictPrecheckFailsFastOnLaterSource(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-nosupport,mock-require", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitRequired {
+		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitRequired, stderr.String())
+	}
+	if stdout.String() != "" {
+		t.Fatalf("stdout should be empty (no fetch happened): %q", stdout.String())
 	}
 }
 
@@ -214,6 +273,28 @@ func TestRun_FetchFailureExitsFour(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "mock-fail: intentional fetch failure") {
 		t.Fatalf("stderr missing fetch error: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "warning[fetch]") {
+		t.Fatalf("stderr missing fetch-failed warning tag: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "error[no-result]") {
+		t.Fatalf("stderr missing no-result error: %q", stderr.String())
+	}
+}
+
+// TestRun_FetchFailureWarnsBeforeNoResultError locks the failure-path
+// ordering: in-flight warnings are printed before the no-result error.
+func TestRun_FetchFailureWarnsBeforeNoResultError(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-fail", "--author", "X", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitFetchFailed {
+		t.Fatalf("code = %d; want %d", code, exitFetchFailed)
+	}
+	stderrStr := stderr.String()
+	wi := strings.Index(stderrStr, "warning[fetch]")
+	ei := strings.Index(stderrStr, "error[no-result]")
+	if wi == -1 || ei == -1 || wi > ei {
+		t.Fatalf("expected warning before error; stderr=%q", stderrStr)
 	}
 }
 
@@ -239,6 +320,39 @@ func TestRun_MockNosupportNoAuthorNeeded(t *testing.T) {
 	}
 }
 
+// TestRun_LenientSkipsInvalidSources drives the --lenient precheck:
+// mock-require lacks --author and is skipped with a PreCheck warning,
+// while mock-nosupport (listed second) is fetched successfully.
+func TestRun_LenientSkipsInvalidSources(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--lenient", "--source", "mock-require,mock-nosupport", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "TEST_SONG") {
+		t.Fatalf("stdout missing lyrics: %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), `warning[precheck]: source "mock-require" skipped: requires --author`) {
+		t.Fatalf("stderr missing precheck warning: %q", stderr.String())
+	}
+}
+
+// TestRun_LenientAllSkippedExitsFour: when --lenient skips every source,
+// the run ends in the unified no-result error.
+func TestRun_LenientAllSkippedExitsFour(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--lenient", "--source", "mock-require", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitFetchFailed {
+		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitFetchFailed, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "warning[precheck]") {
+		t.Fatalf("stderr missing precheck warning: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "error[no-result]") {
+		t.Fatalf("stderr missing no-result error: %q", stderr.String())
+	}
+}
+
 // TestRun_UnknownFlagExitsTwo drives the parseFlags error branch: an
 // unrecognized flag makes flag.Parse fail, which Run maps to exit 2.
 func TestRun_UnknownFlagExitsTwo(t *testing.T) {
@@ -247,14 +361,30 @@ func TestRun_UnknownFlagExitsTwo(t *testing.T) {
 	if code != exitUsage {
 		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitUsage, stderr.String())
 	}
+	if !strings.Contains(stderr.String(), "error[usage]") {
+		t.Fatalf("stderr missing usage tag: %q", stderr.String())
+	}
 	if !strings.Contains(stderr.String(), "flag provided but not defined") {
 		t.Fatalf("stderr missing flag parse error: %q", stderr.String())
 	}
 }
 
-// TestRun_TimestampWritesSyncedLyrics drives the ModeSynced output path
-// via mock-lrc, which supports ParamTimestamp and returns LRC-style
-// SyncedLyrics when --timestamp is set.
+// TestRun_InvalidTimestampValueExitsTwo: any comma-separated value other
+// than line/none is rejected at parse time with a usage error.
+func TestRun_InvalidTimestampValueExitsTwo(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-lrc", "--timestamp", "karaoke", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitUsage {
+		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitUsage, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), `invalid timestamp value "karaoke"`) {
+		t.Fatalf("stderr missing invalid-timestamp message: %q", stderr.String())
+	}
+}
+
+// TestRun_TimestampWritesSyncedLyrics drives the synced output path via
+// mock-lrc, which supports ParamTimestamp and returns LRC-style
+// SyncedLyrics when --timestamp line is set.
 func TestRun_TimestampWritesSyncedLyrics(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"--source", "mock-lrc", "--timestamp", "line", "TEST_SONG"}, &stdout, &stderr)
@@ -269,20 +399,152 @@ func TestRun_TimestampWritesSyncedLyrics(t *testing.T) {
 	}
 }
 
-// TestRun_TimestampSupportedButNoSyncedLyricsFallsBackToPlain drives the
-// "source honors --timestamp but had no synced lyrics" branch via
-// mock-nosync, which advertises ParamTimestamp yet always returns empty
-// SyncedLyrics: output falls back to plain text with a stderr warning.
-func TestRun_TimestampSupportedButNoSyncedLyricsFallsBackToPlain(t *testing.T) {
+// TestRun_TimestampLineNoSyncedExitsFour drives the "synced requested,
+// source returned only plain, no plain iteration to fall back on" path
+// via mock-nosync: exit 4 with the downgrade warning and no-result error.
+func TestRun_TimestampLineNoSyncedExitsFour(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"--source", "mock-nosync", "--timestamp", "line", "TEST_SONG"}, &stdout, &stderr)
-	if code != exitOK {
-		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
+	if code != exitFetchFailed {
+		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitFetchFailed, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "TEST_SONG") {
-		t.Fatalf("stdout missing plain lyrics: %q", stdout.String())
+	if stdout.String() != "" {
+		t.Fatalf("stdout should be empty on failure: %q", stdout.String())
 	}
 	if !strings.Contains(stderr.String(), "returned no timestamped lyrics") {
 		t.Fatalf("stderr missing fallback warning: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "error[no-result]") {
+		t.Fatalf("stderr missing no-result error: %q", stderr.String())
+	}
+}
+
+// TestRun_TimestampNoneBeforeLinePrefersPlain proves the user-given
+// timestamp order is the priority: "none,line" returns plain lyrics
+// from the first iteration, no warning, exit 0.
+func TestRun_TimestampNoneBeforeLinePrefersPlain(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-lrc", "--timestamp", "none,line", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "[00:00.00]") {
+		t.Fatalf("stdout should carry plain lyrics, got %q", stdout.String())
+	}
+	if stderr.String() != "" {
+		t.Fatalf("stderr not empty: %q", stderr.String())
+	}
+}
+
+func TestRun_OutputFileNotTruncatedOnFetchFailure(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "out.txt")
+	const original = "keep me\n"
+	if err := os.WriteFile(path, []byte(original), 0644); err != nil {
+		t.Fatalf("write seed file: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "nope", "--output", path, "TEST_SONG"}, &stdout, &stderr)
+	if code != exitUnknownSrc {
+		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitUnknownSrc, stderr.String())
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if string(got) != original {
+		t.Fatalf("file content = %q; want %q", string(got), original)
+	}
+}
+
+func TestRun_OutputFileTruncatedOnlyOnSuccess(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "out.txt")
+	if err := os.WriteFile(path, []byte("this is old content longer than new"), 0644); err != nil {
+		t.Fatalf("write seed file: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-success", "--author", "TEST_AUTHOR", "--output", path, "TEST_SONG"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
+	}
+	want := "[mock-success] lyrics for: TEST_SONG\n"
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if string(got) != want {
+		t.Fatalf("file content = %q; want %q", string(got), want)
+	}
+}
+
+func TestRun_TimestampValueIsTrimmed(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-lrc", "--timestamp", " line", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "[00:00.00]") {
+		t.Fatalf("stdout missing timestamped lyrics: %q", stdout.String())
+	}
+}
+
+func TestRun_TimestampOnlyEmptyEntriesExitsFour(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-lrc", "--timestamp", ",", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitFetchFailed {
+		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitFetchFailed, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "error[no-result]") {
+		t.Fatalf("stderr missing no-result error: %q", stderr.String())
+	}
+}
+
+func TestRun_SourceEmptyEntriesFiltered(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-lrc,", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "[00:00.00]") {
+		t.Fatalf("stdout missing lyrics: %q", stdout.String())
+	}
+}
+
+func TestRun_DuplicateSourceExitsTwo(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-lrc,mock-lrc", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitUsage {
+		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitUsage, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), `source "mock-lrc" is listed more than once`) {
+		t.Fatalf("stderr missing duplicate message: %q", stderr.String())
+	}
+}
+
+func TestRun_LenientDuplicateSourceSkipped(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--lenient", "--source", "mock-lrc,mock-lrc", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), `warning[precheck]: source "mock-lrc" skipped: duplicate`) {
+		t.Fatalf("stderr missing duplicate warning: %q", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "[00:00.00]") {
+		t.Fatalf("stdout missing lyrics: %q", stdout.String())
+	}
+}
+
+func TestRun_WhitespaceAuthorNotTreatedAsProvided(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-nosupport", "--author", " ", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
+	}
+	if strings.Contains(stderr.String(), "does not support --author") {
+		t.Fatalf("stderr should not report whitespace author as unsupported: %q", stderr.String())
 	}
 }

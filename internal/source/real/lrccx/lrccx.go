@@ -78,6 +78,8 @@ func (a *Adapter) SupportedParams() source.Param {
 	return source.ParamAuthor | source.ParamAlbum | source.ParamTimestamp
 }
 
+func (a *Adapter) RequiredParams() source.Param { return 0 }
+
 // Fetch queries lrc.cx /jsonapi, picks the best-ranked hit with usable
 // lyrics, and populates plain/synced tracks from the LRC text.
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {

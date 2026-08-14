@@ -16,6 +16,8 @@ func (a *Adapter) Name() string { return "mock-nosync" }
 
 func (a *Adapter) SupportedParams() source.Param { return source.ParamTimestamp }
 
+func (a *Adapter) RequiredParams() source.Param { return 0 }
+
 // Fetch honors --timestamp in principle but never returns SyncedLyrics,
 // exercising the CLI's plain-output fallback warning.
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
