@@ -75,7 +75,8 @@ Build and run with the Go toolchain:
   - `--author` (`-a`) — author/artist filter.
   - `--album` (`-A`) — album filter.
   - `--iswc` (`-i`) — ISWC identifier.
-  - `--output` (`-o`) — write lyrics to this file; if omitted, print to stdout.
+  - `--output` (`-o`) — write lyrics to this file; if omitted, print to stdout. **Refuses to overwrite an existing file** (exit 7) unless `--overwrite` is given.
+  - `--overwrite` (`-O`) — allow `--output` to replace an existing file.
   - `--timestamp` (`-t`) — comma-separated timestamp formats. Defaults to `line,none` (`line` enables LRC lyrics, `none` disables). The user-given order is the priority: `line,none` prefers synced, `none,line` prefers plain; the first match wins. Each value must be `line` or `none` — anything else is a usage error (exit 2). Entries are trimmed and empty ones dropped (`--timestamp ","` yields an empty format list → no match → exit 4).
   - `--lenient` (`-l`) — precheck mode switch: instead of failing fast on the first invalid source (unknown name / missing required parameter), skip it with a `warning[precheck]` and keep trying the remaining sources.
   - `--help` (`-h`) — print help information and exit with code 0. The help text includes the sorted list of registered sources.
@@ -93,6 +94,7 @@ Build and run with the Go toolchain:
 | 4 | No valid result: every source skipped (lenient) or failed, or no result matched the requested timestamp formats |
 | 5 | Output failure (file open, truncate, write, or close) |
 | 6 | Source-required parameter missing in strict precheck (e.g. `--author` not supplied to `mock-require` or `lyricsovh`) |
+| 7 | `--output` file already exists and `--overwrite` was not given |
 
 Warnings are emitted to **stderr** alongside the successful stdout output — they do not change the exit code. On the exit-4 path, the in-flight warnings are printed first so the user sees why each source failed.
 
@@ -107,7 +109,8 @@ Thin CLI layer over a pluggable lyrics-source abstraction, with explicit registr
 5. **Two-level fetch loop** — outer loop over `params.Timestamp` (user-given order = priority), inner loop over the eligible sources. For each `(source, format)` pair, a per-call `[]fetch.Result` cache is scanned for `Source == name && Synced == current flag`; a hit returns immediately, otherwise the adapter is called. Adapter errors become `warning[fetch]` and the next source is tried. Results that do not match the current flag are appended to the cache (downgraded plain results are reusable by a later `none` iteration).
 6. **Synced vs plain resolution** — a result matches the `line` iteration when the adapter returned `SyncedLyrics` (so `fetch.Result.Synced == true`), else it is a plain result (`Synced == false`). A synced request that yields plain lyrics produces `warning[downgraded]` — the message (`source "..." returned no timestamped lyrics`) reports the source's capability gap, not what the final output uses — and the downgraded result still enters the cache and can satisfy a later `none` iteration.
 7. **Emit warnings to stderr** — every `Warning.Message` is pre-formatted by the fetch layer (including the `[kind]` tag); `main.go` prints them verbatim before the result.
-8. **Write lyrics (two-phase)** — `openOutput` opens the `--output` target with `O_WRONLY|O_CREATE` (no `O_TRUNC`) so a fetch failure (exit 3/4/6) leaves existing file content intact; only after a successful fetch is the `--output` file `Truncate(0)` + `Seek(0, 0)` (stdout — the fallback writer — is never truncated or seeked; guard on `parsed.output != ""`), then `io.WriteString` writes `fetch.Result.Lyrics`, and a non-nil `Close` error surfaces as exit 5.
+8. **Open output (refuse-or-create)** — `openOutput(path, overwrite, stdout)` runs before the fetch (fast fail on unwritable paths and on existing files). A missing target is created exclusively (`O_CREATE|O_EXCL`, no `O_TRUNC`) and reported via a `created` bool; an existing target is only opened when `--overwrite` is set (plain `O_WRONLY`, still no `O_TRUNC`), otherwise an `outputExistsError` maps to exit 7. `Run` has a named return value and a single deferred closer that, on any non-zero exit, removes the file **only if** `created` is true and the path still names the same inode as the open fd (`f.Stat` + `os.Lstat` + `os.SameFile`) — so a failed run never leaves a freshly created empty file behind and never deletes a pre-existing or replaced one.
+9. **Write lyrics (two-phase)** — only after a successful fetch is the `--output` file `Truncate(0)` + `Seek(0, 0)` (stdout — the fallback writer — is never truncated or seeked; guard on `parsed.output != ""`), then `io.WriteString` writes `fetch.Result.Lyrics`, and a non-nil `Close` error surfaces as exit 5 (via the defer). Because truncation is deferred, an existing file keeps its content intact on every failure path (exit 3/4/6/7), even with `--overwrite`.
 
 **Key types (in `internal/source/source.go`):**
 - `Param uint` — bitmask of `ParamAuthor | ParamAlbum | ParamISWC | ParamTimestamp`.
@@ -158,7 +161,7 @@ All mock/test-only source names must start with the `mock-` prefix (e.g. `mock-s
 
 **Coverage in `main_test.go` includes:**
 - Missing song → exit 2 with the required-song stderr message.
-- `--help` and `-h` → exit 0; stdout lists `mock-success`, `lrclib`, `lyricsovh`, and the `--lenient` flag.
+- `--help` and `-h` → exit 0; stdout lists `mock-success`, `lrclib`, `lyricsovh`, `lrccx`, and the `--lenient`/`--overwrite` flags.
 - `--version` and `-v` → exit 0; stdout contains the version string.
 - Default stdout sink and `--output` file sink paths.
 - `TestRun_RealFileStdout` regression: stdout as a real `*os.File` (an `os.Pipe` write end) must not be truncated or seeked — a prior fix truncated `os.Stdout` unconditionally and broke every stdout-mode run with `error[output]: truncate ...: invalid argument` (exit 5); `bytes.Buffer` writers masked it because the `*os.File` type assertion never matched.
@@ -181,7 +184,9 @@ All mock/test-only source names must start with the `mock-` prefix (e.g. `mock-s
 - `--source` / `--timestamp` entries are trimmed and empty ones dropped: `--source "mock-lrc,"` → exit 0; `--timestamp " line"` on `mock-lrc` → exit 0 with synced lyrics; `--timestamp ","` → exit 4 with `error[no-result]`.
 - Duplicate `--source` entry (e.g. `mock-lrc,mock-lrc`) → exit 2 with `error[usage]: source "mock-lrc" is listed more than once`; with `--lenient` the duplicate is skipped via `warning[precheck]` and the run succeeds.
 - Whitespace-only `--author` (e.g. `--author " "`) is treated as not provided: no unsupported-parameter warning on `mock-nosupport`.
-- `--output` file keeps its pre-existing content on a fetch failure (exit 3) and is replaced — truncated, no stale tail — only on success.
+- Existing `--output` file without `--overwrite` → exit 7 with `error[output]: file ... already exists (use --overwrite to replace it)`, file untouched, stderr hints at `--overwrite`.
+- `--overwrite` (`-O`) with an existing file → exit 0, file truncated and replaced (no stale tail) on success; on a fetch failure (exit 3/4/6) the original content is preserved — truncation still happens only after a successful fetch.
+- **Failed runs never create the `--output` file** (exit 3 / exit 4 via `mock-fail` / exit 6 via `mock-require`): `TestRun_FailedFetchDoesNotCreateOutputFile` asserts the path does not exist afterwards — regression for the "empty file left behind" defect.
 
 **CI Pipeline:**
 - The only workflow is `.github/workflows/simple_ci_cd.yml` ("Simple CI/CD"). It is **release-only**: it triggers on `v*` tag pushes; there is no CI on ordinary pushes to `main` or on pull requests.
@@ -191,7 +196,7 @@ All mock/test-only source names must start with the `mock-` prefix (e.g. `mock-s
 
 **Naming:**
 - Standard Go: `CamelCase` for exported, `camelCase` for unexported.
-- CLI flag names match the spec: `source`, `author`, `album`, `iswc`, `output`, `timestamp`, `help`, `version`.
+- CLI flag names match the spec: `source`, `author`, `album`, `iswc`, `output`, `overwrite`, `timestamp`, `help`, `version`.
 - Source adapter `Name()` returns a stable lowercase identifier (e.g. `"lrclib"`, `"lyricsovh"`).
 
 **Imports / Modules:**
@@ -249,7 +254,9 @@ All mock/test-only source names must start with the `mock-` prefix (e.g. `mock-s
 - Invalid `--timestamp` value produces exit code 2
 - Unsupported `--album`/`--iswc` produces a stderr warning for the relevant source
 - Omitted `--output` prints lyrics to stdout; provided `--output` writes the file
-- `--output` file content survives fetch failures (exit 3/4/6); it is truncated and replaced only on success
+- Existing `--output` file without `--overwrite` produces exit code 7 with `error[output]: file ... already exists`, leaving the file untouched
+- With `--overwrite`, an existing `--output` file keeps its content on fetch failures (exit 3/4/6) and is truncated and replaced only on success
+- A failed run (exit 3/4/6) leaves no freshly created `--output` file behind
 - Unwritable `--output` path produces exit code 5
 
 ## Pointers

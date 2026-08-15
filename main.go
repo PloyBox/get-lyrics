@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -29,9 +30,10 @@ import (
 //	3 → unknown source (strict precheck)
 //	4 → no valid result: every source skipped (lenient) or failed, or no
 //	     result matched the requested timestamp formats
-//	5 → output failure (file create or write)
+//	5 → output failure (file open, write, or close)
 //	6 → source-required parameter missing in strict precheck (e.g. the
 //	     caller did not supply --author to a source that requires it)
+//	7 → --output points to an existing file and --overwrite was not given
 const (
 	exitOK           = 0
 	exitUsage        = 2
@@ -39,6 +41,7 @@ const (
 	exitFetchFailed  = 4
 	exitOutputFailed = 5
 	exitRequired     = 6
+	exitFileExists   = 7
 )
 
 // version is stamped at release build time via
@@ -70,13 +73,22 @@ type parsedFlags struct {
 	output    string
 	timestamp string
 	lenient   bool
+	overwrite bool
 	help      bool
 	version   bool
 }
 
+// outputExistsError reports that --output points to an existing file
+// while --overwrite was not given. Run maps it to exit code 7.
+type outputExistsError struct{ path string }
+
+func (e outputExistsError) Error() string {
+	return fmt.Sprintf("file %q already exists (use --overwrite to replace it)", e.path)
+}
+
 // Run is the testable core: it takes argv (excluding the program name)
 // and explicit writers for stdout/stderr, returns the exit code.
-func Run(argv []string, stdout, stderr io.Writer) int {
+func Run(argv []string, stdout, stderr io.Writer) (code int) {
 	parsed, song, err := parseFlags(argv)
 	if err != nil {
 		fmt.Fprintln(stderr, "error[usage]:", err)
@@ -97,12 +109,41 @@ func Run(argv []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 
-	out, closer, err := openOutput(parsed.output, stdout)
+	out, closer, created, err := openOutput(parsed.output, parsed.overwrite, stdout)
 	if err != nil {
+		var existsErr outputExistsError
+		if errors.As(err, &existsErr) {
+			fmt.Fprintln(stderr, "error[output]:", err)
+			return exitFileExists
+		}
 		fmt.Fprintln(stderr, "error[output]:", err)
 		return exitOutputFailed
 	}
-	defer func() { _ = closer() }()
+	defer func() {
+		// Only files this process created via O_EXCL are ever removed;
+		// before removing, compare the path's current inode with the
+		// open fd so a file that replaced ours is never deleted.
+		same := false
+		if created {
+			if f, ok := out.(*os.File); ok {
+				fi1, e1 := f.Stat()
+				fi2, e2 := os.Lstat(parsed.output)
+				same = e1 == nil && e2 == nil && os.SameFile(fi1, fi2)
+			}
+		}
+		cerr := closer()
+		if code == exitOK && cerr != nil {
+			fmt.Fprintln(stderr, "error[output]:", cerr)
+			code = exitOutputFailed
+		}
+		// A failed run must not leave a freshly created empty file
+		// behind; pre-existing files are never touched here.
+		if code != exitOK && created && same {
+			if rerr := os.Remove(parsed.output); rerr != nil && !errors.Is(rerr, fs.ErrNotExist) {
+				fmt.Fprintf(stderr, "warning[cleanup]: remove %q: %v\n", parsed.output, rerr)
+			}
+		}
+	}()
 
 	svc := fetch.New(registry)
 	params := parsedFlagsToParams(parsed, song)
@@ -156,10 +197,6 @@ func Run(argv []string, stdout, stderr io.Writer) int {
 	}
 	if _, werr := io.WriteString(out, res.Lyrics); werr != nil {
 		fmt.Fprintln(stderr, "error[output]:", werr)
-		return exitOutputFailed
-	}
-	if err := closer(); err != nil {
-		fmt.Fprintln(stderr, "error[output]:", err)
 		return exitOutputFailed
 	}
 	return exitOK
@@ -227,7 +264,8 @@ func printUsage(w io.Writer, reg *source.Registry) {
 	fmt.Fprintln(&b, "  --author <name>,  -a <name>  Author / artist filter")
 	fmt.Fprintln(&b, "  --album <name>,   -A <name>  Album filter")
 	fmt.Fprintln(&b, "  --iswc <code>,    -i <code>  ISWC identifier")
-	fmt.Fprintln(&b, "  --output <file>,  -o <file>  Write lyrics to file (default: stdout)")
+	fmt.Fprintln(&b, "  --output <file>,  -o <file>  Write lyrics to file (default: stdout; refuses to overwrite an existing file)")
+	fmt.Fprintln(&b, "  --overwrite, -O               Overwrite an existing --output file")
 	fmt.Fprintln(&b, "  --timestamp <fmts>, -t <fmts> Timestamp formats (default: line,none)")
 	fmt.Fprintln(&b, "  --lenient, -l               Skip invalid sources instead of failing")
 	fmt.Fprintln(&b, "  --help, -h                   Show this help and exit")
@@ -246,19 +284,45 @@ func printUsage(w io.Writer, reg *source.Registry) {
 }
 
 // openOutput returns the lyrics sink: stdout when path is empty, an
-// os.File when path is set. The file is opened for writing without
-// O_TRUNC so a fetch failure leaves existing content intact; the caller
-// truncates it only after a successful fetch. The caller must invoke the
-// closer.
-func openOutput(path string, fallback io.Writer) (io.Writer, func() error, error) {
+// os.File when path is set. A new file is created exclusively
+// (O_CREATE|O_EXCL) and reported via created so the caller can remove
+// it on failure. An existing file is only opened when overwrite is set,
+// and never with O_TRUNC — truncation happens only after a successful
+// fetch, so a failed run leaves existing content intact. The caller
+// must invoke the closer.
+func openOutput(path string, overwrite bool, fallback io.Writer) (io.Writer, func() error, bool, error) {
 	if path == "" {
-		return fallback, func() error { return nil }, nil
+		return fallback, func() error { return nil }, false, nil
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0644)
-	if err != nil {
-		return nil, func() error { return nil }, err
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+		// WARNING: O_EXCL is not completely safe; file races cannot be
+		// fully eliminated.
+		if err == nil {
+			// Created by this process: on failure the caller removes it.
+			return f, f.Close, true, nil
+		}
+		if !os.IsExist(err) {
+			return nil, func() error { return nil }, false, err
+		}
+		if !overwrite {
+			return nil, func() error { return nil }, false, outputExistsError{path}
+		}
+		// The file exists; reopen it without O_CREATE and without
+		// O_TRUNC (the caller truncates only after a successful fetch).
+		f, err = os.OpenFile(path, os.O_WRONLY, 0)
+		if err == nil {
+			return f, f.Close, false, nil
+		}
+		lastErr = err
+		if !os.IsNotExist(err) {
+			return nil, func() error { return nil }, false, err
+		}
+		// The file vanished between the two opens; retry the exclusive
+		// create.
 	}
-	return f, f.Close, nil
+	return nil, func() error { return nil }, false, lastErr
 }
 
 // parseFlags handles both -x/--x and POSIX-mixed positional/flag order,
@@ -283,6 +347,8 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	fs.StringVar(&f.timestamp, "t", "line,none", "request timestamped lyrics (short)")
 	fs.BoolVar(&f.lenient, "lenient", false, "skip invalid sources instead of failing")
 	fs.BoolVar(&f.lenient, "l", false, "skip invalid sources instead of failing (short)")
+	fs.BoolVar(&f.overwrite, "overwrite", false, "overwrite an existing output file")
+	fs.BoolVar(&f.overwrite, "O", false, "overwrite an existing output file (short)")
 	fs.BoolVar(&f.help, "help", false, "show help")
 	fs.BoolVar(&f.help, "h", false, "show help (short)")
 	fs.BoolVar(&f.version, "version", false, "print version and exit")

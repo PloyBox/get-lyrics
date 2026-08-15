@@ -51,7 +51,11 @@ get-lyrics --lenient --source lyricsovh,lrclib "Bohemian Rhapsody"
 **Output to file:**
 
 ```sh
+# Write to a new file (refuses to overwrite an existing one)
 get-lyrics --author "Queen" --output lyrics.txt "Bohemian Rhapsody"
+
+# Explicitly overwrite an existing file
+get-lyrics --author "Queen" --output lyrics.txt --overwrite "Bohemian Rhapsody"
 ```
 
 **Timestamped (LRC) lyrics:**
@@ -74,7 +78,8 @@ get-lyrics --help
 | `--author` | `-a` | Artist / author filter |
 | `--album` | `-A` | Album filter |
 | `--iswc` | `-i` | ISWC identifier |
-| `--output` | `-o` | Write lyrics to file (default: stdout) |
+| `--output` | `-o` | Write lyrics to file (default: stdout; refuses to overwrite an existing file) |
+| `--overwrite` | `-O` | Overwrite an existing `--output` file |
 | `--timestamp` | `-t` | Comma-separated timestamp formats (default: `line,none`; `line` enables LRC). User-given order is the priority |
 | `--lenient` | `-l` | Skip invalid sources instead of failing fast (precheck only) |
 | `--help` | `-h` | Show help and exit |
@@ -92,6 +97,7 @@ Both `--flag` and `-flag` forms are accepted.
 | 4 | No valid result (all sources failed/skipped, or nothing matched the requested timestamp format) |
 | 5 | Output failure (can't create/write file) |
 | 6 | Source requires a parameter (e.g. `--author` missing for `lyricsovh`) |
+| 7 | `--output` file already exists and `--overwrite` was not given |
 
 ## Built-in Sources
 
