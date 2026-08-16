@@ -141,11 +141,22 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		Artist: firstNonEmpty(hit.ArtistName, req.Author),
 		Album:  hit.AlbumName,
 		Lyrics: hit.PlainLyrics,
+		Filled: source.FieldTitle, // Title always falls back to req.Song
+	}
+	if strings.TrimSpace(res.Artist) != "" {
+		res.Filled |= source.FieldArtist
+	}
+	if strings.TrimSpace(res.Album) != "" {
+		res.Filled |= source.FieldAlbum
+	}
+	if strings.TrimSpace(res.Lyrics) != "" {
+		res.Filled |= source.FieldLyrics
 	}
 	if req.Timestamp && strings.TrimSpace(hit.SyncedLyrics) != "" {
 		res.SyncedLyrics = hit.SyncedLyrics
+		res.Filled |= source.FieldSyncedLyrics
 	}
-	if res.Lyrics == "" && res.SyncedLyrics == "" {
+	if res.Filled&(source.FieldLyrics|source.FieldSyncedLyrics) == 0 {
 		return source.Result{}, fmt.Errorf("lrclib: no usable lyrics for %q", req.Song)
 	}
 	return res, nil

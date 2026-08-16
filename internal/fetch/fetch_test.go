@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/PloyBox/get-lyrics/internal/source"
@@ -61,7 +62,11 @@ func TestFetch_AllParamsUnsupportedEmitsThreeWarnings(t *testing.T) {
 		name: "stub",
 		caps: source.Capabilities{},
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
-			return source.Result{Lyrics: "L", Title: r.Song}, nil
+			return source.Result{
+				Lyrics: "L",
+				Title:  r.Song,
+				Filled: source.FieldLyrics | source.FieldTitle,
+			}, nil
 		},
 	}
 	r := newRegistry(t, stub)
@@ -95,9 +100,14 @@ func TestFetch_AllParamsSupportedEmitsNoWarnings(t *testing.T) {
 		name: "full",
 		caps: source.Capabilities{Filters: source.ParamAuthor | source.ParamAlbum | source.ParamISWC},
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
-			res := source.Result{Lyrics: "x", Title: r.Song}
+			res := source.Result{
+				Lyrics: "x",
+				Title:  r.Song,
+				Filled: source.FieldLyrics | source.FieldTitle,
+			}
 			if r.Timestamp {
 				res.SyncedLyrics = "[00:00.00] x"
+				res.Filled |= source.FieldSyncedLyrics
 			}
 			return res, nil
 		},
@@ -126,7 +136,7 @@ func TestFetch_AggregateSourceSubSource(t *testing.T) {
 		name: "agg",
 		caps: source.Capabilities{Filters: source.ParamAuthor},
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
-			return source.Result{Lyrics: "x", Source: "sub"}, nil
+			return source.Result{Lyrics: "x", Source: "sub", Filled: source.FieldLyrics}, nil
 		},
 	}
 	r := newRegistry(t, agg)
@@ -153,7 +163,11 @@ func TestFetch_SyncedRequestOnPlainOnlySourceDowngrades(t *testing.T) {
 		name: "stub",
 		caps: source.Capabilities{},
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
-			return source.Result{Lyrics: "x", Title: r.Song}, nil
+			return source.Result{
+				Lyrics: "x",
+				Title:  r.Song,
+				Filled: source.FieldLyrics | source.FieldTitle,
+			}, nil
 		},
 	}
 	r := newRegistry(t, stub)
@@ -181,7 +195,11 @@ func TestFetch_DefaultLineNoneReusesDowngradedResult(t *testing.T) {
 		name: "stub",
 		caps: source.Capabilities{},
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
-			return source.Result{Lyrics: "plain", Title: r.Song}, nil
+			return source.Result{
+				Lyrics: "plain",
+				Title:  r.Song,
+				Filled: source.FieldLyrics | source.FieldTitle,
+			}, nil
 		},
 	}
 	r := newRegistry(t, stub)
@@ -215,7 +233,11 @@ func TestFetch_AdapterErrorFailsOverToNextSource(t *testing.T) {
 	ok := &fakeSrc{
 		name: "ok",
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
-			return source.Result{Lyrics: "L", Title: r.Song}, nil
+			return source.Result{
+				Lyrics: "L",
+				Title:  r.Song,
+				Filled: source.FieldLyrics | source.FieldTitle,
+			}, nil
 		},
 	}
 	r := newRegistry(t, bad, ok)
@@ -319,7 +341,11 @@ func TestFetch_LenientSkipsProblemSources(t *testing.T) {
 	nosup := &fakeSrc{
 		name: "nosup",
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
-			return source.Result{Lyrics: "N", Title: r.Song}, nil
+			return source.Result{
+				Lyrics: "N",
+				Title:  r.Song,
+				Filled: source.FieldLyrics | source.FieldTitle,
+			}, nil
 		},
 	}
 	r := newRegistry(t, req, nosup)
@@ -377,9 +403,14 @@ func TestFetch_TimestampOrderDeterminesPriority(t *testing.T) {
 		name: "lrc",
 		caps: source.Capabilities{},
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
-			res := source.Result{Lyrics: "plain", Title: r.Song}
+			res := source.Result{
+				Lyrics: "plain",
+				Title:  r.Song,
+				Filled: source.FieldLyrics | source.FieldTitle,
+			}
 			if r.Timestamp {
 				res.SyncedLyrics = "[00:00.00] synced"
+				res.Filled |= source.FieldSyncedLyrics
 			}
 			return res, nil
 		},
@@ -407,9 +438,14 @@ func TestFetch_SyncedSourceMatchesLineIteration(t *testing.T) {
 		name: "lrc",
 		caps: source.Capabilities{},
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
-			res := source.Result{Lyrics: "plain", Title: r.Song}
+			res := source.Result{
+				Lyrics: "plain",
+				Title:  r.Song,
+				Filled: source.FieldLyrics | source.FieldTitle,
+			}
 			if r.Timestamp {
 				res.SyncedLyrics = "[00:00.00] synced"
+				res.Filled |= source.FieldSyncedLyrics
 			}
 			return res, nil
 		},
@@ -484,7 +520,11 @@ func TestFetch_DuplicateSourceLenientDedupes(t *testing.T) {
 	src := &fakeSrc{
 		name: "a",
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
-			return source.Result{Lyrics: "L", Title: r.Song}, nil
+			return source.Result{
+				Lyrics: "L",
+				Title:  r.Song,
+				Filled: source.FieldLyrics | source.FieldTitle,
+			}, nil
 		},
 	}
 	r := newRegistry(t, src)
@@ -560,7 +600,11 @@ func TestFetch_ConditionalAlbumWarnsWithoutAuthor(t *testing.T) {
 			return c
 		},
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
-			return source.Result{Lyrics: "L", Title: r.Song}, nil
+			return source.Result{
+				Lyrics: "L",
+				Title:  r.Song,
+				Filled: source.FieldLyrics | source.FieldTitle,
+			}, nil
 		},
 	}
 	r := newRegistry(t, cond)
@@ -580,5 +624,106 @@ func TestFetch_ConditionalAlbumWarnsWithoutAuthor(t *testing.T) {
 	}
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %+v; want none when author is present", warnings)
+	}
+}
+
+// TestFetch_SyncedOnlyResultFillsLyrics drives the lrclib synced-only
+// hit: the adapter declares FieldSyncedLyrics (and no FieldLyrics), and
+// the synced track becomes the fetch result's Lyrics.
+func TestFetch_SyncedOnlyResultFillsLyrics(t *testing.T) {
+	syncedOnly := &fakeSrc{
+		name: "synced-only",
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			return source.Result{
+				SyncedLyrics: "[00:00.00] synced line",
+				Title:        r.Song,
+				Filled:       source.FieldSyncedLyrics | source.FieldTitle,
+			}, nil
+		},
+	}
+	r := newRegistry(t, syncedOnly)
+	svc := New(r)
+
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"line"}, Source: []string{"synced-only"}})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !res.Synced || res.Lyrics != "[00:00.00] synced line" {
+		t.Fatalf("res = %+v; want synced lyrics from the declared synced track", res)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %+v; want none for a consistent result", warnings)
+	}
+}
+
+// TestFetch_ResultUsesOnlyDeclaredFields locks the mask semantics: the
+// fetch layer must not read fields the adapter did not declare, and
+// every undeclared-but-filled field produces a ResultMismatch warning
+// (the result is still used as-is — trust policy).
+func TestFetch_ResultUsesOnlyDeclaredFields(t *testing.T) {
+	sloppy := &fakeSrc{
+		name: "sloppy",
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			return source.Result{
+				Lyrics:       "L",
+				SyncedLyrics: "[00:00.00] ghost synced",
+				Title:        r.Song,
+				Artist:       "ghost artist",
+				Album:        "ghost album",
+				Filled:       source.FieldLyrics | source.FieldTitle,
+			}, nil
+		},
+	}
+	r := newRegistry(t, sloppy)
+	svc := New(r)
+
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"none"}, Source: []string{"sloppy"}})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.Lyrics != "L" || res.Title != "S" || res.Synced {
+		t.Fatalf("res = %+v; want only declared lyrics/title", res)
+	}
+	if res.Artist != "" || res.Album != "" {
+		t.Fatalf("res = %+v; undeclared fields must not be read", res)
+	}
+	if len(warnings) != 3 {
+		t.Fatalf("warnings = %+v; want 3 ResultMismatch warnings", warnings)
+	}
+	for _, w := range warnings {
+		if w.Kind != ResultMismatch {
+			t.Fatalf("warning %+v; want Kind ResultMismatch", w)
+		}
+	}
+}
+
+// TestFetch_DeclaredButEmptyFieldWarns proves a declared bit with an
+// empty value is flagged as a source implementation problem while the
+// rest of the result is still used as-is (trust policy).
+func TestFetch_DeclaredButEmptyFieldWarns(t *testing.T) {
+	empty := &fakeSrc{
+		name: "empty",
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			return source.Result{
+				Title:  r.Song,
+				Filled: source.FieldLyrics | source.FieldTitle,
+			}, nil
+		},
+	}
+	r := newRegistry(t, empty)
+	svc := New(r)
+
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"none"}, Source: []string{"empty"}})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.Title != "S" {
+		t.Fatalf("res = %+v; want title preserved despite the mismatch", res)
+	}
+	if len(warnings) != 1 || warnings[0].Kind != ResultMismatch {
+		t.Fatalf("warnings = %+v; want one ResultMismatch warning", warnings)
+	}
+	if !strings.Contains(warnings[0].Message, `declares field "Lyrics" but left it empty`) {
+		t.Fatalf("warning message = %q; want declared-but-empty note", warnings[0].Message)
 	}
 }

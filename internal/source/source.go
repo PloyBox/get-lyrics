@@ -53,20 +53,49 @@ type Request struct {
 	Timestamp bool // whether to request timestamped lyrics (from --timestamp)
 }
 
+// ResultField identifies one result field a Source may populate. A
+// Source declares which fields it actually filled by setting the
+// corresponding bits on Result.Filled; the fetch layer treats unset
+// fields as empty and never infers population from string contents.
+// Implemented as a bitmask so a set of filled fields is a single uint.
+type ResultField uint
+
+const (
+	// FieldLyrics marks Result.Lyrics as populated (plain text).
+	FieldLyrics ResultField = 1 << iota
+	// FieldSyncedLyrics marks Result.SyncedLyrics as populated (LRC text).
+	FieldSyncedLyrics
+	// FieldTitle marks Result.Title as populated.
+	FieldTitle
+	// FieldArtist marks Result.Artist as populated.
+	FieldArtist
+	// FieldAlbum marks Result.Album as populated.
+	FieldAlbum
+	// FieldISWC marks Result.ISWC as populated.
+	FieldISWC
+)
+
 // Result carries the fetched lyrics together with the metadata that
-// identifies the matched song. Lyrics is populated whenever plain lyrics
-// are available; a synced-only source may leave it empty, in which case
-// the fetch layer selects SyncedLyrics as the output. SyncedLyrics is
-// only populated when the request asked for timestamps and the source
-// had synced lyrics to offer.
+// identifies the matched song. Filled declares which fields below are
+// populated: fields without their bit set must be treated as empty,
+// regardless of their string contents. A source may set both FieldLyrics
+// and FieldSyncedLyrics at once (both tracks filled); the fetch layer
+// picks the one matching the requested output format.
 type Result struct {
-	// Lyrics is the plain-text track, free of timestamps and safe to cat
-	// directly. It is empty only for synced-only hits; the fetch layer
-	// then uses SyncedLyrics as the final output. SyncedLyrics is the
-	// LRC-style ([mm:ss.xx] lines) track, populated only when
-	// Request.Timestamp is true and the source had synced lyrics.
-	Lyrics       string // normalized plain text; may be empty for synced-only hits
-	SyncedLyrics string // LRC-style timestamped lyrics; empty when unavailable
+	// Filled declares which of the fields below the source actually
+	// populated. It is the single source of truth for the fetch layer:
+	// unset fields are not read, and a set bit with an empty value is a
+	// source implementation problem.
+	Filled ResultField
+	// Lyrics is the plain-text track, free of timestamps and safe to
+	// cat directly. Populated (FieldLyrics) for plain output; a
+	// synced-only hit may leave it unfilled, in which case the fetch
+	// layer selects SyncedLyrics as the output.
+	Lyrics string
+	// SyncedLyrics is the LRC-style ([mm:ss.xx] lines) track.
+	// Populated (FieldSyncedLyrics) only when Request.Timestamp is true
+	// and the source had synced lyrics.
+	SyncedLyrics string
 	Title        string
 	Artist       string
 	Album        string
@@ -74,7 +103,9 @@ type Result struct {
 	// Source is reserved for aggregate sources: it identifies the
 	// sub-source that produced this result. Standalone adapters leave
 	// it empty — the fetch layer backfills it into Result.SubSource
-	// and keeps Result.Source set to the adapter's Name().
+	// and keeps Result.Source set to the adapter's Name(). It is not
+	// part of the Filled mask: it is provenance metadata, not a
+	// fetched result field.
 	Source string
 }
 

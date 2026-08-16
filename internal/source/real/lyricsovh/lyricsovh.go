@@ -114,11 +114,16 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		return source.Result{}, fmt.Errorf("lyricsovh: no lyrics found for %q by %q", req.Song, req.Author)
 	}
 
-	return source.Result{
+	res := source.Result{
 		Lyrics: out.Lyrics,
 		Title:  req.Song,
 		Artist: req.Author,
-	}, nil
+		Filled: source.FieldLyrics | source.FieldTitle,
+	}
+	if strings.TrimSpace(res.Artist) != "" {
+		res.Filled |= source.FieldArtist
+	}
+	return res, nil
 }
 
 func (a *Adapter) endpoint() string {

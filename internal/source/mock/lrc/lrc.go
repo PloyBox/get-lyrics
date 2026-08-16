@@ -24,10 +24,12 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	res := source.Result{
 		Lyrics: "[mock-lrc] lyrics for: " + req.Song + "\n",
 		Title:  req.Song,
+		Filled: source.FieldLyrics | source.FieldTitle,
 	}
 	if req.Timestamp {
 		res.SyncedLyrics = "[00:00.00] [mock-lrc] first line for: " + req.Song + "\n" +
 			"[00:05.00] [mock-lrc] second line for: " + req.Song + "\n"
+		res.Filled |= source.FieldSyncedLyrics
 	}
 	return res, nil
 }

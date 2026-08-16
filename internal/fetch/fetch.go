@@ -29,6 +29,11 @@ const (
 	// FetchFailed: the adapter returned an error; fetch moved on to the
 	// next source.
 	FetchFailed
+	// ResultMismatch: the adapter's Filled mask disagrees with the
+	// actual field contents (a declared field left empty, or a filled
+	// field not declared). The result is still used as-is (trust
+	// policy); the warning flags a source implementation problem.
+	ResultMismatch
 )
 
 // Warning describes one issue observed while resolving lyrics. The CLI
@@ -176,6 +181,8 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 				})
 				continue
 			}
+
+			warnings = append(warnings, detectResultMismatch(name, sr)...)
 
 			res := toResult(src.Name(), sr, wantSynced)
 			if wantSynced && !res.Synced {
@@ -331,27 +338,83 @@ func detectUnsupported(params Params, src source.Source) []Warning {
 	return out
 }
 
-// toResult converts an adapter result into a fetch.Result. When synced
-// output was requested and the adapter supplied SyncedLyrics, Lyrics
-// carries the timestamped track and Synced is true; otherwise Lyrics is
-// the plain track and Synced is false.
-func toResult(srcName string, sr source.Result, wantSynced bool) Result {
-	lyrics := sr.Lyrics
-	synced := false
-	if wantSynced && sr.SyncedLyrics != "" {
-		lyrics = sr.SyncedLyrics
-		synced = true
+// resultFieldSpecs lists every field tracked by the Filled mask, with
+// the accessor used both by toResult and by the mismatch detector.
+type resultFieldSpec struct {
+	bit   source.ResultField
+	name  string
+	value func(source.Result) string
+}
+
+var resultFieldSpecs = []resultFieldSpec{
+	{source.FieldLyrics, "Lyrics", func(r source.Result) string { return r.Lyrics }},
+	{source.FieldSyncedLyrics, "SyncedLyrics", func(r source.Result) string { return r.SyncedLyrics }},
+	{source.FieldTitle, "Title", func(r source.Result) string { return r.Title }},
+	{source.FieldArtist, "Artist", func(r source.Result) string { return r.Artist }},
+	{source.FieldAlbum, "Album", func(r source.Result) string { return r.Album }},
+	{source.FieldISWC, "ISWC", func(r source.Result) string { return r.ISWC }},
+}
+
+// detectResultMismatch compares sr.Filled against the actual field
+// contents and reports one warning per inconsistency: a declared bit
+// with an empty value, or a non-empty value without a declared bit.
+// Either way the result is still used as-is (trust policy) — the
+// warning only flags a source implementation problem.
+func detectResultMismatch(srcName string, sr source.Result) []Warning {
+	out := make([]Warning, 0, 2)
+	for _, spec := range resultFieldSpecs {
+		declared := sr.Filled&spec.bit != 0
+		empty := strings.TrimSpace(spec.value(sr)) == ""
+		if declared && empty {
+			out = append(out, Warning{
+				Kind:    ResultMismatch,
+				Source:  srcName,
+				Message: fmt.Sprintf(`warning[result]: source "%s" declares field %q but left it empty (source issue)`, srcName, spec.name),
+			})
+		} else if !declared && !empty {
+			out = append(out, Warning{
+				Kind:    ResultMismatch,
+				Source:  srcName,
+				Message: fmt.Sprintf(`warning[result]: source "%s" filled field %q without declaring it (source issue)`, srcName, spec.name),
+			})
+		}
 	}
-	return Result{
-		Lyrics:    lyrics,
-		Title:     sr.Title,
-		Artist:    sr.Artist,
-		Album:     sr.Album,
-		ISWC:      sr.ISWC,
+	return out
+}
+
+// toResult converts an adapter result into a fetch.Result. Field
+// population follows the adapter's Filled mask — never string contents:
+// a field whose bit is unset is treated as empty. When synced output
+// was requested and the adapter declared SyncedLyrics, Lyrics carries
+// the timestamped track and Synced is true; otherwise Lyrics carries
+// the declared plain track and Synced is false.
+func toResult(srcName string, sr source.Result, wantSynced bool) Result {
+	res := Result{
 		Source:    srcName,
 		SubSource: sr.Source,
-		Synced:    synced,
 	}
+	for _, spec := range resultFieldSpecs {
+		if sr.Filled&spec.bit != 0 {
+			switch spec.bit {
+			case source.FieldLyrics:
+				res.Lyrics = sr.Lyrics
+			case source.FieldSyncedLyrics:
+				if wantSynced {
+					res.Lyrics = sr.SyncedLyrics
+					res.Synced = true
+				}
+			case source.FieldTitle:
+				res.Title = sr.Title
+			case source.FieldArtist:
+				res.Artist = sr.Artist
+			case source.FieldAlbum:
+				res.Album = sr.Album
+			case source.FieldISWC:
+				res.ISWC = sr.ISWC
+			}
+		}
+	}
+	return res
 }
 
 // findCached returns the first cached result produced by name whose
