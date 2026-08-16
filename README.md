@@ -101,9 +101,13 @@ Both `--flag` and `-flag` forms are accepted.
 
 ## Built-in Sources
 
-- **`lrclib`** — Searches [lrclib.net](https://lrclib.net). Supports `--author`, `--album` and `--timestamp`. Uses `/api/get` when artist is given, `/api/search` otherwise.
-- **`lyricsovh`** — Uses [api.lyrics.ovh](https://api.lyrics.ovh). Requires `--author`. Plain text only.
-- **`lrccx`** — Searches [lrc.cx](https://lrc.cx) via its legacy `/jsonapi` endpoint. Supports `--author`, `--album` and `--timestamp`; the response is always LRC-flavoured text, stripped of timestamps for plain output.
+Legend: `Y` = supported, `N` = not supported, `F` = required (must be given).
+
+| Source | Author | Album | ISWC | Timestamp | Notes |
+|--------|--------|-------|------|-----------|-------|
+| `lrclib` | Y | Y | N | Y | Searches [lrclib.net](https://lrclib.net); uses `/api/get` when artist is given, `/api/search` otherwise |
+| `lyricsovh` | F | N | N | N | Uses [api.lyrics.ovh](https://api.lyrics.ovh); plain text only |
+| `lrccx` | Y | Y | N | Y | Searches [lrc.cx](https://lrc.cx) via its legacy `/jsonapi` endpoint; the response is always LRC-flavoured text, stripped of timestamps for plain output |
 
 ## Add New Source (Fork)
 
