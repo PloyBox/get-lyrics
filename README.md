@@ -114,12 +114,15 @@ Legend: `Y` = supported, `N` = not supported, `F` = required (must be given).
 | `lyricsovh` | F | N | N | N | Uses [api.lyrics.ovh](https://api.lyrics.ovh); plain text only |
 | `lrccx` | Y | Y | N | Y | Searches [lrc.cx](https://lrc.cx) via its legacy `/jsonapi` endpoint; the response is always LRC-flavoured text, stripped of timestamps for plain output |
 
-## Add New Source (Fork)
+## Add a New Source
 
-1. Create `internal/source/real/<name>/` implementing `source.Source`.
-2. Add an import and `r.Register(<name>.New())` to `internal/bootstrap/bootstrap.go`.
+Backends are pluggable via the `source.Source` interface. Use an existing adapter as a template, such as `internal/source/real/lrclib/` — it covers the full surface (filters, required params, plain + synced output):
 
-No changes needed in the CLI layer — `--help` automatically lists the new source.
+1. Create `internal/source/real/<name>/` implementing `source.Source` (`Name` / `Capabilities` / `Fetch`), modeled on the template.
+2. Modify it to fit your needs — endpoint, filters, required params, output behavior.
+3. Add an import and `r.Register(<name>.New())` in `internal/bootstrap/bootstrap.go`.
+
+`--help` automatically lists the new source.
 
 ## License
 
