@@ -1,5 +1,9 @@
 # get-lyrics
 
+Designed to be **Lightweight** x **Usable** x **Composable**.
+
+A binary under 10MB, an easy-to-use CLI, and clear, meaningful exit codes -- all at once.
+
 Fetch song lyrics from the command line. Supports multiple backend sources with a pluggable adapter system.
 
 ## Install
