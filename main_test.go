@@ -386,8 +386,8 @@ func TestRun_InvalidTimestampValueExitsTwo(t *testing.T) {
 }
 
 // TestRun_TimestampWritesSyncedLyrics drives the synced output path via
-// mock-lrc, which supports ParamTimestamp and returns LRC-style
-// SyncedLyrics when --timestamp line is set.
+// mock-lrc, which returns LRC-style SyncedLyrics when --timestamp line
+// is set.
 func TestRun_TimestampWritesSyncedLyrics(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"--source", "mock-lrc", "--timestamp", "line", "TEST_SONG"}, &stdout, &stderr)

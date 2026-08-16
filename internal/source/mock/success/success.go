@@ -14,9 +14,9 @@ func New() *Adapter { return &Adapter{} }
 
 func (a *Adapter) Name() string { return "mock-success" }
 
-func (a *Adapter) SupportedParams() source.Param { return source.ParamAuthor }
-
-func (a *Adapter) RequiredParams() source.Param { return source.ParamAuthor }
+func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
+	return source.Capabilities{Filters: source.ParamAuthor, Required: source.ParamAuthor}
+}
 
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	lyrics := "[mock-success] lyrics for: " + req.Song + "\n"

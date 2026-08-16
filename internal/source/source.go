@@ -13,16 +13,35 @@ import (
 	"sync"
 )
 
-// Param identifies one optional metadata field a Source may or may not honor.
-// Implemented as a bitmask so SupportedParams can be a single uint.
+// Param identifies one optional request field an adapter may use as a
+// filter when refining a lookup. Implemented as a bitmask so capability
+// sets can be a single uint. Output format (plain vs synced) is NOT
+// declared statically: it is a runtime property of the fetched lyrics,
+// detected by the fetch layer.
 type Param uint
 
 const (
 	ParamAuthor Param = 1 << iota
 	ParamAlbum
 	ParamISWC
-	ParamTimestamp // whether the source can return timestamped lyrics
 )
+
+// Capabilities describes how an adapter handles a specific request. The
+// query takes the actual Request so conditional support is expressible:
+// an adapter may honor a filter only when another field is present
+// (e.g. lrclib uses --album only when --author is given).
+type Capabilities struct {
+	// Filters lists the Request fields the adapter uses to refine the
+	// lookup for this request. Fields the user supplied but the adapter
+	// does not list produce unsupported-parameter warnings.
+	Filters Param
+
+	// Required lists the Request fields that must be non-empty for this
+	// request. The fetch layer enforces them during precheck by building
+	// a RequiredParamError for the first missing field; adapters must
+	// NOT raise that error themselves in Fetch.
+	Required Param
+}
 
 // Request is the input to a Source.Fetch call. Song is required;
 // Author/Album/ISWC are optional refinements and may be empty strings.
@@ -38,16 +57,16 @@ type Request struct {
 // identifies the matched song. Lyrics is populated whenever plain lyrics
 // are available; a synced-only source may leave it empty, in which case
 // the fetch layer selects SyncedLyrics as the output. SyncedLyrics is
-// only populated when the source supports ParamTimestamp and the request
-// asked for it.
+// only populated when the request asked for timestamps and the source
+// had synced lyrics to offer.
 type Result struct {
 	// Lyrics is the plain-text track, free of timestamps and safe to cat
 	// directly. It is empty only for synced-only hits; the fetch layer
 	// then uses SyncedLyrics as the final output. SyncedLyrics is the
-	// LRC-style ([mm:ss.xx] lines) track, populated only when the source
-	// supports ParamTimestamp and Request.Timestamp is true.
+	// LRC-style ([mm:ss.xx] lines) track, populated only when
+	// Request.Timestamp is true and the source had synced lyrics.
 	Lyrics       string // normalized plain text; may be empty for synced-only hits
-	SyncedLyrics string // LRC-style timestamped lyrics; empty when unsupported
+	SyncedLyrics string // LRC-style timestamped lyrics; empty when unavailable
 	Title        string
 	Artist       string
 	Album        string
@@ -65,16 +84,13 @@ type Source interface {
 	// Must be stable, lowercase, and unique across registered adapters.
 	Name() string
 
-	// SupportedParams declares which optional Request fields this adapter
-	// actually uses when refining a lookup. The CLI layer compares this
-	// against the user-supplied Request to produce per-field warnings.
-	SupportedParams() Param
-
-	// RequiredParams declares which optional Request fields this adapter
-	// *requires* to be non-empty. The fetch layer enforces this during
-	// precheck by building a RequiredParamError for the first missing
-	// field; adapters must NOT raise it themselves in Fetch.
-	RequiredParams() Param
+	// Capabilities reports how this adapter handles req: which filters
+	// it honors (Filters) and which it requires to be non-empty
+	// (Required). The request is passed so conditional support is
+	// expressible; most adapters return a constant. The fetch layer
+	// compares Filters against the user-supplied request to produce
+	// per-field warnings, and enforces Required during precheck.
+	Capabilities(req Request) Capabilities
 
 	// Fetch performs the lyrics lookup. It must respect ctx for
 	// cancellation/deadlines. A non-nil error means the lookup failed
@@ -92,8 +108,8 @@ var ErrDuplicate = errors.New("source: duplicate registration")
 
 // ErrRequiredParam is the sentinel returned when a source requires a
 // parameter the caller did not supply. The fetch layer constructs it
-// during precheck from Source.RequiredParams(); adapters must not raise
-// it themselves. Callers should test with errors.Is against this
+// during precheck from Capabilities(req).Required; adapters must not
+// raise it themselves. Callers should test with errors.Is against this
 // sentinel and use errors.As to recover the typed RequiredParamError.
 var ErrRequiredParam = errors.New("source: required parameter missing")
 

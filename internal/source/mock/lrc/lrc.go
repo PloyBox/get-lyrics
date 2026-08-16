@@ -14,9 +14,11 @@ func New() *Adapter { return &Adapter{} }
 
 func (a *Adapter) Name() string { return "mock-lrc" }
 
-func (a *Adapter) SupportedParams() source.Param { return source.ParamTimestamp }
-
-func (a *Adapter) RequiredParams() source.Param { return 0 }
+// Capabilities lists no filters: this mock's only concern is the synced
+// output path, which is a runtime property of the returned result.
+func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
+	return source.Capabilities{}
+}
 
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	res := source.Result{

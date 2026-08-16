@@ -253,10 +253,10 @@ func (s *Service) precheck(params Params, warnings *[]Warning) ([]string, error)
 }
 
 // checkRequired compares the non-empty optional fields in params against
-// src.RequiredParams() and reports the first missing bit. The returned
-// bool is true when a required parameter is absent.
+// the adapter's required capabilities and reports the first missing bit.
+// The returned bool is true when a required parameter is absent.
 func checkRequired(src source.Source, params Params) (source.Param, bool) {
-	req := src.RequiredParams()
+	req := src.Capabilities(requestFromParams(params)).Required
 	if req&source.ParamAuthor != 0 && strings.TrimSpace(params.Author) == "" {
 		return source.ParamAuthor, true
 	}
@@ -266,21 +266,19 @@ func checkRequired(src source.Source, params Params) (source.Param, bool) {
 	if req&source.ParamISWC != 0 && strings.TrimSpace(params.ISWC) == "" {
 		return source.ParamISWC, true
 	}
-	if req&source.ParamTimestamp != 0 && !wantsLine(params.Timestamp) {
-		return source.ParamTimestamp, true
-	}
 	return 0, false
 }
 
-// wantsLine reports whether the timestamp list requests synced ("line")
-// output.
-func wantsLine(ts []string) bool {
-	for _, v := range ts {
-		if v == "line" {
-			return true
-		}
+// requestFromParams projects the CLI params onto a source.Request for
+// capability queries. The timestamp flag is deliberately omitted:
+// synced output is a runtime property, not part of capability checks.
+func requestFromParams(params Params) source.Request {
+	return source.Request{
+		Song:   params.Song,
+		Author: params.Author,
+		Album:  params.Album,
+		ISWC:   params.ISWC,
 	}
-	return false
 }
 
 // flagForParam maps a Param bit to the CLI flag spelling used in
@@ -293,21 +291,20 @@ func flagForParam(p source.Param) string {
 		return "--album"
 	case source.ParamISWC:
 		return "--iswc"
-	case source.ParamTimestamp:
-		return "--timestamp"
 	}
 	return ""
 }
 
 // detectUnsupported compares the non-empty optional fields in params
-// against src.SupportedParams() and returns one UnsupportedParam warning
-// per mismatch. The timestamp format is deliberately excluded: a synced
-// request on a plain-only source is covered by the Downgraded warning.
+// against the adapter's filters for this request and returns one
+// UnsupportedParam warning per mismatch. The timestamp format is
+// deliberately excluded: a synced request on a plain-only source is
+// covered by the Downgraded warning.
 func detectUnsupported(params Params, src source.Source) []Warning {
-	supported := src.SupportedParams()
+	filters := src.Capabilities(requestFromParams(params)).Filters
 	out := make([]Warning, 0, 3)
 
-	if strings.TrimSpace(params.Author) != "" && supported&source.ParamAuthor == 0 {
+	if strings.TrimSpace(params.Author) != "" && filters&source.ParamAuthor == 0 {
 		out = append(out, Warning{
 			Kind:    UnsupportedParam,
 			Source:  src.Name(),
@@ -315,7 +312,7 @@ func detectUnsupported(params Params, src source.Source) []Warning {
 			Message: fmt.Sprintf(`warning[unsupported]: source "%s" does not support --author`, src.Name()),
 		})
 	}
-	if strings.TrimSpace(params.Album) != "" && supported&source.ParamAlbum == 0 {
+	if strings.TrimSpace(params.Album) != "" && filters&source.ParamAlbum == 0 {
 		out = append(out, Warning{
 			Kind:    UnsupportedParam,
 			Source:  src.Name(),
@@ -323,7 +320,7 @@ func detectUnsupported(params Params, src source.Source) []Warning {
 			Message: fmt.Sprintf(`warning[unsupported]: source "%s" does not support --album`, src.Name()),
 		})
 	}
-	if strings.TrimSpace(params.ISWC) != "" && supported&source.ParamISWC == 0 {
+	if strings.TrimSpace(params.ISWC) != "" && filters&source.ParamISWC == 0 {
 		out = append(out, Warning{
 			Kind:    UnsupportedParam,
 			Source:  src.Name(),

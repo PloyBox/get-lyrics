@@ -10,7 +10,7 @@
 //	                                    when Song + Author are set
 //
 // Both endpoints return a single track (or first hit) with plainLyrics
-// and syncedLyrics (LRC) fields. ParamTimestamp is honored when
+// and syncedLyrics (LRC) fields. Synced output is produced when
 // Request.Timestamp is true.
 package lrclib
 
@@ -53,14 +53,17 @@ func New() *Adapter { return &Adapter{} }
 // Name returns the stable CLI identifier.
 func (a *Adapter) Name() string { return "lrclib" }
 
-// SupportedParams declares which optional Request fields this adapter
-// uses: author and album filters (on the /api/get endpoint), plus
-// timestamped (LRC) output.
-func (a *Adapter) SupportedParams() source.Param {
-	return source.ParamAuthor | source.ParamAlbum | source.ParamTimestamp
+// Capabilities reports which filters are honored for req. The album
+// filter only takes effect on the /api/get path (author present); a
+// search-only request drops it, so the fetch layer can warn the user
+// that --album is being ignored.
+func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
+	c := source.Capabilities{Filters: source.ParamAuthor | source.ParamAlbum}
+	if strings.TrimSpace(req.Author) == "" {
+		c.Filters &^= source.ParamAlbum
+	}
+	return c
 }
-
-func (a *Adapter) RequiredParams() source.Param { return 0 }
 
 // Fetch calls lrclib /api/search, picks the best candidate, and
 // populates plain/synced lyrics accordingly.

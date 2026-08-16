@@ -14,9 +14,9 @@ func New() *Adapter { return &Adapter{} }
 
 func (a *Adapter) Name() string { return "mock-nosync" }
 
-func (a *Adapter) SupportedParams() source.Param { return source.ParamTimestamp }
-
-func (a *Adapter) RequiredParams() source.Param { return 0 }
+func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
+	return source.Capabilities{}
+}
 
 // Fetch honors --timestamp in principle but never returns SyncedLyrics,
 // exercising the CLI's plain-output fallback warning.

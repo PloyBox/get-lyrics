@@ -8,10 +8,9 @@
 //
 // which returns {"lyrics": "..."} on success, or 404 with
 // {"error": "No lyrics found"} when no match exists. Because the path
-// requires an artist, this adapter supports ParamAuthor and *requires*
-// it: a fetch without --author cannot form a valid request, so it
-// returns source.RequiredParamError (exit code 6), mirroring the
-// contract the stub adapter exercises offline.
+// requires an artist, this adapter requires --author: a fetch without
+// it cannot form a valid request, so the fetch layer enforces the
+// requirement during precheck (exit code 6).
 package lyricsovh
 
 import (
@@ -55,17 +54,11 @@ func New() *Adapter { return &Adapter{} }
 // Name returns the stable CLI identifier.
 func (a *Adapter) Name() string { return "lyricsovh" }
 
-// SupportedParams declares that the adapter uses the author filter to
-// build the artist segment of the request path.
-func (a *Adapter) SupportedParams() source.Param {
-	return source.ParamAuthor
-}
-
-// RequiredParams requires --author: the API has no title-only search,
+// Capabilities requires --author: the API has no title-only search,
 // so a fetch without an artist cannot form a valid request. The fetch
 // layer enforces this during precheck (exit code 6).
-func (a *Adapter) RequiredParams() source.Param {
-	return source.ParamAuthor
+func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
+	return source.Capabilities{Filters: source.ParamAuthor, Required: source.ParamAuthor}
 }
 
 // Fetch looks up lyrics via api.lyrics.ovh/v1/{artist}/{title}. The

@@ -64,15 +64,15 @@ Thin CLI layer over a pluggable-source abstraction:
 4. **Output** — opened before the fetch (`O_CREATE|O_EXCL` for new files, `O_WRONLY` without `O_TRUNC` otherwise); on any failure a freshly created file is removed (guarded by a same-inode check). Truncate+Seek happen only after a successful fetch, so existing files keep their content on every failure path (exit 3/4/6/7/8).
 5. **Warnings** — pre-formatted by the fetch layer with their `[kind]` tag and printed verbatim to stderr; they never change the exit code.
 
-**Key types (`internal/source/source.go`):** `Param` bitmask (`ParamAuthor | ParamAlbum | ParamISWC | ParamTimestamp`), `Request`, `Result` (its `Source` field is reserved for aggregate sub-source identification — standalone adapters leave it empty), `Source` interface (`Name`/`SupportedParams`/`RequiredParams`/`Fetch`), `Registry` (concurrency-safe name→source map), `RequiredParamError`. Adapters declare required params via `RequiredParams()`; the fetch layer enforces them — adapters must NOT raise the error themselves.
+**Key types (`internal/source/source.go`):** `Param` bitmask (`ParamAuthor | ParamAlbum | ParamISWC`), `Capabilities` (`Filters` + `Required`), `Request`, `Result` (its `Source` field is reserved for aggregate sub-source identification — standalone adapters leave it empty), `Source` interface (`Name`/`Capabilities`/`Fetch`), `Registry` (concurrency-safe name→source map), `RequiredParamError`. Adapters declare required params via `Capabilities(req).Required`; the fetch layer enforces them — adapters must NOT raise the error themselves. `Capabilities(req)` is request-aware so conditional support is expressible (lrclib drops `--album` when `--author` is absent).
 
 **Key types (`internal/fetch/fetch.go`):** `Params`, `Result` (`Source` = adapter name, `SubSource` = aggregate sub-source, `Synced` = lyrics contain LRC), `Warning` (kinds: `UnsupportedParam`/`Downgraded`/`PreCheck`/`FetchFailed`), `NoResultError` (exit 4), `UnknownSourceError` (exit 3), `DuplicateSourceError` (exit 8).
 
 ### Built-in sources
 
-- **`lrclib`** — `https://lrclib.net`; `/api/get` when `--author` is given, else `/api/search`. Supports Author|Album|Timestamp. 10s per-request timeout.
-- **`lyricsovh`** — `https://api.lyrics.ovh/v1/{artist}/{title}`. Supports Author and **requires** it. Surfaces the API's 404 as not-found. 10s timeout.
-- **`lrccx`** — `https://api.lrc.cx/jsonapi`. Supports Author|Album|Timestamp. Always LRC-flavoured text: plain lyrics strip `[mm:ss]`/marker tags; synced lyrics only when the text has timestamped lines. 10s timeout.
+- **`lrclib`** — `https://lrclib.net`; `/api/get` when `--author` is given, else `/api/search`. Filters: Author, Album — the album filter only takes effect with `--author` (otherwise it is dropped with an unsupported warning). Synced LRC output when requested. 10s per-request timeout.
+- **`lyricsovh`** — `https://api.lyrics.ovh/v1/{artist}/{title}`. Filter: Author, and **requires** it. Surfaces the API's 404 as not-found. 10s timeout.
+- **`lrccx`** — `https://api.lrc.cx/jsonapi`. Filters: Author, Album (independent of each other). Always LRC-flavoured text: plain lyrics strip `[mm:ss]`/marker tags; synced lyrics only when the text has timestamped lines. 10s timeout.
 
 Adding a built-in source: create `internal/source/real/<name>/`, then add an import and `r.Register(<name>.New())` in `internal/bootstrap/bootstrap.go`. No CLI-layer changes required.
 
@@ -97,7 +97,7 @@ Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (neve
 
 - **Verify with:** `go build ./...`, `go test -tags test ./...`, `go vet -tags test ./...`, `gofmt -l .` (all must be clean).
 - **Do NOT:** add a TUI/GUI; make the song title optional; write warnings to stdout; bypass the `source.Source` interface for new providers.
-- **Adapters must:** self-declare `SupportedParams()`; declare required params via `RequiredParams()` (not by raising errors inside `Fetch`); respect `ctx`; leave `source.Result.Source` empty (aggregate sub-source only); never panic on missing `Song`.
+- **Adapters must:** self-declare `Capabilities(req)` (filters honored + required params; request-aware so conditional support is expressible — most adapters return a constant); declare required params via `Capabilities(req).Required` (not by raising errors inside `Fetch`); respect `ctx`; leave `source.Result.Source` empty (aggregate sub-source only); never panic on missing `Song`.
 - **Commits:** conventional prefixes (`feat:`, `chore:`); base branch is `main`.
 
 ## Pointers

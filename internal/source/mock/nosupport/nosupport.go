@@ -14,9 +14,9 @@ func New() *Adapter { return &Adapter{} }
 
 func (a *Adapter) Name() string { return "mock-nosupport" }
 
-func (a *Adapter) SupportedParams() source.Param { return 0 }
-
-func (a *Adapter) RequiredParams() source.Param { return 0 }
+func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
+	return source.Capabilities{}
+}
 
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	lyrics := "[mock-nosupport] lyrics for: " + req.Song + "\n"

@@ -9,12 +9,13 @@ import (
 
 type fakeSource struct {
 	name string
-	sup  Param
+	caps Capabilities
 }
 
-func (f *fakeSource) Name() string           { return f.name }
-func (f *fakeSource) SupportedParams() Param { return f.sup }
-func (f *fakeSource) RequiredParams() Param  { return 0 }
+func (f *fakeSource) Name() string { return f.name }
+func (f *fakeSource) Capabilities(req Request) Capabilities {
+	return f.caps
+}
 func (f *fakeSource) Fetch(ctx context.Context, req Request) (Result, error) {
 	return Result{Lyrics: "hi"}, nil
 }
@@ -82,8 +83,5 @@ func TestParam_BitmaskComposition(t *testing.T) {
 	}
 	if combined&ParamISWC != 0 {
 		t.Fatalf("combined should not include ISWC")
-	}
-	if combined&ParamTimestamp != 0 {
-		t.Fatalf("combined should not include Timestamp")
 	}
 }

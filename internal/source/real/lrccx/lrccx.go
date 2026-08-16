@@ -12,7 +12,7 @@
 // named "lrc" (not "lyrics" as the legacy docs claim) and may be null
 // for instrumental/missing entries.
 //
-// Because the API only ever returns LRC-flavoured text, ParamTimestamp
+// Because the API only ever returns LRC-flavoured text, synced output
 // is honored: plain Lyrics are produced by stripping [mm:ss] timestamps
 // and section tags ([Verse], [!text], ...), while SyncedLyrics carries
 // the raw response text — but only when it actually contains timestamped
@@ -71,14 +71,11 @@ func New() *Adapter { return &Adapter{} }
 // Name returns the stable CLI identifier.
 func (a *Adapter) Name() string { return "lrccx" }
 
-// SupportedParams declares which optional Request fields this adapter
-// uses: author and album filters refine the /jsonapi lookup, and
-// timestamped (LRC) output is honored when --timestamp is set.
-func (a *Adapter) SupportedParams() source.Param {
-	return source.ParamAuthor | source.ParamAlbum | source.ParamTimestamp
+// Capabilities reports the filters this adapter uses: author and album
+// both refine the /jsonapi lookup, independently of each other.
+func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
+	return source.Capabilities{Filters: source.ParamAuthor | source.ParamAlbum}
 }
-
-func (a *Adapter) RequiredParams() source.Param { return 0 }
 
 // Fetch queries lrc.cx /jsonapi, picks the best-ranked hit with usable
 // lyrics, and populates plain/synced tracks from the LRC text.
