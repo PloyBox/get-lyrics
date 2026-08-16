@@ -656,11 +656,11 @@ func TestRun_SourceEmptyEntriesFiltered(t *testing.T) {
 	}
 }
 
-func TestRun_DuplicateSourceExitsTwo(t *testing.T) {
+func TestRun_DuplicateSourceExitsEight(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"--source", "mock-lrc,mock-lrc", "TEST_SONG"}, &stdout, &stderr)
-	if code != exitUsage {
-		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitUsage, stderr.String())
+	if code != exitDuplicateSrc {
+		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitDuplicateSrc, stderr.String())
 	}
 	if !strings.Contains(stderr.String(), `source "mock-lrc" is listed more than once`) {
 		t.Fatalf("stderr missing duplicate message: %q", stderr.String())

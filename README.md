@@ -102,6 +102,7 @@ Both `--flag` and `-flag` forms are accepted.
 | 5 | Output failure (can't create/write file) |
 | 6 | Source requires a parameter (e.g. `--author` missing for `lyricsovh`) |
 | 7 | `--output` file already exists and `--overwrite` was not given |
+| 8 | Duplicate `--source` entry |
 
 ## Built-in Sources
 

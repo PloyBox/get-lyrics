@@ -34,6 +34,7 @@ import (
 //	6 → source-required parameter missing in strict precheck (e.g. the
 //	     caller did not supply --author to a source that requires it)
 //	7 → --output points to an existing file and --overwrite was not given
+//	8 → duplicate --source entry (strict precheck)
 const (
 	exitOK           = 0
 	exitUsage        = 2
@@ -42,6 +43,7 @@ const (
 	exitOutputFailed = 5
 	exitRequired     = 6
 	exitFileExists   = 7
+	exitDuplicateSrc = 8
 )
 
 // version is stamped at release build time via
@@ -151,7 +153,7 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 	var dupErr fetch.DuplicateSourceError
 	if errors.As(err, &dupErr) {
 		fmt.Fprintln(stderr, "error[usage]:", dupErr.Error())
-		return exitUsage
+		return exitDuplicateSrc
 	}
 	if errors.Is(err, source.ErrNotFound) {
 		fmt.Fprintln(stderr, "error[unknown]:", err.Error())

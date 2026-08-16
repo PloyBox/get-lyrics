@@ -96,7 +96,7 @@ func (e UnknownSourceError) Error() string {
 func (e UnknownSourceError) Unwrap() error { return source.ErrNotFound }
 
 // DuplicateSourceError identifies a source name listed more than once.
-// The CLI maps it to a usage error (exit 2); --lenient mode instead
+// The CLI maps it to a dedicated exit code (8); --lenient mode instead
 // emits a PreCheck warning and drops the duplicate.
 type DuplicateSourceError struct {
 	Name string
@@ -124,7 +124,7 @@ func New(reg *source.Registry) *Service {
 //
 // Error semantics:
 //   - strict precheck (default) → the single first problem: a
-//     DuplicateSourceError (exit 2), source.ErrNotFound (exit 3), or a
+//     DuplicateSourceError (exit 8), source.ErrNotFound (exit 3), or a
 //     source.RequiredParamError (exit 6); no source is fetched and
 //     warnings are empty.
 //   - lenient precheck (--lenient) → problem sources are skipped with a

@@ -46,12 +46,13 @@ get-lyrics/
 | Code | Meaning |
 |------|---------|
 | 0 | Success (warnings may still go to stderr) |
-| 2 | Usage error (missing song, unknown flag, invalid `--timestamp`, duplicate `--source`) |
+| 2 | Usage error (missing song, unknown flag, invalid `--timestamp`) |
 | 3 | Unknown `--source` name (strict precheck) |
 | 4 | No valid result: all sources skipped/failed, or no format match |
 | 5 | Output failure (file open, truncate, write, or close) |
 | 6 | Source-required parameter missing (e.g. `--author` for `lyricsovh`) |
 | 7 | `--output` exists and `--overwrite` not given |
+| 8 | Duplicate `--source` entry (strict precheck) |
 
 ## Architecture
 
@@ -59,13 +60,13 @@ Thin CLI layer over a pluggable-source abstraction:
 
 1. **Registration** — `main.go` runs `bootstrap.RegisterAll(r)` once before `main()`; test builds additionally register `mock-*` sources via `init()` in `main_loadmock.go`.
 2. **Parse** — required positional `<song>` plus flags via `flag.NewFlagSet`; `--timestamp` values validated at parse time.
-3. **Fetch** (`fetch.New(registry).Fetch(ctx, params)`) — precheck: duplicate source → exit 2, unknown name → exit 3, missing required param → exit 6 (`--lenient` downgrades all three to `warning[precheck]` + skip). Then a two-level loop: outer over `params.Timestamp` (priority order), inner over sources (failover). A per-call result cache dedupes by source+synced flag. Adapter errors → `warning[fetch]`, next source. A synced request yielding plain lyrics → `warning[downgraded]`; the result stays cached and can satisfy a later `none` iteration.
-4. **Output** — opened before the fetch (`O_CREATE|O_EXCL` for new files, `O_WRONLY` without `O_TRUNC` otherwise); on any failure a freshly created file is removed (guarded by a same-inode check). Truncate+Seek happen only after a successful fetch, so existing files keep their content on every failure path (exit 3/4/6/7).
+3. **Fetch** (`fetch.New(registry).Fetch(ctx, params)`) — precheck: duplicate source → exit 8, unknown name → exit 3, missing required param → exit 6 (`--lenient` downgrades all three to `warning[precheck]` + skip). Then a two-level loop: outer over `params.Timestamp` (priority order), inner over sources (failover). A per-call result cache dedupes by source+synced flag. Adapter errors → `warning[fetch]`, next source. A synced request yielding plain lyrics → `warning[downgraded]`; the result stays cached and can satisfy a later `none` iteration.
+4. **Output** — opened before the fetch (`O_CREATE|O_EXCL` for new files, `O_WRONLY` without `O_TRUNC` otherwise); on any failure a freshly created file is removed (guarded by a same-inode check). Truncate+Seek happen only after a successful fetch, so existing files keep their content on every failure path (exit 3/4/6/7/8).
 5. **Warnings** — pre-formatted by the fetch layer with their `[kind]` tag and printed verbatim to stderr; they never change the exit code.
 
 **Key types (`internal/source/source.go`):** `Param` bitmask (`ParamAuthor | ParamAlbum | ParamISWC | ParamTimestamp`), `Request`, `Result` (its `Source` field is reserved for aggregate sub-source identification — standalone adapters leave it empty), `Source` interface (`Name`/`SupportedParams`/`RequiredParams`/`Fetch`), `Registry` (concurrency-safe name→source map), `RequiredParamError`. Adapters declare required params via `RequiredParams()`; the fetch layer enforces them — adapters must NOT raise the error themselves.
 
-**Key types (`internal/fetch/fetch.go`):** `Params`, `Result` (`Source` = adapter name, `SubSource` = aggregate sub-source, `Synced` = lyrics contain LRC), `Warning` (kinds: `UnsupportedParam`/`Downgraded`/`PreCheck`/`FetchFailed`), `NoResultError` (exit 4), `UnknownSourceError` (exit 3), `DuplicateSourceError` (exit 2).
+**Key types (`internal/fetch/fetch.go`):** `Params`, `Result` (`Source` = adapter name, `SubSource` = aggregate sub-source, `Synced` = lyrics contain LRC), `Warning` (kinds: `UnsupportedParam`/`Downgraded`/`PreCheck`/`FetchFailed`), `NoResultError` (exit 4), `UnknownSourceError` (exit 3), `DuplicateSourceError` (exit 8).
 
 ### Built-in sources
 
