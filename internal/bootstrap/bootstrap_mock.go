@@ -6,6 +6,7 @@ import (
 	"github.com/PloyBox/get-lyrics/internal/source"
 	"github.com/PloyBox/get-lyrics/internal/source/mock/fail"
 	"github.com/PloyBox/get-lyrics/internal/source/mock/lrc"
+	"github.com/PloyBox/get-lyrics/internal/source/mock/mismatch"
 	"github.com/PloyBox/get-lyrics/internal/source/mock/nosupport"
 	"github.com/PloyBox/get-lyrics/internal/source/mock/nosync"
 	"github.com/PloyBox/get-lyrics/internal/source/mock/require"
@@ -22,6 +23,7 @@ func RegisterAllMock(r *source.Registry) error {
 		fail.New(),
 		lrc.New(),
 		nosync.New(),
+		mismatch.New(),
 	}
 	for _, a := range adapters {
 		if err := r.Register(a); err != nil {

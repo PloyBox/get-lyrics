@@ -17,7 +17,7 @@ get-lyrics/
 ├── internal/
 │   ├── bootstrap/              # bootstrap.go: registers real sources; bootstrap_mock.go (test tag): mocks
 │   ├── source/                 # Source interface, Request/Result, Param/ResultField bitmasks, Registry
-│   │   ├── mock/               # mock-* test-only adapters (success/require/nosupport/fail/lrc/nosync)
+│   │   ├── mock/               # mock-* test-only adapters (success/require/nosupport/fail/lrc/nosync/mismatch)
 │   │   └── real/               # lrclib, lyricsovh, lrccx adapters
 │   └── fetch/                  # Fetch(ctx, params): precheck, failover, synced-vs-plain resolution
 ```
@@ -78,7 +78,7 @@ Adding a built-in source: create `internal/source/real/<name>/`, then add an imp
 
 ### Mock sources
 
-Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (never in production). Names must start with `mock-`. Each covers one testing concern: `mock-success` (happy path), `mock-require` (exit 6), `mock-nosupport` (no-param path), `mock-fail` (exit 4), `mock-lrc` (synced path), `mock-nosync` (downgrade path).
+Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (never in production). Names must start with `mock-`. Each covers one testing concern: `mock-success` (happy path), `mock-require` (exit 6), `mock-nosupport` (no-param path), `mock-fail` (exit 4), `mock-lrc` (synced path), `mock-nosync` (downgrade path), `mock-mismatch` (precheck-vs-requirement mismatch path).
 
 ## Testing
 

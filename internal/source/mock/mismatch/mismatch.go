@@ -1,0 +1,41 @@
+//go:build test
+
+package mismatch
+
+import (
+	"context"
+
+	"github.com/PloyBox/get-lyrics/internal/source"
+)
+
+type Adapter struct{}
+
+func New() *Adapter { return &Adapter{} }
+
+func (a *Adapter) Name() string { return "mock-mismatch" }
+
+// Capabilities lists --author as a filter but declares nothing
+// required: precheck lets the source through without --author, so the
+// missing parameter only surfaces inside Fetch as a
+// RequiredParamMismatchError — the precheck-vs-requirement mismatch
+// path in isolation.
+func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
+	return source.Capabilities{Filters: source.ParamAuthor}
+}
+
+func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
+	if req.Author == "" {
+		return source.Result{}, source.RequiredParamMismatchError{
+			Source: a.Name(),
+			Param:  source.ParamAuthor,
+			Flag:   "--author",
+		}
+	}
+	lyrics := "[mock-mismatch] lyrics for: " + req.Song + "\n"
+	return source.Result{
+		Lyrics: lyrics,
+		Title:  req.Song,
+		Artist: req.Author,
+		Filled: source.FieldLyrics | source.FieldTitle | source.FieldArtist,
+	}, nil
+}

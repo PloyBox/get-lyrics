@@ -312,6 +312,63 @@ func TestRun_MockRequireWithAuthorSucceeds(t *testing.T) {
 	}
 }
 
+// TestRun_MockMismatchMissingAuthorWarnsAndExitsFour drives the
+// precheck-vs-requirement mismatch path through mock-mismatch: it
+// declares nothing required, so precheck lets it through, but its Fetch
+// raises a RequiredParamMismatchError. As the only source the run ends
+// in exit 4 with the mismatch warning on stderr.
+func TestRun_MockMismatchMissingAuthorWarnsAndExitsFour(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-mismatch", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitFetchFailed {
+		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitFetchFailed, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), `warning[precheck-mismatch]: source "mock-mismatch" requires --author`) {
+		t.Fatalf("stderr missing precheck-mismatch warning: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "error[no-result]") {
+		t.Fatalf("stderr missing no-result error: %q", stderr.String())
+	}
+	if stdout.String() != "" {
+		t.Fatalf("stdout should be empty (no lyrics fetched): %q", stdout.String())
+	}
+}
+
+// TestRun_MockMismatchFailsOverToNextSource verifies that a
+// RequiredParamMismatchError does not abort the run: mock-nosupport
+// (listed second) is fetched successfully, with the mismatch warning
+// still printed.
+func TestRun_MockMismatchFailsOverToNextSource(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-mismatch,mock-nosupport", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "[mock-nosupport]") {
+		t.Fatalf("stdout missing nosupport lyrics: %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "warning[precheck-mismatch]") {
+		t.Fatalf("stderr missing precheck-mismatch warning: %q", stderr.String())
+	}
+}
+
+// TestRun_MockMismatchWithAuthorSucceeds covers the happy path of
+// mock-mismatch: with --author supplied its Fetch succeeds and no
+// mismatch warning is emitted.
+func TestRun_MockMismatchWithAuthorSucceeds(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-mismatch", "--author", "X", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "[mock-mismatch]") {
+		t.Fatalf("stdout missing mismatch lyrics: %q", stdout.String())
+	}
+	if strings.Contains(stderr.String(), "warning[precheck-mismatch]") {
+		t.Fatalf("stderr should have no mismatch warning: %q", stderr.String())
+	}
+}
+
 func TestRun_MockNosupportNoAuthorNeeded(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"--source", "mock-nosupport", "TEST_SONG"}, &stdout, &stderr)
