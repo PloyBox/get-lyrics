@@ -37,9 +37,10 @@ type Capabilities struct {
 	Filters Param
 
 	// Required lists the Request fields that must be non-empty for this
-	// request. The fetch layer enforces them during precheck by building
-	// a RequiredParamError for the first missing field; adapters must
-	// NOT raise that error themselves in Fetch.
+	// request. The fetch layer enforces them during precheck and reports
+	// a fetch.RequiredParamError for the first missing field. If a
+	// required field is missing anyway when Fetch runs — a capability
+	// declaration bug — the adapter raises RequiredParamMismatchError.
 	Required Param
 }
 
@@ -128,7 +129,9 @@ type Source interface {
 	// Fetch performs the lyrics lookup. It must respect ctx for
 	// cancellation/deadlines. A non-nil error means the lookup failed
 	// and no lyrics are available; warnings about unsupported parameters
-	// are NOT returned here — they are computed by the fetch layer.
+	// are NOT returned here — they are computed by the fetch layer. A
+	// required parameter missing at fetch time (precheck should have
+	// caught it) is reported as RequiredParamMismatchError.
 	Fetch(ctx context.Context, req Request) (Result, error)
 }
 
@@ -139,37 +142,24 @@ var ErrNotFound = errors.New("source: not found")
 // same Name() is already registered.
 var ErrDuplicate = errors.New("source: duplicate registration")
 
-// ErrRequiredParam is the sentinel returned when a source requires a
-// parameter the caller did not supply. The fetch layer constructs it
-// during precheck from Capabilities(req).Required; adapters must not
-// raise it themselves. Callers should test with errors.Is against this
-// sentinel and use errors.As to recover the typed RequiredParamError.
-var ErrRequiredParam = errors.New("source: required parameter missing")
-
-// RequiredParamError enriches ErrRequiredParam with the offending
-// parameter so the CLI can render a stable, greppable message.
-//
-// The fetch layer builds it during precheck; adapters never return it:
-//
-//	return source.Result{}, source.RequiredParamError{
-//	    Source: src.Name(),
-//	    Param:  missing,
-//	    Flag:   flagForParam(missing),
-//	}
-type RequiredParamError struct {
+// RequiredParamMismatchError is raised by a source's Fetch when it
+// needs a parameter the request does not carry. Precheck normally
+// prevents this by enforcing Capabilities(req).Required, so a missing
+// parameter at fetch time means the source's capability declaration
+// disagrees with what its Fetch implementation actually needs — a
+// source bug, not a caller error. The fetch layer converts it to a
+// PrecheckMismatch warning and fails over to the next source.
+type RequiredParamMismatchError struct {
 	Source string // adapter Name() that requires the parameter
-	Param  Param  // which Param bit is required
+	Param  Param  // which Param bit is missing
 	Flag   string // CLI flag spelling for the missing field (e.g. "--author")
 }
 
-// Error renders a stable message; main formats the same shape.
-func (e RequiredParamError) Error() string {
-	return "source \"" + e.Source + "\" requires " + e.Flag
+// Error renders a stable message; the fetch layer re-renders it as a
+// PrecheckMismatch warning using its own flag mapping.
+func (e RequiredParamMismatchError) Error() string {
+	return "source \"" + e.Source + "\" requires " + e.Flag + " but precheck did not enforce it (source bug)"
 }
-
-// Unwrap lets errors.Is(err, ErrRequiredParam) succeed for plain and
-// wrapped values alike.
-func (e RequiredParamError) Unwrap() error { return ErrRequiredParam }
 
 // Registry is a concurrency-safe, name→Source lookup table populated
 // explicitly by RegisterAll (or by tests).

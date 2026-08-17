@@ -16,7 +16,7 @@ get-lyrics/
 ├── main_test.go                # End-to-end tests for Run(argv, stdout, stderr)
 ├── internal/
 │   ├── bootstrap/              # bootstrap.go: registers real sources; bootstrap_mock.go (test tag): mocks
-│   ├── source/                 # Source interface, Request/Result, Param/ResultField bitmasks, Registry, RequiredParamError
+│   ├── source/                 # Source interface, Request/Result, Param/ResultField bitmasks, Registry
 │   │   ├── mock/               # mock-* test-only adapters (success/require/nosupport/fail/lrc/nosync)
 │   │   └── real/               # lrclib, lyricsovh, lrccx adapters
 │   └── fetch/                  # Fetch(ctx, params): precheck, failover, synced-vs-plain resolution
@@ -60,13 +60,13 @@ Thin CLI layer over a pluggable-source abstraction:
 
 1. **Registration** — `main.go` runs `bootstrap.RegisterAll(r)` once before `main()`; test builds additionally register `mock-*` sources via `init()` in `main_loadmock.go`.
 2. **Parse** — required positional `<song>` plus flags via `flag.NewFlagSet`; `--timestamp` values validated at parse time.
-3. **Fetch** (`fetch.New(registry).Fetch(ctx, params)`) — precheck: duplicate source → exit 8, unknown name → exit 3, missing required param → exit 6 (`--lenient` downgrades all three to `warning[precheck]` + skip). Then a two-level loop: outer over `params.Timestamp` (priority order), inner over sources (failover). A per-call result cache dedupes by source+synced flag. Adapter errors → `warning[fetch]`, next source. A result whose `Filled` mask disagrees with its contents (declared-but-empty or filled-but-undeclared) → `warning[result]`, result still used as-is (trust policy). A synced request yielding plain lyrics → `warning[downgraded]`; the result stays cached and can satisfy a later `none` iteration.
+3. **Fetch** (`fetch.New(registry).Fetch(ctx, params)`) — precheck: duplicate source → exit 8, unknown name → exit 3, missing required param → exit 6 (`--lenient` downgrades all three to `warning[precheck]` + skip). Then a two-level loop: outer over `params.Timestamp` (priority order), inner over sources (failover). A per-call result cache dedupes by source+synced flag. Adapter errors → `warning[fetch]`, next source (a fetch-time `RequiredParamMismatchError` → `warning[precheck-mismatch]`, next source). A result whose `Filled` mask disagrees with its contents (declared-but-empty or filled-but-undeclared) → `warning[result]`, result still used as-is (trust policy). A synced request yielding plain lyrics → `warning[downgraded]`; the result stays cached and can satisfy a later `none` iteration.
 4. **Output** — opened before the fetch (`O_CREATE|O_EXCL` for new files, `O_WRONLY` without `O_TRUNC` otherwise); on any failure a freshly created file is removed (guarded by a same-inode check). Truncate+Seek happen only after a successful fetch, so existing files keep their content on every failure path (exit 3/4/6/7/8).
 5. **Warnings** — pre-formatted by the fetch layer with their `[kind]` tag and printed verbatim to stderr; they never change the exit code.
 
-**Key types (`internal/source/source.go`):** `Param` bitmask (`ParamAuthor | ParamAlbum | ParamISWC`), `ResultField` bitmask (`FieldLyrics | FieldSyncedLyrics | FieldTitle | FieldArtist | FieldAlbum | FieldISWC | FieldSubSource`), `Capabilities` (`Filters` + `Required`), `Request`, `Result` (its `Filled` mask declares which fields the adapter actually populated — unset fields are treated as empty by the fetch layer; its `SubSource` field + `FieldSubSource` bit are for aggregate sub-source identification — standalone adapters leave both empty), `Source` interface (`Name`/`Capabilities`/`Fetch`), `Registry` (concurrency-safe name→source map), `RequiredParamError`. Adapters declare required params via `Capabilities(req).Required`; the fetch layer enforces them — adapters must NOT raise the error themselves. `Capabilities(req)` is request-aware so conditional support is expressible (lrclib drops `--album` when `--author` is absent).
+**Key types (`internal/source/source.go`):** `Param` bitmask (`ParamAuthor | ParamAlbum | ParamISWC`), `ResultField` bitmask (`FieldLyrics | FieldSyncedLyrics | FieldTitle | FieldArtist | FieldAlbum | FieldISWC | FieldSubSource`), `Capabilities` (`Filters` + `Required`), `Request`, `Result` (its `Filled` mask declares which fields the adapter actually populated — unset fields are treated as empty by the fetch layer; its `SubSource` field + `FieldSubSource` bit are for aggregate sub-source identification — standalone adapters leave both empty), `Source` interface (`Name`/`Capabilities`/`Fetch`), `Registry` (concurrency-safe name→source map), `RequiredParamMismatchError` (raised by `Fetch` when a required parameter is missing — a capability declaration bug). Adapters declare required params via `Capabilities(req).Required`; the fetch layer enforces them via `fetch.RequiredParamError`, and a fetch-time miss surfaces as `RequiredParamMismatchError`. `Capabilities(req)` is request-aware so conditional support is expressible (lrclib drops `--album` when `--author` is absent).
 
-**Key types (`internal/fetch/fetch.go`):** `Params`, `Result` (`Source` = adapter name, `SubSource` = aggregate sub-source, `Synced` = lyrics contain LRC), `Warning` (kinds: `UnsupportedParam`/`Downgraded`/`PreCheck`/`FetchFailed`/`ResultMismatch`), `NoResultError` (exit 4), `UnknownSourceError` (exit 3), `DuplicateSourceError` (exit 8).
+**Key types (`internal/fetch/fetch.go`):** `Params`, `Result` (`Source` = adapter name, `SubSource` = aggregate sub-source, `Synced` = lyrics contain LRC), `Warning` (kinds: `UnsupportedParam`/`Downgraded`/`PreCheck`/`PrecheckMismatch`/`FetchFailed`/`ResultMismatch`), `NoResultError` (exit 4), `UnknownSourceError` (exit 3), `DuplicateSourceError` (exit 8), `RequiredParamError` (exit 6).
 
 ### Built-in sources
 
@@ -90,14 +90,14 @@ Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (neve
 
 - Standard Go naming (`CamelCase` exported / `camelCase` unexported); module path `github.com/PloyBox/get-lyrics`.
 - Operational warnings and hard errors go to **stderr**, never stdout.
-- Branch on errors with `errors.Is(err, source.ErrNotFound)` / `errors.As(err, &source.RequiredParamError{})` / `errors.As(err, &fetch.NoResultError{})`.
+- Branch on errors with `errors.Is(err, source.ErrNotFound)` / `errors.As(err, &fetch.RequiredParamError{})` / `errors.As(err, &fetch.NoResultError{})`.
 - Comments only where behavior is non-obvious.
 
 ## Agent-Specific Guidance
 
 - **Verify with:** `go build ./...`, `go test -tags test ./...`, `go vet -tags test ./...`, `gofmt -l .` (all must be clean).
 - **Do NOT:** add a TUI/GUI; make the song title optional; write warnings to stdout; bypass the `source.Source` interface for new providers.
-- **Adapters must:** self-declare `Capabilities(req)` (filters honored + required params; request-aware so conditional support is expressible — most adapters return a constant); declare required params via `Capabilities(req).Required` (not by raising errors inside `Fetch`); respect `ctx`; set `Result.Filled` to declare exactly which result fields were populated (the fetch layer reads only declared fields and warns on mismatches); leave `source.Result.SubSource` empty with the `FieldSubSource` bit unset (aggregate sub-source only); never panic on missing `Song`.
+- **Adapters must:** self-declare `Capabilities(req)` (filters honored + required params; request-aware so conditional support is expressible — most adapters return a constant); declare required params via `Capabilities(req).Required` (precheck enforces them; if `Fetch` finds a required parameter missing anyway — a declaration bug — raise `RequiredParamMismatchError`); respect `ctx`; set `Result.Filled` to declare exactly which result fields were populated (the fetch layer reads only declared fields and warns on mismatches); leave `source.Result.SubSource` empty with the `FieldSubSource` bit unset (aggregate sub-source only); never panic on missing `Song`.
 - **Commits:** conventional prefixes (`feat:`, `chore:`); base branch is `main`.
 
 ## Pointers

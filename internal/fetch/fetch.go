@@ -7,6 +7,7 @@ package fetch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -26,6 +27,10 @@ const (
 	// PreCheck: --lenient mode skipped a source during precheck
 	// (unknown name, missing required parameter, or duplicate).
 	PreCheck
+	// PrecheckMismatch: a source raised RequiredParamMismatchError from
+	// Fetch — its capability declaration disagrees with what Fetch
+	// actually needs. Flags a source implementation bug.
+	PrecheckMismatch
 	// FetchFailed: the adapter returned an error; fetch moved on to the
 	// next source.
 	FetchFailed
@@ -111,6 +116,22 @@ func (e DuplicateSourceError) Error() string {
 	return fmt.Sprintf("source %q is listed more than once", e.Name)
 }
 
+// RequiredParamError reports a source whose Capabilities.Required list
+// includes a parameter the caller did not supply. The precheck stage
+// builds it for the first missing field; adapters never return it
+// themselves. The CLI maps it to exit code 6.
+type RequiredParamError struct {
+	Source string       // adapter Name() that requires the parameter
+	Param  source.Param // which Param bit is required
+	Flag   string       // CLI flag spelling for the missing field (e.g. "--author")
+}
+
+// Error renders a stable message; main prints it verbatim after the
+// error[required] tag.
+func (e RequiredParamError) Error() string {
+	return "source \"" + e.Source + "\" requires " + e.Flag
+}
+
 // Service fetches lyrics through a source registry.
 type Service struct {
 	reg *source.Registry
@@ -130,12 +151,14 @@ func New(reg *source.Registry) *Service {
 // Error semantics:
 //   - strict precheck (default) → the single first problem: a
 //     DuplicateSourceError (exit 8), source.ErrNotFound (exit 3), or a
-//     source.RequiredParamError (exit 6); no source is fetched and
+//     RequiredParamError (exit 6); no source is fetched and
 //     warnings are empty.
 //   - lenient precheck (--lenient) → problem sources are skipped with a
 //     PreCheck warning; eligible sources proceed.
 //   - adapter errors during fetch → FetchFailed warning + fail over to
-//     the next source (never aborts, regardless of lenient).
+//     the next source (never aborts, regardless of lenient); a source
+//     raising RequiredParamMismatchError instead becomes a
+//     PrecheckMismatch warning + fail over.
 //   - no result matched any timestamp format → NoResultError, with the
 //     in-flight warnings so the caller can print why each source failed.
 func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, error) {
@@ -174,6 +197,16 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 			}
 			sr, ferr := src.Fetch(ctx, req)
 			if ferr != nil {
+				var mm source.RequiredParamMismatchError
+				if errors.As(ferr, &mm) {
+					warnings = append(warnings, Warning{
+						Kind:    PrecheckMismatch,
+						Source:  name,
+						Param:   mm.Param,
+						Message: fmt.Sprintf(`warning[precheck-mismatch]: source "%s" requires %s but precheck did not enforce it (source bug); trying next source`, name, flagForParam(mm.Param)),
+					})
+					continue
+				}
 				warnings = append(warnings, Warning{
 					Kind:    FetchFailed,
 					Source:  name,
@@ -235,7 +268,7 @@ func (s *Service) precheck(params Params, warnings *[]Warning) ([]string, error)
 				if err != nil {
 					return nil, UnknownSourceError{Name: name}
 				}
-				return nil, source.RequiredParamError{
+				return nil, RequiredParamError{
 					Source: src.Name(),
 					Param:  missing,
 					Flag:   flagForParam(missing),

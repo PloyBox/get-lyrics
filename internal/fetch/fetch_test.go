@@ -296,7 +296,7 @@ func TestFetch_StrictPrecheckRequiredParamFailsFast(t *testing.T) {
 	svc := New(r)
 
 	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Source: []string{"ok", "req"}})
-	var reqErr source.RequiredParamError
+	var reqErr RequiredParamError
 	if !errors.As(err, &reqErr) {
 		t.Fatalf("err = %v; want RequiredParamError", err)
 	}
@@ -308,6 +308,48 @@ func TestFetch_StrictPrecheckRequiredParamFailsFast(t *testing.T) {
 	}
 	if ok.fetchCalls != 0 {
 		t.Fatalf("ok.fetchCalls = %d; want 0 (fail-fast before any fetch)", ok.fetchCalls)
+	}
+}
+
+func TestFetch_RequiredParamMismatchFailsOverWithWarning(t *testing.T) {
+	buggy := &fakeSrc{
+		name: "buggy",
+		fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
+			return source.Result{}, source.RequiredParamMismatchError{
+				Source: "buggy",
+				Param:  source.ParamAuthor,
+				Flag:   "--author",
+			}
+		},
+	}
+	ok := &fakeSrc{
+		name: "ok",
+		fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
+			return source.Result{Lyrics: "L", Filled: source.FieldLyrics}, nil
+		},
+	}
+	r := newRegistry(t, buggy, ok)
+	svc := New(r)
+
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"none"}, Source: []string{"buggy", "ok"}})
+	if err != nil {
+		t.Fatalf("err = %v; want success via failover", err)
+	}
+	if res.Lyrics != "L" {
+		t.Fatalf("res.Lyrics = %q; want %q", res.Lyrics, "L")
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %+v; want exactly one", warnings)
+	}
+	w := warnings[0]
+	if w.Kind != PrecheckMismatch || w.Source != "buggy" || w.Param != source.ParamAuthor {
+		t.Fatalf("warning = %+v; want PrecheckMismatch for buggy/ParamAuthor", w)
+	}
+	if !strings.Contains(w.Message, "--author") {
+		t.Fatalf("warning message = %q; want mention of --author", w.Message)
+	}
+	if ok.fetchCalls != 1 {
+		t.Fatalf("ok.fetchCalls = %d; want 1 (failover after mismatch)", ok.fetchCalls)
 	}
 }
 

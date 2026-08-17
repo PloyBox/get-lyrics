@@ -159,7 +159,7 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 		fmt.Fprintln(stderr, "error[unknown]:", err.Error())
 		return exitUnknownSrc
 	}
-	var reqErr source.RequiredParamError
+	var reqErr fetch.RequiredParamError
 	if errors.As(err, &reqErr) {
 		fmt.Fprintln(stderr, "error[required]:", reqErr.Error())
 		return exitRequired
