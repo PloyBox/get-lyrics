@@ -136,7 +136,7 @@ func TestFetch_AggregateSourceSubSource(t *testing.T) {
 		name: "agg",
 		caps: source.Capabilities{Filters: source.ParamAuthor},
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
-			return source.Result{Lyrics: "x", Source: "sub", Filled: source.FieldLyrics}, nil
+			return source.Result{Lyrics: "x", SubSource: "sub", Filled: source.FieldLyrics | source.FieldSubSource}, nil
 		},
 	}
 	r := newRegistry(t, agg)
@@ -670,6 +670,7 @@ func TestFetch_ResultUsesOnlyDeclaredFields(t *testing.T) {
 				Title:        r.Song,
 				Artist:       "ghost artist",
 				Album:        "ghost album",
+				SubSource:    "ghost sub",
 				Filled:       source.FieldLyrics | source.FieldTitle,
 			}, nil
 		},
@@ -684,11 +685,11 @@ func TestFetch_ResultUsesOnlyDeclaredFields(t *testing.T) {
 	if res.Lyrics != "L" || res.Title != "S" || res.Synced {
 		t.Fatalf("res = %+v; want only declared lyrics/title", res)
 	}
-	if res.Artist != "" || res.Album != "" {
+	if res.Artist != "" || res.Album != "" || res.SubSource != "" {
 		t.Fatalf("res = %+v; undeclared fields must not be read", res)
 	}
-	if len(warnings) != 3 {
-		t.Fatalf("warnings = %+v; want 3 ResultMismatch warnings", warnings)
+	if len(warnings) != 4 {
+		t.Fatalf("warnings = %+v; want 4 ResultMismatch warnings", warnings)
 	}
 	for _, w := range warnings {
 		if w.Kind != ResultMismatch {
@@ -724,6 +725,39 @@ func TestFetch_DeclaredButEmptyFieldWarns(t *testing.T) {
 		t.Fatalf("warnings = %+v; want one ResultMismatch warning", warnings)
 	}
 	if !strings.Contains(warnings[0].Message, `declares field "Lyrics" but left it empty`) {
+		t.Fatalf("warning message = %q; want declared-but-empty note", warnings[0].Message)
+	}
+}
+
+// TestFetch_DeclaredButEmptySubSourceWarns locks the mask semantics for
+// the provenance field: an aggregate adapter that declares
+// FieldSubSource but leaves the value empty is flagged the same way as
+// any other declared-but-empty field.
+func TestFetch_DeclaredButEmptySubSourceWarns(t *testing.T) {
+	empty := &fakeSrc{
+		name: "empty",
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			return source.Result{
+				Lyrics:    "L",
+				SubSource: " ",
+				Filled:    source.FieldLyrics | source.FieldSubSource,
+			}, nil
+		},
+	}
+	r := newRegistry(t, empty)
+	svc := New(r)
+
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"none"}, Source: []string{"empty"}})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.Lyrics != "L" {
+		t.Fatalf("res = %+v; want lyrics preserved despite the mismatch", res)
+	}
+	if len(warnings) != 1 || warnings[0].Kind != ResultMismatch {
+		t.Fatalf("warnings = %+v; want one ResultMismatch warning", warnings)
+	}
+	if !strings.Contains(warnings[0].Message, `declares field "SubSource" but left it empty`) {
 		t.Fatalf("warning message = %q; want declared-but-empty note", warnings[0].Message)
 	}
 }

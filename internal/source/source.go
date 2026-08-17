@@ -73,6 +73,10 @@ const (
 	FieldAlbum
 	// FieldISWC marks Result.ISWC as populated.
 	FieldISWC
+	// FieldSubSource marks Result.SubSource as populated. Only
+	// aggregate adapters set it; standalone adapters leave both the
+	// field and the bit unset.
+	FieldSubSource
 )
 
 // Result carries the fetched lyrics together with the metadata that
@@ -100,13 +104,11 @@ type Result struct {
 	Artist       string
 	Album        string
 	ISWC         string
-	// Source is reserved for aggregate sources: it identifies the
-	// sub-source that produced this result. Standalone adapters leave
-	// it empty — the fetch layer backfills it into Result.SubSource
-	// and keeps Result.Source set to the adapter's Name(). It is not
-	// part of the Filled mask: it is provenance metadata, not a
-	// fetched result field.
-	Source string
+	// SubSource identifies the sub-source that produced this result in
+	// aggregate adapters. Like every other result field it is only read
+	// when declared: standalone adapters leave it empty with the
+	// FieldSubSource bit unset; aggregate adapters set both.
+	SubSource string
 }
 
 // Source is the contract every lyrics adapter must satisfy.

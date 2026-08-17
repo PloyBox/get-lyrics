@@ -76,7 +76,7 @@ type Result struct {
 	Album     string
 	ISWC      string
 	Source    string // adapter that produced the result
-	SubSource string // sub-source for aggregate adapters; empty otherwise
+	SubSource string // sub-source for aggregate adapters, copied only when the adapter declared FieldSubSource; empty otherwise
 	Synced    bool
 }
 
@@ -353,6 +353,7 @@ var resultFieldSpecs = []resultFieldSpec{
 	{source.FieldArtist, "Artist", func(r source.Result) string { return r.Artist }},
 	{source.FieldAlbum, "Album", func(r source.Result) string { return r.Album }},
 	{source.FieldISWC, "ISWC", func(r source.Result) string { return r.ISWC }},
+	{source.FieldSubSource, "SubSource", func(r source.Result) string { return r.SubSource }},
 }
 
 // detectResultMismatch compares sr.Filled against the actual field
@@ -389,10 +390,7 @@ func detectResultMismatch(srcName string, sr source.Result) []Warning {
 // the timestamped track and Synced is true; otherwise Lyrics carries
 // the declared plain track and Synced is false.
 func toResult(srcName string, sr source.Result, wantSynced bool) Result {
-	res := Result{
-		Source:    srcName,
-		SubSource: sr.Source,
-	}
+	res := Result{Source: srcName}
 	for _, spec := range resultFieldSpecs {
 		if sr.Filled&spec.bit != 0 {
 			switch spec.bit {
@@ -411,6 +409,8 @@ func toResult(srcName string, sr source.Result, wantSynced bool) Result {
 				res.Album = sr.Album
 			case source.FieldISWC:
 				res.ISWC = sr.ISWC
+			case source.FieldSubSource:
+				res.SubSource = sr.SubSource
 			}
 		}
 	}
