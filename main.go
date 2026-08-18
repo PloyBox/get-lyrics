@@ -327,9 +327,10 @@ func openOutput(path string, overwrite bool, fallback io.Writer) (io.Writer, fun
 	return nil, func() error { return nil }, false, lastErr
 }
 
-// parseFlags handles both -x/--x and POSIX-mixed positional/flag order,
-// using Go flag's default behavior. Unknown flags become a non-nil
-// error which Run maps to exitUsage.
+// parseFlags handles both -x/--x forms using Go flag's default
+// behavior: parsing stops at the first positional argument, so flags
+// must precede it. Unknown flags become a non-nil error which Run maps
+// to exitUsage.
 func parseFlags(argv []string) (parsedFlags, string, error) {
 	fs := flag.NewFlagSet("get-lyrics", flag.ContinueOnError)
 	// Silence flag's own usage writer; Run writes its own on error.
