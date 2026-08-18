@@ -43,29 +43,33 @@ get-lyrics "Bohemian Rhapsody"
 get-lyrics --author "Queen" "Bohemian Rhapsody"
 
 # Use lyrics.ovh (requires --author)
-get-lyrics --source lyricsovh --author "Queen" "Bohemian Rhapsody"
+get-lyrics --source "lyricsovh" --author "Queen" "Bohemian Rhapsody"
 
 # Try several sources in order (failover)
-get-lyrics --source lrclib,lyricsovh --author "Queen" "Bohemian Rhapsody"
+get-lyrics --source "lrclib,lyricsovh" --author "Queen" "Bohemian Rhapsody"
 
 # Skip sources that can't be used instead of failing (precheck only)
-get-lyrics --lenient --source lyricsovh,lrclib "Bohemian Rhapsody"
+get-lyrics --lenient --source "lyricsovh,lrclib" "Bohemian Rhapsody"
 ```
 
 **Output to file:**
 
 ```sh
 # Write to a new file (refuses to overwrite an existing one)
-get-lyrics --author "Queen" --output lyrics.txt "Bohemian Rhapsody"
+get-lyrics --author "Queen" --output "lyrics.txt" "Bohemian Rhapsody"
 
 # Explicitly overwrite an existing file
-get-lyrics --author "Queen" --output lyrics.txt --overwrite "Bohemian Rhapsody"
+get-lyrics --author "Queen" --output "lyrics.txt" --overwrite "Bohemian Rhapsody"
 ```
 
-**Timestamped (LRC) lyrics:**
+**Force timestamp format:**
 
 ```sh
-get-lyrics --author "Queen" --timestamp line "Bohemian Rhapsody"
+# Force LRC output
+get-lyrics --author "Queen" --timestamp "line" "Bohemian Rhapsody"
+
+# Force plain lyrics instead
+get-lyrics --author "Queen" --timestamp "none" "Bohemian Rhapsody"
 ```
 
 **List available sources:**
@@ -89,7 +93,9 @@ get-lyrics --help
 | `--help` | `-h` | Show help and exit |
 | `--version` | `-v` | Print version and exit |
 
-Both `--flag` and `-flag` forms are accepted.
+- Both `--flag` and `-flag` forms are accepted.
+- Quotes are optional for values without spaces.
+- Everything after the first positional (flags included) is parsed as the song title.
 
 ## Exit Codes
 
