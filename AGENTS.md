@@ -107,6 +107,7 @@ Unsupported custom keys produce per-source `warning[unsupported]` in map iterati
 - **`lrclib`** — `https://lrclib.net`; `/api/get` when `--author` is given, else `/api/search`. Filters: Author, Album — the album filter only takes effect with `--author` (otherwise it is dropped with an unsupported warning). Synced LRC output when requested; a synced-only hit leaves `Lyrics` unfilled so the fetch layer outputs the synced track. 10s per-request timeout.
 - **`lyricsovh`** — `https://api.lyrics.ovh/v1/{artist}/{title}`. Filter: Author, and **requires** it. Surfaces the API's 404 as not-found. 10s timeout.
 - **`lrccx`** — `https://api.lrc.cx/jsonapi`. Filters: Author, Album (independent of each other). Always LRC-flavoured text: plain lyrics strip `[mm:ss]`/marker tags; synced lyrics only when the text has timestamped lines. 10s timeout.
+- **`musixmatch`** — `https://api.musixmatch.com/ws/1.1`. Requires the custom `--env` key `MUSIXMATCH_API_KEY` (RequiredCustom). Filter: Author. With `--author`: `matcher.lyrics.get` / `matcher.subtitle.get`; title-only: `track.search` → `track.lyrics.get` / `track.subtitle.get` by commontrack id. Subtitle endpoints need the paid Scale plan — on Basic they 402/403, which the adapter treats as "no synced" and falls back to plain (fetch layer warns `downgraded`). Album/ISWC unsupported (no album param; `track_isrc` is ISRC, not ISWC). Instrumental `"...."` and the `*******` usage trailer are stripped. 10s timeout.
 
 Adding a built-in source: create `internal/source/real/<name>/`, then add an import and `r.Register(<name>.New())` in `internal/bootstrap/bootstrap.go`. No CLI-layer changes required.
 
@@ -126,7 +127,7 @@ Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (neve
 ## Testing
 
 - Tests live alongside code as `*_test.go`; `main_test.go` drives `Run(argv, stdout, stderr)` with buffers and asserts exit code, stdout, and stderr independently.
-- **Real sources are NOT covered by automated tests** — `lrclib`/`lyricsovh`/`lrccx` are exercised manually against their live endpoints. Only the mocks and the CLI/fetch layers are under test.
+- **Real sources are NOT covered by automated tests** — `lrclib`/`lyricsovh`/`lrccx`/`musixmatch` are exercised manually against their live endpoints. Only the mocks and the CLI/fetch layers are under test.
 - CI (`.github/workflows/simple_ci_cd.yml`) is **release-only** — on `v*` tag pushes it:
   - runs `go test -tags test` + `go vet -tags test`;
   - cross-compiles for `linux/amd64`, `linux/arm64`, `darwin/arm64`, `windows/amd64`, `windows/arm64` (`CGO_ENABLED=0`, `-trimpath`, version ldflag);

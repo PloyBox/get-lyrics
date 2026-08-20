@@ -11,6 +11,7 @@ import (
 	"github.com/PloyBox/get-lyrics/internal/source/real/lrccx"
 	"github.com/PloyBox/get-lyrics/internal/source/real/lrclib"
 	"github.com/PloyBox/get-lyrics/internal/source/real/lyricsovh"
+	"github.com/PloyBox/get-lyrics/internal/source/real/musixmatch"
 )
 
 // RegisterAll registers every built-in adapter into r. main calls this
@@ -25,6 +26,8 @@ func RegisterAll(r *source.Registry) error {
 	if err := r.Register(lrccx.New()); err != nil {
 		return err
 	}
-	// future: r.Register(musixmatch.New()), ...
+	if err := r.Register(musixmatch.New()); err != nil {
+		return err
+	}
 	return nil
 }

@@ -82,6 +82,10 @@ get-lyrics --source mock-custom --env LANG=en --env COUNTRY=cn "TEST_SONG"
 
 # The same keys can come from the environment when not passed via --env
 LANG=en COUNTRY=cn get-lyrics --source mock-custom "TEST_SONG"
+
+# musixmatch requires its API key as a custom parameter (a free Basic key
+# works for plain lyrics; see "Built-in Sources" below)
+get-lyrics --source musixmatch --env MUSIXMATCH_API_KEY=xxx --author "Queen" "Bohemian Rhapsody"
 ```
 
 **List available sources:**
@@ -146,8 +150,9 @@ Legend: `Y` = supported, `N` = not supported, `F` = required (must be given).
 | `lrclib` | Y | Y | N | Y | Searches [lrclib.net](https://lrclib.net); uses `/api/get` when artist is given, `/api/search` otherwise |
 | `lyricsovh` | F | N | N | N | Uses [api.lyrics.ovh](https://api.lyrics.ovh); plain text only |
 | `lrccx` | Y | Y | N | Y | Searches [lrc.cx](https://lrc.cx) via its legacy `/jsonapi` endpoint; the response is always LRC-flavoured text, stripped of timestamps for plain output |
+| `musixmatch` | Y | N | N | Y* | [Musixmatch](https://developer.musixmatch.com) via `matcher.lyrics.get`/`matcher.subtitle.get` (with `--author`) or `track.search` → `track.lyrics.get`/`track.subtitle.get` (title only). Requires the `MUSIXMATCH_API_KEY` custom parameter. Synced LRC needs the paid Scale plan; on cheaper plans a `--timestamp` request falls back to plain lyrics with a `warning[downgraded]` |
 
-None of the built-in sources declares custom `--env` parameters yet; the mechanism is ready for new adapters that need them (see below).
+`musixmatch` is the only built-in source that declares a custom `--env` parameter: `MUSIXMATCH_API_KEY` (required, fallback to the `MUSIXMATCH_API_KEY` environment variable). Get a free Basic key at <https://developer.musixmatch.com>.
 
 ## Add a New Source
 
