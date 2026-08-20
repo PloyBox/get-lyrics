@@ -77,6 +77,8 @@ func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 	return source.Capabilities{Filters: source.ParamAuthor | source.ParamAlbum}
 }
 
+func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
+
 // Fetch queries lrc.cx /jsonapi, picks the best-ranked hit with usable
 // lyrics, and populates plain/synced tracks from the LRC text.
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {

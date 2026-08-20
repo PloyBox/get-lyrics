@@ -45,10 +45,11 @@ const (
 // writes each Warning.Message to stderr verbatim — messages are
 // pre-formatted here, including the [kind] tag.
 type Warning struct {
-	Kind    WarningKind  // which stage produced the warning
-	Source  string       // name of the source the warning refers to
-	Param   source.Param // parameter involved (UnsupportedParam / PreCheck)
-	Message string       // pre-formatted, user-facing text (for stderr)
+	Kind      WarningKind  // which stage produced the warning
+	Source    string       // name of the source the warning refers to
+	Param     source.Param // typed parameter involved (UnsupportedParam / PreCheck); 0 for custom
+	ParamName string       // custom --env key involved; empty for typed parameters
+	Message   string       // pre-formatted, user-facing text (for stderr)
 }
 
 // Params bundles all CLI inputs the fetch layer needs. Source is the
@@ -65,6 +66,11 @@ type Params struct {
 	ISWC      string
 	Timestamp []string
 	Lenient   bool
+	// Custom carries the user-supplied --env keys (plus process-
+	// environment fallbacks injected by the CLI). Keys the caller did
+	// not provide are absent; env-injected keys are treated exactly
+	// like user-provided ones.
+	Custom map[string]string
 }
 
 // Result is the fetch layer's output, consolidating the two lyrics
@@ -117,13 +123,14 @@ func (e DuplicateSourceError) Error() string {
 }
 
 // RequiredParamError reports a source whose Capabilities.Required list
-// includes a parameter the caller did not supply. The precheck stage
-// builds it for the first missing field; adapters never return it
-// themselves. The CLI maps it to exit code 6.
+// (or RequiredCustom list) includes a parameter the caller did not
+// supply. The precheck stage builds it for the first missing field;
+// adapters never return it themselves. The CLI maps it to exit code 6.
 type RequiredParamError struct {
-	Source string       // adapter Name() that requires the parameter
-	Param  source.Param // which Param bit is required
-	Flag   string       // CLI flag spelling for the missing field (e.g. "--author")
+	Source    string       // adapter Name() that requires the parameter
+	Param     source.Param // typed Param bit; 0 for a custom key
+	ParamName string       // custom key name; empty for a typed parameter
+	Flag      string       // CLI flag spelling: "--author" etc., or "--env <KEY>"
 }
 
 // Error renders a stable message; main prints it verbatim after the
@@ -151,8 +158,9 @@ func New(reg *source.Registry) *Service {
 // Error semantics:
 //   - strict precheck (default) → the single first problem: a
 //     DuplicateSourceError (exit 8), source.ErrNotFound (exit 3), or a
-//     RequiredParamError (exit 6); no source is fetched and
-//     warnings are empty.
+//     RequiredParamError (exit 6); no source is fetched, but warnings
+//     accumulated before the abort (e.g. a gate-2 source-bug warning)
+//     are returned with the error so the caller can print them first.
 //   - lenient precheck (--lenient) → problem sources are skipped with a
 //     PreCheck warning; eligible sources proceed.
 //   - adapter errors during fetch → FetchFailed warning + fail over to
@@ -165,7 +173,7 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 	warnings := make([]Warning, 0, 4)
 	eligible, err := s.precheck(params, &warnings)
 	if err != nil {
-		return Result{}, nil, err
+		return Result{}, warnings, err
 	}
 
 	// Per-call cache of results that did not match the requested flag.
@@ -194,16 +202,20 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 				Album:     params.Album,
 				ISWC:      params.ISWC,
 				Timestamp: wantSynced,
+				Custom:    params.Custom,
 			}
 			sr, ferr := src.Fetch(ctx, req)
 			if ferr != nil {
 				var mm source.RequiredParamMismatchError
 				if errors.As(ferr, &mm) {
+					// Reuse mm.Flag directly: for a custom key Param is
+					// 0 and flagForParam would render an empty spelling.
 					warnings = append(warnings, Warning{
-						Kind:    PrecheckMismatch,
-						Source:  name,
-						Param:   mm.Param,
-						Message: fmt.Sprintf(`warning[precheck-mismatch]: source "%s" requires %s but precheck did not enforce it (source bug); trying next source`, name, flagForParam(mm.Param)),
+						Kind:      PrecheckMismatch,
+						Source:    name,
+						Param:     mm.Param,
+						ParamName: mm.ParamName,
+						Message:   fmt.Sprintf(`warning[precheck-mismatch]: source "%s" requires %s but precheck did not enforce it (source bug); trying next source`, name, mm.Flag),
 					})
 					continue
 				}
@@ -236,10 +248,53 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 	return Result{}, warnings, NoResultError{}
 }
 
+// CustomParamsFor returns, in params.Source order, the static
+// CustomParams() declaration of every source that passes validation; the
+// map is keyed by source name. Only params.Source and params.Lenient
+// participate — Song/Author/Album/ISWC/Timestamp/Custom are ignored.
+//
+// Strict mode: the first problem aborts with UnknownSourceError
+// (unregistered name) or DuplicateSourceError (duplicate entry), the
+// same codes as the Fetch precheck, surfaced before any fetch. Lenient
+// mode: problem sources are silently skipped and never enter the map.
+//
+// It produces no warnings, performs no required-param checks, and does
+// not trigger gate 2 — it is the read-only query main uses for the
+// --help "Source parameters:" section and for the pre-fetch
+// environment-variable fallback.
+func (s *Service) CustomParamsFor(params Params) (map[string][]source.ParamSpec, error) {
+	out := make(map[string][]source.ParamSpec)
+	seen := make(map[string]bool, len(params.Source))
+	for _, name := range params.Source {
+		if seen[name] {
+			if !params.Lenient {
+				return nil, DuplicateSourceError{Name: name}
+			}
+			continue
+		}
+		seen[name] = true
+		src, err := s.reg.Get(name)
+		if err != nil {
+			if !params.Lenient {
+				return nil, UnknownSourceError{Name: name}
+			}
+			continue
+		}
+		out[name] = src.CustomParams()
+	}
+	return out, nil
+}
+
 // precheck walks params.Source in order, filtering out problem sources
 // into *warnings under --lenient or aborting with the first single
 // error in strict mode. The returned slice holds the eligible source
 // names in the user-given order.
+//
+// Gate 2 runs before the missing-required check: a source whose
+// request-aware custom declaration is inconsistent (a source bug) is
+// skipped with a precheck-mismatch warning in BOTH strict and lenient
+// mode — never a RequiredParamError, since the offending key cannot be
+// legitimately supplied by the caller.
 func (s *Service) precheck(params Params, warnings *[]Warning) ([]string, error) {
 	eligible := make([]string, 0, len(params.Source))
 	seen := make(map[string]bool, len(params.Source))
@@ -258,32 +313,51 @@ func (s *Service) precheck(params Params, warnings *[]Warning) ([]string, error)
 		seen[name] = true
 
 		src, err := s.reg.Get(name)
-		missing, need := source.Param(0), false
-		if err == nil {
-			missing, need = checkRequired(src, params)
-		}
-
-		if err != nil || need {
+		if err != nil {
 			if !params.Lenient {
-				if err != nil {
-					return nil, UnknownSourceError{Name: name}
-				}
-				return nil, RequiredParamError{
-					Source: src.Name(),
-					Param:  missing,
-					Flag:   flagForParam(missing),
-				}
-			}
-
-			msg := fmt.Sprintf(`warning[precheck]: source "%s" skipped: not found`, name)
-			if err == nil {
-				msg = fmt.Sprintf(`warning[precheck]: source "%s" skipped: requires %s`, name, flagForParam(missing))
+				return nil, UnknownSourceError{Name: name}
 			}
 			*warnings = append(*warnings, Warning{
 				Kind:    PreCheck,
 				Source:  name,
-				Param:   missing,
-				Message: msg,
+				Message: fmt.Sprintf(`warning[precheck]: source "%s" skipped: not found`, name),
+			})
+			continue
+		}
+
+		req := requestFromParams(params)
+		caps := src.Capabilities(req)
+
+		if bad := validateCustomDecl(src, caps); bad != "" {
+			*warnings = append(*warnings, Warning{
+				Kind:      PrecheckMismatch,
+				Source:    name,
+				ParamName: bad,
+				Message:   fmt.Sprintf(`warning[precheck-mismatch]: source "%s" declared invalid --env key %q (source bug)`, name, bad),
+			})
+			continue
+		}
+
+		missing, missingCustom, need := checkRequired(caps, params)
+		if need {
+			flag := flagForParam(missing)
+			if missingCustom != "" {
+				flag = "--env " + missingCustom
+			}
+			if !params.Lenient {
+				return nil, RequiredParamError{
+					Source:    src.Name(),
+					Param:     missing,
+					ParamName: missingCustom,
+					Flag:      flag,
+				}
+			}
+			*warnings = append(*warnings, Warning{
+				Kind:      PreCheck,
+				Source:    name,
+				Param:     missing,
+				ParamName: missingCustom,
+				Message:   fmt.Sprintf(`warning[precheck]: source "%s" skipped: requires %s`, name, flag),
 			})
 			continue
 		}
@@ -292,32 +366,76 @@ func (s *Service) precheck(params Params, warnings *[]Warning) ([]string, error)
 	return eligible, nil
 }
 
+// validateCustomDecl enforces gate 2 on a source's request-aware custom
+// declaration: every name in caps.Custom must be a legal key
+// (ParamNamePattern) present in the static CustomParams() list, and
+// RequiredCustom must be a duplicate-free subset of caps.Custom's
+// names. It returns the first offending key name, or "" when the
+// declaration is consistent.
+func validateCustomDecl(src source.Source, caps source.Capabilities) string {
+	static := make(map[string]bool, len(src.CustomParams()))
+	for _, spec := range src.CustomParams() {
+		static[spec.Name] = true
+	}
+	recognized := make(map[string]bool, len(caps.Custom))
+	for _, spec := range caps.Custom {
+		recognized[spec.Name] = true
+		if !source.ValidParamName(spec.Name) || !static[spec.Name] {
+			return spec.Name
+		}
+	}
+	seen := make(map[string]bool, len(caps.RequiredCustom))
+	for _, name := range caps.RequiredCustom {
+		if !source.ValidParamName(name) || !static[name] || !recognized[name] {
+			return name
+		}
+		if seen[name] {
+			return name
+		}
+		seen[name] = true
+	}
+	return ""
+}
+
 // checkRequired compares the non-empty optional fields in params against
-// the adapter's required capabilities and reports the first missing bit.
-// The returned bool is true when a required parameter is absent.
-func checkRequired(src source.Source, params Params) (source.Param, bool) {
-	req := src.Capabilities(requestFromParams(params)).Required
-	if req&source.ParamAuthor != 0 && strings.TrimSpace(params.Author) == "" {
-		return source.ParamAuthor, true
+// caps and reports the first missing requirement: typed Required bits
+// first (author, album, iswc), then RequiredCustom names in declaration
+// order. missingParam is the first missing typed bit (0 when a custom
+// key is missing); missingCustom is the first missing custom key name
+// (empty when a typed bit is missing). The bool is true when anything is
+// missing.
+func checkRequired(caps source.Capabilities, params Params) (missingParam source.Param, missingCustom string, need bool) {
+	if caps.Required&source.ParamAuthor != 0 && strings.TrimSpace(params.Author) == "" {
+		return source.ParamAuthor, "", true
 	}
-	if req&source.ParamAlbum != 0 && strings.TrimSpace(params.Album) == "" {
-		return source.ParamAlbum, true
+	if caps.Required&source.ParamAlbum != 0 && strings.TrimSpace(params.Album) == "" {
+		return source.ParamAlbum, "", true
 	}
-	if req&source.ParamISWC != 0 && strings.TrimSpace(params.ISWC) == "" {
-		return source.ParamISWC, true
+	if caps.Required&source.ParamISWC != 0 && strings.TrimSpace(params.ISWC) == "" {
+		return source.ParamISWC, "", true
 	}
-	return 0, false
+	for _, name := range caps.RequiredCustom {
+		if v, ok := params.Custom[name]; !ok || strings.TrimSpace(v) == "" {
+			return 0, name, true
+		}
+	}
+	return 0, "", false
 }
 
 // requestFromParams projects the CLI params onto a source.Request for
 // capability queries. The timestamp flag is deliberately omitted:
 // synced output is a runtime property, not part of capability checks.
+// Custom is projected so capability queries see the user-supplied keys
+// — conditional recognition/requirements (e.g. mock-custom's COUNTRY
+// depending on LANG) would otherwise never hold in precheck and
+// detectUnsupported.
 func requestFromParams(params Params) source.Request {
 	return source.Request{
 		Song:   params.Song,
 		Author: params.Author,
 		Album:  params.Album,
 		ISWC:   params.ISWC,
+		Custom: params.Custom,
 	}
 }
 
@@ -340,8 +458,15 @@ func flagForParam(p source.Param) string {
 // UnsupportedParam warning per mismatch. The timestamp format is
 // deliberately excluded: a synced request on a plain-only source is
 // covered by the Downgraded warning.
+//
+// Custom keys run a parallel path: every user-supplied key the adapter
+// does not recognize for this request gets one warning. The map
+// iteration order is unspecified on purpose — multiple unrecognized
+// keys produce warnings in nondeterministic order; tests assert the
+// warning set, never its order.
 func detectUnsupported(params Params, src source.Source) []Warning {
-	filters := src.Capabilities(requestFromParams(params)).Filters
+	caps := src.Capabilities(requestFromParams(params))
+	filters := caps.Filters
 	out := make([]Warning, 0, 3)
 
 	if strings.TrimSpace(params.Author) != "" && filters&source.ParamAuthor == 0 {
@@ -367,6 +492,24 @@ func detectUnsupported(params Params, src source.Source) []Warning {
 			Param:   source.ParamISWC,
 			Message: fmt.Sprintf(`warning[unsupported]: source "%s" does not support --iswc`, src.Name()),
 		})
+	}
+
+	recognized := make(map[string]bool, len(caps.Custom))
+	for _, spec := range caps.Custom {
+		recognized[spec.Name] = true
+	}
+	for key, value := range params.Custom {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		if !recognized[key] {
+			out = append(out, Warning{
+				Kind:      UnsupportedParam,
+				Source:    src.Name(),
+				ParamName: key,
+				Message:   fmt.Sprintf(`warning[unsupported]: source "%s" does not support --env %s`, src.Name(), key),
+			})
+		}
 	}
 	return out
 }

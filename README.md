@@ -72,6 +72,18 @@ get-lyrics --author "Queen" --timestamp "line" "Bohemian Rhapsody"
 get-lyrics --author "Queen" --timestamp "none" "Bohemian Rhapsody"
 ```
 
+**Custom source parameters (`--env`):**
+
+Sources can declare custom input keys (see "Source Parameters" below). Pass them with a repeatable `--env key=value` flag; a missing key falls back to the process environment:
+
+```sh
+# Pass a key directly (repeatable; -e is the short form)
+get-lyrics --source mock-custom --env LANG=en --env COUNTRY=cn "TEST_SONG"
+
+# The same keys can come from the environment when not passed via --env
+LANG=en COUNTRY=cn get-lyrics --source mock-custom "TEST_SONG"
+```
+
 **List available sources:**
 
 ```sh
@@ -89,6 +101,7 @@ get-lyrics --help
 | `--output` | `-o` | Write lyrics to file (default: stdout; refuses to overwrite an existing file) |
 | `--overwrite` | `-O` | Overwrite an existing `--output` file |
 | `--timestamp` | `-t` | Comma-separated timestamp formats (default: `line,none`; `line` enables LRC). User-given order is the priority |
+| `--env` | `-e` | Custom source parameter `key=value` (repeatable; key must match `^[A-Z][A-Z0-9_]*$`) |
 | `--lenient` | `-l` | Skip invalid sources instead of failing fast (precheck only) |
 | `--help` | `-h` | Show help and exit |
 | `--version` | `-v` | Print version and exit |
@@ -102,13 +115,27 @@ get-lyrics --help
 | Code | Meaning |
 |------|---------|
 | 0 | Success (warnings may be on stderr) |
-| 2 | Usage error (missing song, unknown flag, invalid `--timestamp` value) |
+| 2 | Usage error (missing song, unknown flag, invalid `--timestamp` value, invalid/duplicate `--env` entry) |
 | 3 | Unknown `--source` name |
 | 4 | No valid result (all sources failed/skipped, or nothing matched the requested timestamp format) |
 | 5 | Output failure (can't create/write file) |
-| 6 | Source requires a parameter (e.g. `--author` missing for `lyricsovh`) |
+| 6 | Source requires a parameter (e.g. `--author` missing for `lyricsovh`, or a required `--env` key missing) |
 | 7 | `--output` file already exists and `--overwrite` was not given |
 | 8 | Duplicate `--source` entry |
+
+## Source Parameters
+
+Sources may declare custom input keys beyond the built-in filters, passed via the repeatable `--env key=value` flag (short: `-e`). `--help` lists each source's declared keys under "Source parameters:".
+
+Rules:
+
+- **Key syntax**: env-style upper snake case, `^[A-Z][A-Z0-9_]*$` (e.g. `LANG`, `HTTP_PROXY`). Keys are matched exactly and case-sensitively; lowercase/mixed-case or otherwise invalid keys are rejected at parse time (exit 2).
+- **Value**: must be non-empty after trimming; a whitespace-only value is a usage error (exit 2). Duplicate keys are rejected (exit 2).
+- **Environment fallback**: for every key a requested source declares, a key you did not pass via `--env` is filled from the process environment (`os.LookupEnv`) when it exists and is non-empty. Precedence: `--env` > environment > missing. An environment variable that exists but is empty (e.g. `LANG=`) counts as missing.
+- **Injected keys behave like user-passed ones**: a source that does not declare a key emits `warning[unsupported]` for it either way — the fallback only fills values, it never changes what a source recognizes.
+- **Required keys**: a source may require a key for a given request (conditionally, based on other inputs). A missing required key is exit 6 in strict mode; under `--lenient` the source is skipped with a `warning[precheck]`.
+- **Unrecognized keys**: never hard-fail; each produces one `warning[unsupported]` per source (order between multiple keys is unspecified).
+- **Multiple sources sharing a key** all consume the same value.
 
 ## Built-in Sources
 
@@ -120,15 +147,24 @@ Legend: `Y` = supported, `N` = not supported, `F` = required (must be given).
 | `lyricsovh` | F | N | N | N | Uses [api.lyrics.ovh](https://api.lyrics.ovh); plain text only |
 | `lrccx` | Y | Y | N | Y | Searches [lrc.cx](https://lrc.cx) via its legacy `/jsonapi` endpoint; the response is always LRC-flavoured text, stripped of timestamps for plain output |
 
+None of the built-in sources declares custom `--env` parameters yet; the mechanism is ready for new adapters that need them (see below).
+
 ## Add a New Source
 
 Backends are pluggable via the `source.Source` interface. Use an existing adapter as a template, such as `internal/source/real/lrclib/` — it covers the full surface (filters, required params, plain + synced output):
 
-1. Create `internal/source/real/<name>/` implementing `source.Source` (`Name` / `Capabilities` / `Fetch`), modeled on the template.
+1. Create `internal/source/real/<name>/` implementing `source.Source` (`Name` / `Capabilities` / `Fetch` / `CustomParams`), modeled on the template.
 2. Modify it to fit your needs — endpoint, filters, required params, output behavior.
 3. Add an import and `r.Register(<name>.New())` in `internal/bootstrap/bootstrap.go`.
 
-`--help` automatically lists the new source.
+To declare custom input keys:
+
+- Return them from `CustomParams()` (the static, request-independent list, e.g. `[]source.ParamSpec{{Name: "LANG", Description: "language hint"}}`). This backs the `--help` "Source parameters:" section and the environment-variable fallback.
+- List the request's recognized keys in `Capabilities(req).Custom` and the request's required keys in `Capabilities(req).RequiredCustom`. Both may be conditional on `req` (a key required only when another key/field is present). `RequiredCustom` must be a subset of the request's `Custom` names.
+- Read the values from `req.Custom` inside `Fetch`.
+- Keys are env-style `^[A-Z][A-Z0-9_]*$`; an invalid or duplicate static declaration fails registration at startup (a source bug), and an inconsistent dynamic declaration is flagged at precheck with `warning[precheck-mismatch]` and the source is skipped.
+
+`--help` automatically lists the new source and its parameters.
 
 ## License
 

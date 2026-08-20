@@ -65,6 +65,8 @@ func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 	return c
 }
 
+func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
+
 // Fetch calls lrclib /api/search, picks the best candidate, and
 // populates plain/synced lyrics accordingly.
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {

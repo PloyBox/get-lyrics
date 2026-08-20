@@ -11,15 +11,15 @@ A Go CLI that fetches song lyrics from pluggable sources. No TUI/GUI — pure co
 
 ```
 get-lyrics/
-├── main.go                     # CLI wiring: argv parsing, exit-code mapping, output routing
+├── main.go                     # CLI wiring: argv parsing, exit-code mapping, output routing, --env validation + env fallback
 ├── main_loadmock.go            # //go:build test — registers mock sources via bootstrap.RegisterAllMock
 ├── main_test.go                # End-to-end tests for Run(argv, stdout, stderr)
 ├── internal/
 │   ├── bootstrap/              # bootstrap.go: registers real sources; bootstrap_mock.go (test tag): mocks
-│   ├── source/                 # Source interface, Request/Result, Param/ResultField bitmasks, Registry
-│   │   ├── mock/               # mock-* test-only adapters (success/require/nosupport/fail/lrc/nosync/mismatch)
+│   ├── source/                 # Source interface, Request/Result, Param/ResultField bitmasks, ParamSpec, Registry
+│   │   ├── mock/               # mock-* test-only adapters (success/require/nosupport/fail/lrc/nosync/mismatch/custom)
 │   │   └── real/               # lrclib, lyricsovh, lrccx adapters
-│   └── fetch/                  # Fetch(ctx, params): precheck, failover, synced-vs-plain resolution
+│   └── fetch/                  # Fetch(ctx, params): precheck (incl. gate 2), failover, synced-vs-plain resolution, CustomParamsFor
 ```
 
 ## Build & Test
@@ -37,6 +37,7 @@ get-lyrics/
   - `--author`/`-a`, `--album`/`-A`, `--iswc`/`-i` — filters.
   - `--output`/`-o` — write lyrics to this file instead of stdout. **Refuses to overwrite** an existing file (exit 7) unless `--overwrite`/`-O` is given.
   - `--timestamp`/`-t` — comma-separated `line`/`none` formats; user-given order is the priority (first match wins). Default `line,none`. Any other value is a usage error (exit 2).
+  - `--env`/`-e` — repeatable custom source parameter `key=value` (open-ended; keys are source-declared). Key must match `^[A-Z][A-Z0-9_]*$`; value non-empty after trimming; duplicate keys rejected — any violation is a usage error (exit 2).
   - `--lenient`/`-l` — skip invalid sources with `warning[precheck]` instead of failing fast.
   - `--help`/`-h`, `--version`/`-v` — exit 0.
 - Go's `flag` package accepts both `--flag` and `-flag`; both work.
@@ -46,11 +47,11 @@ get-lyrics/
 | Code | Meaning |
 |------|---------|
 | 0 | Success (warnings may still go to stderr) |
-| 2 | Usage error (missing song, unknown flag, invalid `--timestamp`) |
+| 2 | Usage error (missing song, unknown flag, invalid `--timestamp`, invalid/duplicate `--env` entry) |
 | 3 | Unknown `--source` name (strict precheck) |
 | 4 | No valid result: all sources skipped/failed, or no format match |
 | 5 | Output failure (file open, truncate, write, or close) |
-| 6 | Source-required parameter missing (e.g. `--author` for `lyricsovh`) |
+| 6 | Source-required parameter missing (e.g. `--author` for `lyricsovh`, or a required `--env` key) |
 | 7 | `--output` exists and `--overwrite` not given |
 | 8 | Duplicate `--source` entry (strict precheck) |
 
@@ -59,14 +60,47 @@ get-lyrics/
 Thin CLI layer over a pluggable-source abstraction:
 
 1. **Registration** — `main.go` runs `bootstrap.RegisterAll(r)` once before `main()`; test builds additionally register `mock-*` sources via `init()` in `main_loadmock.go`.
-2. **Parse** — required positional `<song>` plus flags via `flag.NewFlagSet`; `--timestamp` values validated at parse time.
-3. **Fetch** (`fetch.New(registry).Fetch(ctx, params)`) — precheck: duplicate source → exit 8, unknown name → exit 3, missing required param → exit 6 (`--lenient` downgrades all three to `warning[precheck]` + skip). Then a two-level loop: outer over `params.Timestamp` (priority order), inner over sources (failover). A per-call result cache dedupes by source+synced flag. Adapter errors → `warning[fetch]`, next source (a fetch-time `RequiredParamMismatchError` → `warning[precheck-mismatch]`, next source). A result whose `Filled` mask disagrees with its contents (declared-but-empty or filled-but-undeclared) → `warning[result]`, result still used as-is (trust policy). A synced request yielding plain lyrics → `warning[downgraded]`; the result stays cached and can satisfy a later `none` iteration.
-4. **Output** — opened before the fetch (`O_CREATE|O_EXCL` for new files, `O_WRONLY` without `O_TRUNC` otherwise); on any failure a freshly created file is removed (guarded by a same-inode check). Truncate+Seek happen only after a successful fetch, so existing files keep their content on every failure path (exit 3/4/6/7/8).
-5. **Warnings** — pre-formatted by the fetch layer with their `[kind]` tag and printed verbatim to stderr; they never change the exit code.
+   - `Registry.Register` is **gate 1**: a source's static `CustomParams()` list must contain only legal (`^[A-Z][A-Z0-9_]*$`), distinct keys — a violation returns `ErrInvalidParamName` and panics at startup (adapter init failure is a programmer error).
+2. **Parse** — required positional `<song>` plus flags via `flag.NewFlagSet`; `--timestamp` and `--env` values validated at parse time (violations are usage errors, exit 2).
+3. **Env fallback** — before the fetch, `main` calls `svc.CustomParamsFor(params)` (strict: unknown source → exit 3, duplicate → exit 8, reported before the fetch; lenient: problem sources silently skipped) and fills every declared key the user did not pass via `-e` from the process environment (`-e` > env > missing; an empty env var counts as missing). Injected keys behave exactly like user-passed ones.
+4. **Fetch** (`fetch.New(registry).Fetch(ctx, params)`) — two-level loop: outer over `params.Timestamp` (priority order), inner over sources (failover); a per-call result cache dedupes by source+synced flag.
+   - **Precheck** — duplicate source → exit 8, unknown name → exit 3, missing required param (typed first, then `RequiredCustom` in declaration order) → exit 6 (`--lenient` downgrades these to `warning[precheck]` + skip).
+   - **Gate 2** — runs before the missing check: a request-aware custom declaration inconsistent with the static list (invalid name, static mismatch, `RequiredCustom` not a subset of `Custom`, or duplicate `RequiredCustom`) skips the source with `warning[precheck-mismatch]` in BOTH modes — never exit 6.
+   - **Abort warnings** — strict precheck errors return the warnings accumulated before the abort, so `main` can print them before the error.
+   - **Adapter errors** — `warning[fetch]`, next source (a fetch-time `RequiredParamMismatchError` → `warning[precheck-mismatch]` reusing the error's own `Flag`, next source).
+   - **Result trust policy** — a result whose `Filled` mask disagrees with its contents (declared-but-empty or filled-but-undeclared) → `warning[result]`, result still used as-is (trust policy).
+   - **Downgrade** — a synced request yielding plain lyrics → `warning[downgraded]`; the result stays cached and can satisfy a later `none` iteration.
+5. **Output** — opened before the fetch (`O_CREATE|O_EXCL` for new files, `O_WRONLY` without `O_TRUNC` otherwise); on any failure a freshly created file is removed (guarded by a same-inode check). Truncate+Seek happen only after a successful fetch, so existing files keep their content on every failure path (exit 3/4/6/7/8).
+6. **Warnings** — pre-formatted by the fetch layer with their `[kind]` tag and printed verbatim to stderr; they never change the exit code. Every error path in `main` prints the fetched warnings before the `error[...]` line.
 
-**Key types (`internal/source/source.go`):** `Param` bitmask (`ParamAuthor | ParamAlbum | ParamISWC`), `ResultField` bitmask (`FieldLyrics | FieldSyncedLyrics | FieldTitle | FieldArtist | FieldAlbum | FieldISWC | FieldSubSource`), `Capabilities` (`Filters` + `Required`), `Request`, `Result` (its `Filled` mask declares which fields the adapter actually populated — unset fields are treated as empty by the fetch layer; its `SubSource` field + `FieldSubSource` bit are for aggregate sub-source identification — standalone adapters leave both empty), `Source` interface (`Name`/`Capabilities`/`Fetch`), `Registry` (concurrency-safe name→source map), `RequiredParamMismatchError` (raised by `Fetch` when a required parameter is missing — a capability declaration bug). Adapters declare required params via `Capabilities(req).Required`; the fetch layer enforces them via `fetch.RequiredParamError`, and a fetch-time miss surfaces as `RequiredParamMismatchError`. `Capabilities(req)` is request-aware so conditional support is expressible (lrclib drops `--album` when `--author` is absent).
+**Key types (`internal/source/source.go`):**
 
-**Key types (`internal/fetch/fetch.go`):** `Params`, `Result` (`Source` = adapter name, `SubSource` = aggregate sub-source, `Synced` = lyrics contain LRC), `Warning` (kinds: `UnsupportedParam`/`Downgraded`/`PreCheck`/`PrecheckMismatch`/`FetchFailed`/`ResultMismatch`), `NoResultError` (exit 4), `UnknownSourceError` (exit 3), `DuplicateSourceError` (exit 8), `RequiredParamError` (exit 6).
+- `Param` bitmask — `ParamAuthor | ParamAlbum | ParamISWC`.
+- `ResultField` bitmask — `FieldLyrics | FieldSyncedLyrics | FieldTitle | FieldArtist | FieldAlbum | FieldISWC | FieldSubSource`.
+- `ParamNamePattern` (`^[A-Z][A-Z0-9_]*$`) + `ValidParamName`.
+- `ParamSpec` — `Name` + `Description`; required-ness is decided per request, never statically.
+- `Capabilities` — `Filters` + `Required` typed bitmasks + `Custom []ParamSpec` + `RequiredCustom []string` for this request.
+- `Request` — now carries `Custom map[string]string`.
+- `Result` — its `Filled` mask declares which fields the adapter actually populated (unset fields are treated as empty by the fetch layer); its `SubSource` field + `FieldSubSource` bit are for aggregate sub-source identification — standalone adapters leave both empty.
+- `Source` interface — `Name`/`Capabilities`/`CustomParams`/`Fetch`; `CustomParams()` returns the static, request-independent list for `--help` rendering and env fallback.
+- `Registry` — concurrency-safe name→source map; gate 1 validation in `Register`.
+- `ErrInvalidParamName` — gate 1, carries source + key, `Duplicate` flag.
+- `RequiredParamMismatchError` — raised by `Fetch` when a required parameter is missing (a capability declaration bug); carries `ParamName` for custom keys and `Flag` for message rendering.
+
+Adapters declare required typed params via `Capabilities(req).Required` and required custom keys via `Capabilities(req).RequiredCustom` (a subset of that request's `Custom` names); the fetch layer enforces them via `fetch.RequiredParamError`, and a fetch-time miss surfaces as `RequiredParamMismatchError`. `Capabilities(req)` is request-aware so conditional support is expressible (lrclib drops `--album` when `--author` is absent; mock-custom recognizes `COUNTRY` only when `LANG` is present).
+
+**Key types (`internal/fetch/fetch.go`):**
+
+- `Params` — now carries `Custom map[string]string`.
+- `Result` — `Source` = adapter name, `SubSource` = aggregate sub-source, `Synced` = lyrics contain LRC.
+- `Warning` — kinds: `UnsupportedParam`/`Downgraded`/`PreCheck`/`PrecheckMismatch`/`FetchFailed`/`ResultMismatch`; `ParamName` for custom keys — `Param` stays 0 for them.
+- `NoResultError` — exit 4.
+- `UnknownSourceError` — exit 3.
+- `DuplicateSourceError` — exit 8.
+- `RequiredParamError` — exit 6; `ParamName` + `Flag` rendered as `--env <KEY>` for custom.
+- `CustomParamsFor(params)` — read-only query: static declarations per requested source, only `Source`/`Lenient` participate, no warnings/required checks/gate 2 — used by `main` for help rendering and env fallback.
+
+Unsupported custom keys produce per-source `warning[unsupported]` in map iteration order (unspecified; assert warning sets, never order).
 
 ### Built-in sources
 
@@ -78,13 +112,26 @@ Adding a built-in source: create `internal/source/real/<name>/`, then add an imp
 
 ### Mock sources
 
-Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (never in production). Names must start with `mock-`. Each covers one testing concern: `mock-success` (happy path), `mock-require` (exit 6), `mock-nosupport` (no-param path), `mock-fail` (exit 4), `mock-lrc` (synced path), `mock-nosync` (downgrade path), `mock-mismatch` (precheck-vs-requirement mismatch path).
+Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (never in production). Names must start with `mock-`. Each covers one testing concern:
+
+- `mock-success` — happy path.
+- `mock-require` — exit 6.
+- `mock-nosupport` — no-param path.
+- `mock-fail` — exit 4.
+- `mock-lrc` — synced path.
+- `mock-nosync` — downgrade path.
+- `mock-mismatch` — precheck-vs-requirement mismatch path.
+- `mock-custom` — custom `--env` params: `LANG` always recognized+required, `COUNTRY` conditional on `LANG`.
 
 ## Testing
 
 - Tests live alongside code as `*_test.go`; `main_test.go` drives `Run(argv, stdout, stderr)` with buffers and asserts exit code, stdout, and stderr independently.
 - **Real sources are NOT covered by automated tests** — `lrclib`/`lyricsovh`/`lrccx` are exercised manually against their live endpoints. Only the mocks and the CLI/fetch layers are under test.
-- CI (`.github/workflows/simple_ci_cd.yml`) is **release-only**: on `v*` tag pushes it runs `go test -tags test` + `go vet -tags test`, cross-compiles for `linux/amd64`, `linux/arm64`, `darwin/arm64`, `windows/amd64`, `windows/arm64` (`CGO_ENABLED=0`, `-trimpath`, version ldflag), writes `checksums.txt`, and publishes via `softprops/action-gh-release@v3`.
+- CI (`.github/workflows/simple_ci_cd.yml`) is **release-only** — on `v*` tag pushes it:
+  - runs `go test -tags test` + `go vet -tags test`;
+  - cross-compiles for `linux/amd64`, `linux/arm64`, `darwin/arm64`, `windows/amd64`, `windows/arm64` (`CGO_ENABLED=0`, `-trimpath`, version ldflag);
+  - writes `checksums.txt`;
+  - publishes via `softprops/action-gh-release@v3`.
 
 ## Code Style & Conventions
 
@@ -97,7 +144,14 @@ Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (neve
 
 - **Verify with:** `go build ./...`, `go test -tags test ./...`, `go vet -tags test ./...`, `gofmt -l .` (all must be clean).
 - **Do NOT:** add a TUI/GUI; make the song title optional; write warnings to stdout; bypass the `source.Source` interface for new providers.
-- **Adapters must:** self-declare `Capabilities(req)` (filters honored + required params; request-aware so conditional support is expressible — most adapters return a constant); declare required params via `Capabilities(req).Required` (precheck enforces them; if `Fetch` finds a required parameter missing anyway — a declaration bug — raise `RequiredParamMismatchError`); respect `ctx`; set `Result.Filled` to declare exactly which result fields were populated (the fetch layer reads only declared fields and warns on mismatches); leave `source.Result.SubSource` empty with the `FieldSubSource` bit unset (aggregate sub-source only); never panic on missing `Song`.
+- **Adapters must:**
+  - self-declare `Capabilities(req)` — filters honored + required params; request-aware so conditional support is expressible (most adapters return a constant);
+  - declare required typed params via `Capabilities(req).Required` and required custom keys via `Capabilities(req).RequiredCustom` (a subset of that request's `Custom` names; both are precheck-enforced — if `Fetch` finds a required parameter missing anyway, a declaration bug — raise `RequiredParamMismatchError` with `Flag` filled so the fetch layer renders a correct message);
+  - return the static custom-parameter list from `CustomParams()` — legal `^[A-Z][A-Z0-9_]*$`, distinct keys; sources without custom params return nil;
+  - respect `ctx`;
+  - set `Result.Filled` to declare exactly which result fields were populated (the fetch layer reads only declared fields and warns on mismatches);
+  - leave `source.Result.SubSource` empty with the `FieldSubSource` bit unset (aggregate sub-source only);
+  - never panic on missing `Song`.
 - **Commits:** conventional prefixes (`feat:`, `chore:`); base branch is `main`.
 
 ## Pointers

@@ -3,6 +3,7 @@ package fetch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ type fakeSrc struct {
 	name       string
 	caps       source.Capabilities
 	capsFn     func(source.Request) source.Capabilities
+	custom     []source.ParamSpec
 	fetch      func(context.Context, source.Request) (source.Result, error)
 	fetchCalls int
 }
@@ -25,6 +27,7 @@ func (f *fakeSrc) Capabilities(req source.Request) source.Capabilities {
 	}
 	return f.caps
 }
+func (f *fakeSrc) CustomParams() []source.ParamSpec { return f.custom }
 func (f *fakeSrc) Fetch(ctx context.Context, r source.Request) (source.Result, error) {
 	f.fetchCalls++
 	return f.fetch(ctx, r)
@@ -801,5 +804,443 @@ func TestFetch_DeclaredButEmptySubSourceWarns(t *testing.T) {
 	}
 	if !strings.Contains(warnings[0].Message, `declares field "SubSource" but left it empty`) {
 		t.Fatalf("warning message = %q; want declared-but-empty note", warnings[0].Message)
+	}
+}
+
+// TestFetch_Gate2SkipsInconsistentDeclarations drives gate 2: every way
+// a request-aware custom declaration can disagree with the static
+// CustomParams() list (invalid name, static-list mismatch, non-subset
+// RequiredCustom, invalid RequiredCustom name, duplicate RequiredCustom)
+// makes the source skipped with a precheck-mismatch warning — in BOTH
+// strict and lenient mode, never a RequiredParamError.
+func TestFetch_Gate2SkipsInconsistentDeclarations(t *testing.T) {
+	cases := []struct {
+		name string
+		caps source.Capabilities
+		bad  string // expected offending key in the warning
+	}{
+		{
+			"invalid name in Custom",
+			source.Capabilities{Custom: []source.ParamSpec{{Name: "lang"}}},
+			"lang",
+		},
+		{
+			"dynamic name missing from static list",
+			source.Capabilities{Custom: []source.ParamSpec{{Name: "GHOST"}}},
+			"GHOST",
+		},
+		{
+			"RequiredCustom not a subset of Custom",
+			source.Capabilities{
+				Custom:         []source.ParamSpec{{Name: "LANG"}},
+				RequiredCustom: []string{"COUNTRY"},
+			},
+			"COUNTRY",
+		},
+		{
+			"RequiredCustom invalid name",
+			source.Capabilities{RequiredCustom: []string{"LANG-X"}},
+			"LANG-X",
+		},
+		{
+			"RequiredCustom duplicate",
+			source.Capabilities{
+				Custom:         []source.ParamSpec{{Name: "LANG"}, {Name: "COUNTRY"}},
+				RequiredCustom: []string{"LANG", "LANG"},
+			},
+			"LANG",
+		},
+	}
+	for _, tc := range cases {
+		for _, lenient := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/lenient=%v", tc.name, lenient), func(t *testing.T) {
+				buggy := &fakeSrc{
+					name:   "buggy",
+					caps:   tc.caps,
+					custom: []source.ParamSpec{{Name: "LANG"}, {Name: "COUNTRY"}},
+				}
+				r := newRegistry(t, buggy)
+				svc := New(r)
+
+				_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Source: []string{"buggy"}, Lenient: lenient})
+				var reqErr RequiredParamError
+				if errors.As(err, &reqErr) {
+					t.Fatalf("err = %+v; gate-2 bug must never surface as RequiredParamError", reqErr)
+				}
+				var noRes NoResultError
+				if !errors.As(err, &noRes) {
+					t.Fatalf("err = %v; want NoResultError (only source skipped)", err)
+				}
+				if len(warnings) != 1 || warnings[0].Kind != PrecheckMismatch {
+					t.Fatalf("warnings = %+v; want one PrecheckMismatch warning", warnings)
+				}
+				if warnings[0].ParamName != tc.bad || warnings[0].Param != 0 {
+					t.Fatalf("warning = %+v; want ParamName=%q, Param=0", warnings[0], tc.bad)
+				}
+				wantMsg := fmt.Sprintf(`warning[precheck-mismatch]: source "buggy" declared invalid --env key %q (source bug)`, tc.bad)
+				if warnings[0].Message != wantMsg {
+					t.Fatalf("message = %q; want %q", warnings[0].Message, wantMsg)
+				}
+			})
+		}
+	}
+}
+
+// TestFetch_Gate2BugFailsOverToNextSource verifies a gate-2-skipped
+// source does not abort the run: the next source is fetched with the
+// precheck-mismatch warning still emitted.
+func TestFetch_Gate2BugFailsOverToNextSource(t *testing.T) {
+	buggy := &fakeSrc{
+		name: "buggy",
+		caps: source.Capabilities{RequiredCustom: []string{"LANG-X"}},
+	}
+	ok := &fakeSrc{
+		name: "ok",
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			return source.Result{Lyrics: "L", Title: r.Song, Filled: source.FieldLyrics | source.FieldTitle}, nil
+		},
+	}
+	r := newRegistry(t, buggy, ok)
+	svc := New(r)
+
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"none"}, Source: []string{"buggy", "ok"}})
+	if err != nil || res.Lyrics != "L" {
+		t.Fatalf("res = %+v, err = %v; want failover result from ok", res, err)
+	}
+	if len(warnings) != 1 || warnings[0].Kind != PrecheckMismatch || warnings[0].Source != "buggy" {
+		t.Fatalf("warnings = %+v; want one buggy precheck-mismatch warning", warnings)
+	}
+}
+
+// TestFetch_Gate2PrecedesMissingRequired locks the check order: a source
+// with both a gate-2 declaration bug and a missing typed required param
+// is treated as buggy and skipped — never a RequiredParamError.
+func TestFetch_Gate2PrecedesMissingRequired(t *testing.T) {
+	buggy := &fakeSrc{
+		name: "buggy",
+		caps: source.Capabilities{
+			Required:       source.ParamAuthor, // would abort exit 6 if the check ran
+			RequiredCustom: []string{"LANG-X"}, // gate-2 violation
+		},
+	}
+	r := newRegistry(t, buggy)
+	svc := New(r)
+
+	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Source: []string{"buggy"}})
+	var reqErr RequiredParamError
+	if errors.As(err, &reqErr) {
+		t.Fatalf("err = %+v; gate 2 must precede the missing-required check", reqErr)
+	}
+	var noRes NoResultError
+	if !errors.As(err, &noRes) {
+		t.Fatalf("err = %v; want NoResultError", err)
+	}
+	if len(warnings) != 1 || warnings[0].Kind != PrecheckMismatch {
+		t.Fatalf("warnings = %+v; want one PrecheckMismatch warning", warnings)
+	}
+}
+
+// TestFetch_StrictAbortCarriesGate2Warnings locks the review C.7
+// decision: warnings accumulated before a strict precheck abort (here a
+// gate-2 bug on source A, then source B missing --author) are returned
+// with the error so the caller can print them before the error message.
+func TestFetch_StrictAbortCarriesGate2Warnings(t *testing.T) {
+	buggy := &fakeSrc{
+		name: "buggy",
+		caps: source.Capabilities{RequiredCustom: []string{"LANG-X"}},
+	}
+	req := &fakeSrc{name: "req", caps: source.Capabilities{Required: source.ParamAuthor}}
+	r := newRegistry(t, buggy, req)
+	svc := New(r)
+
+	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Source: []string{"buggy", "req"}})
+	var reqErr RequiredParamError
+	if !errors.As(err, &reqErr) {
+		t.Fatalf("err = %v; want RequiredParamError from req", err)
+	}
+	if reqErr.Source != "req" || reqErr.Flag != "--author" {
+		t.Fatalf("reqErr = %+v; want author-required for req", reqErr)
+	}
+	if len(warnings) != 1 || warnings[0].Kind != PrecheckMismatch || warnings[0].Source != "buggy" {
+		t.Fatalf("warnings = %+v; want buggy's precheck-mismatch warning carried with the error", warnings)
+	}
+}
+
+// TestFetch_MissingRequiredCustomReportsEnvFlag drives the custom
+// required-param precheck: a missing RequiredCustom key produces a
+// RequiredParamError whose Flag renders as "--env <KEY>" and whose
+// Param bit stays 0.
+func TestFetch_MissingRequiredCustomReportsEnvFlag(t *testing.T) {
+	custom := &fakeSrc{
+		name:   "custom",
+		caps:   source.Capabilities{Custom: []source.ParamSpec{{Name: "LANG"}}, RequiredCustom: []string{"LANG"}},
+		custom: []source.ParamSpec{{Name: "LANG"}},
+	}
+	r := newRegistry(t, custom)
+	svc := New(r)
+
+	_, _, err := svc.Fetch(context.Background(), Params{Song: "S", Source: []string{"custom"}})
+	var reqErr RequiredParamError
+	if !errors.As(err, &reqErr) {
+		t.Fatalf("err = %v; want RequiredParamError", err)
+	}
+	if reqErr.Source != "custom" || reqErr.Param != 0 || reqErr.ParamName != "LANG" || reqErr.Flag != "--env LANG" {
+		t.Fatalf("reqErr = %+v; want custom LANG required, Flag=--env LANG", reqErr)
+	}
+	if !strings.Contains(reqErr.Error(), "requires --env LANG") {
+		t.Fatalf("message = %q; want --env LANG spelling", reqErr.Error())
+	}
+}
+
+// TestFetch_MissingRequiredCustomLenientSkips mirrors the typed lenient
+// path: a missing RequiredCustom key skips the source with a PreCheck
+// warning under --lenient.
+func TestFetch_MissingRequiredCustomLenientSkips(t *testing.T) {
+	custom := &fakeSrc{
+		name:   "custom",
+		caps:   source.Capabilities{Custom: []source.ParamSpec{{Name: "LANG"}}, RequiredCustom: []string{"LANG"}},
+		custom: []source.ParamSpec{{Name: "LANG"}},
+	}
+	ok := &fakeSrc{
+		name: "ok",
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			return source.Result{Lyrics: "L", Title: r.Song, Filled: source.FieldLyrics | source.FieldTitle}, nil
+		},
+	}
+	r := newRegistry(t, custom, ok)
+	svc := New(r)
+
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"none"}, Source: []string{"custom", "ok"}, Lenient: true})
+	if err != nil || res.Lyrics != "L" {
+		t.Fatalf("res = %+v, err = %v; want failover result from ok", res, err)
+	}
+	if len(warnings) != 1 || warnings[0].Kind != PreCheck {
+		t.Fatalf("warnings = %+v; want one PreCheck warning", warnings)
+	}
+	if warnings[0].ParamName != "LANG" || warnings[0].Param != 0 {
+		t.Fatalf("warning = %+v; want ParamName=LANG, Param=0", warnings[0])
+	}
+	if !strings.Contains(warnings[0].Message, "skipped: requires --env LANG") {
+		t.Fatalf("message = %q; want --env LANG spelling", warnings[0].Message)
+	}
+}
+
+// TestFetch_ConditionalRequiredCustom drives mock-custom semantics:
+// COUNTRY is recognized and required only when LANG is present, so the
+// same source reports a different missing key depending on the request.
+func TestFetch_ConditionalRequiredCustom(t *testing.T) {
+	cond := &fakeSrc{
+		name: "cond",
+		capsFn: func(req source.Request) source.Capabilities {
+			caps := source.Capabilities{
+				Custom:         []source.ParamSpec{{Name: "LANG"}},
+				RequiredCustom: []string{"LANG"},
+			}
+			if _, ok := req.Custom["LANG"]; ok {
+				caps.Custom = append(caps.Custom, source.ParamSpec{Name: "COUNTRY"})
+				caps.RequiredCustom = append(caps.RequiredCustom, "COUNTRY")
+			}
+			return caps
+		},
+		custom: []source.ParamSpec{{Name: "LANG"}, {Name: "COUNTRY"}},
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			return source.Result{Lyrics: "L:" + r.Custom["LANG"], Filled: source.FieldLyrics}, nil
+		},
+	}
+	r := newRegistry(t, cond)
+	svc := New(r)
+
+	// No custom keys: only LANG is required.
+	_, _, err := svc.Fetch(context.Background(), Params{Song: "S", Source: []string{"cond"}})
+	var reqErr RequiredParamError
+	if !errors.As(err, &reqErr) || reqErr.Flag != "--env LANG" {
+		t.Fatalf("err = %v; want --env LANG required", err)
+	}
+
+	// LANG present: COUNTRY joins the required list and is now missing.
+	_, _, err = svc.Fetch(context.Background(), Params{Song: "S", Custom: map[string]string{"LANG": "en"}, Source: []string{"cond"}})
+	if !errors.As(err, &reqErr) || reqErr.Flag != "--env COUNTRY" || reqErr.ParamName != "COUNTRY" {
+		t.Fatalf("err = %v; want --env COUNTRY required once LANG is present", err)
+	}
+
+	// Both present: success, and the adapter saw req.Custom.
+	res, _, err := svc.Fetch(context.Background(), Params{Song: "S", Custom: map[string]string{"LANG": "en", "COUNTRY": "cn"}, Timestamp: []string{"none"}, Source: []string{"cond"}})
+	if err != nil || res.Lyrics != "L:en" {
+		t.Fatalf("res = %+v, err = %v; want lyrics carrying LANG", res, err)
+	}
+}
+
+// TestDetectUnsupported_CustomKeys drives the custom parallel path:
+// recognized keys stay silent, unrecognized keys warn with ParamName
+// set and Param 0, whitespace-only values are ignored, and multiple
+// unrecognized keys produce a warning set (order unspecified).
+func TestDetectUnsupported_CustomKeys(t *testing.T) {
+	stub := &fakeSrc{
+		name:   "stub",
+		caps:   source.Capabilities{Custom: []source.ParamSpec{{Name: "LANG"}}},
+		custom: []source.ParamSpec{{Name: "LANG"}},
+		fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
+			return source.Result{}, nil
+		},
+	}
+
+	if got := detectUnsupported(Params{Song: "S", Custom: map[string]string{"LANG": "en"}}, stub); len(got) != 0 {
+		t.Fatalf("recognized key produced warnings: %+v", got)
+	}
+
+	got := detectUnsupported(Params{Song: "S", Custom: map[string]string{"FOO": "x"}}, stub)
+	if len(got) != 1 {
+		t.Fatalf("got %+v; want one warning", got)
+	}
+	w := got[0]
+	if w.Kind != UnsupportedParam || w.ParamName != "FOO" || w.Param != 0 {
+		t.Fatalf("warning = %+v; want UnsupportedParam FOO with Param 0", w)
+	}
+	if !strings.Contains(w.Message, `does not support --env FOO`) {
+		t.Fatalf("message = %q; want --env FOO spelling", w.Message)
+	}
+
+	if got := detectUnsupported(Params{Song: "S", Custom: map[string]string{"FOO": " "}}, stub); len(got) != 0 {
+		t.Fatalf("whitespace-only value produced warnings: %+v", got)
+	}
+
+	got = detectUnsupported(Params{Song: "S", Custom: map[string]string{"FOO": "x", "BAR": "y"}}, stub)
+	if len(got) != 2 {
+		t.Fatalf("got %d warnings; want 2", len(got))
+	}
+	seen := make(map[string]bool)
+	for _, w := range got {
+		if w.Kind != UnsupportedParam {
+			t.Fatalf("warning %+v; want Kind UnsupportedParam", w)
+		}
+		seen[w.ParamName] = true
+	}
+	if !seen["FOO"] || !seen["BAR"] {
+		t.Fatalf("warning set = %v; want FOO and BAR (order unspecified)", seen)
+	}
+}
+
+// TestFetch_PassesCustomToRequest locks the data flow: params.Custom
+// reaches both the capability query and the adapter's Request.
+func TestFetch_PassesCustomToRequest(t *testing.T) {
+	var queryCustom map[string]string
+	cond := &fakeSrc{
+		name: "cond",
+		capsFn: func(req source.Request) source.Capabilities {
+			queryCustom = req.Custom
+			return source.Capabilities{Custom: []source.ParamSpec{{Name: "LANG"}}}
+		},
+		custom: []source.ParamSpec{{Name: "LANG"}},
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			return source.Result{Lyrics: "L:" + r.Custom["LANG"], Filled: source.FieldLyrics}, nil
+		},
+	}
+	r := newRegistry(t, cond)
+	svc := New(r)
+
+	res, _, err := svc.Fetch(context.Background(), Params{Song: "S", Custom: map[string]string{"LANG": "en"}, Timestamp: []string{"none"}, Source: []string{"cond"}})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.Lyrics != "L:en" {
+		t.Fatalf("res.Lyrics = %q; want adapter to see Custom in Request", res.Lyrics)
+	}
+	if queryCustom == nil || queryCustom["LANG"] != "en" {
+		t.Fatalf("capability query Custom = %v; want LANG=en", queryCustom)
+	}
+}
+
+// TestFetch_RequiredParamMismatchCustomRendersEnvFlag verifies the
+// fetch-time mismatch warning reuses mm.Flag: a custom-key mismatch
+// (Param 0) must render "--env <KEY>", not an empty flag spelling.
+func TestFetch_RequiredParamMismatchCustomRendersEnvFlag(t *testing.T) {
+	buggy := &fakeSrc{
+		name: "buggy",
+		fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
+			return source.Result{}, source.RequiredParamMismatchError{
+				Source:    "buggy",
+				ParamName: "LANG",
+				Flag:      "--env LANG",
+			}
+		},
+	}
+	r := newRegistry(t, buggy)
+	svc := New(r)
+
+	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"none"}, Source: []string{"buggy"}})
+	var noRes NoResultError
+	if !errors.As(err, &noRes) {
+		t.Fatalf("err = %v; want NoResultError", err)
+	}
+	if len(warnings) != 1 || warnings[0].Kind != PrecheckMismatch {
+		t.Fatalf("warnings = %+v; want one PrecheckMismatch warning", warnings)
+	}
+	if warnings[0].ParamName != "LANG" || warnings[0].Param != 0 {
+		t.Fatalf("warning = %+v; want ParamName=LANG, Param=0", warnings[0])
+	}
+	if !strings.Contains(warnings[0].Message, "requires --env LANG") {
+		t.Fatalf("message = %q; want --env LANG spelling", warnings[0].Message)
+	}
+}
+
+func TestCustomParamsFor_StrictUnknownAndDuplicate(t *testing.T) {
+	a := &fakeSrc{name: "a", custom: []source.ParamSpec{{Name: "LANG"}}}
+	r := newRegistry(t, a)
+	svc := New(r)
+
+	// Unknown source in strict mode, with irrelevant fields set — they
+	// must not participate in the query.
+	_, err := svc.CustomParamsFor(Params{Song: "S", Author: "X", Album: "Y", Custom: map[string]string{"K": "v"}, Source: []string{"nope"}})
+	var unk UnknownSourceError
+	if !errors.As(err, &unk) || unk.Name != "nope" {
+		t.Fatalf("err = %v; want UnknownSourceError{Name: nope}", err)
+	}
+	_, err = svc.CustomParamsFor(Params{Source: []string{"nope"}})
+	if !errors.As(err, &unk) {
+		t.Fatalf("err = %v; want same UnknownSourceError with only Source set", err)
+	}
+
+	_, err = svc.CustomParamsFor(Params{Source: []string{"a", "a"}})
+	var dup DuplicateSourceError
+	if !errors.As(err, &dup) || dup.Name != "a" {
+		t.Fatalf("err = %v; want DuplicateSourceError{Name: a}", err)
+	}
+}
+
+func TestCustomParamsFor_LenientSkipsProblemSources(t *testing.T) {
+	a := &fakeSrc{name: "a", custom: []source.ParamSpec{{Name: "LANG", Description: "language hint"}}}
+	r := newRegistry(t, a)
+	svc := New(r)
+
+	decls, err := svc.CustomParamsFor(Params{Source: []string{"a", "nope", "a"}, Lenient: true})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(decls) != 1 {
+		t.Fatalf("decls = %v; want only source a", decls)
+	}
+	if !reflect.DeepEqual(decls["a"], a.custom) {
+		t.Fatalf("decls[a] = %v; want CustomParams() unchanged", decls["a"])
+	}
+}
+
+func TestCustomParamsFor_ReturnsDeclarations(t *testing.T) {
+	a := &fakeSrc{name: "a", custom: []source.ParamSpec{{Name: "LANG", Description: "language hint"}}}
+	b := &fakeSrc{name: "b"}
+	r := newRegistry(t, a, b)
+	svc := New(r)
+
+	decls, err := svc.CustomParamsFor(Params{Song: "ignored", Author: "ignored", Source: []string{"b", "a"}})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(decls) != 2 {
+		t.Fatalf("decls = %v; want entries for a and b", decls)
+	}
+	if len(decls["b"]) != 0 {
+		t.Fatalf("decls[b] = %v; want nil for a source without custom params", decls["b"])
+	}
+	if !reflect.DeepEqual(decls["a"], a.custom) {
+		t.Fatalf("decls[a] = %v; want the static declaration", decls["a"])
 	}
 }

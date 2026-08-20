@@ -9,6 +9,8 @@ package source
 import (
 	"context"
 	"errors"
+	"fmt"
+	"regexp"
 	"sort"
 	"sync"
 )
@@ -26,6 +28,31 @@ const (
 	ParamISWC
 )
 
+// ParamNamePattern is the legal syntax for custom parameter keys
+// (env-style upper snake case, e.g. "LANG"). It is defined in one place
+// and reused by the registration-time check (gate 1), the precheck
+// dynamic check (gate 2), and the CLI's --env input validation.
+const ParamNamePattern = "^[A-Z][A-Z0-9_]*$"
+
+var paramNameRe = regexp.MustCompile(ParamNamePattern)
+
+// ValidParamName reports whether name matches ParamNamePattern. Keys are
+// matched exactly and case-sensitively; the pattern forces uppercase, so
+// lowercase/mixed-case keys are rejected by the CLI before they ever
+// reach a source.
+func ValidParamName(name string) bool {
+	return paramNameRe.MatchString(name)
+}
+
+// ParamSpec describes one custom input parameter a source declares.
+// Whether a parameter is required is not part of the static
+// declaration: Capabilities(req).RequiredCustom decides that per
+// request, so conditional requirements are expressible.
+type ParamSpec struct {
+	Name        string // e.g. "LANG"; must match ParamNamePattern
+	Description string // rendered into the --help "Source parameters:" section
+}
+
 // Capabilities describes how an adapter handles a specific request. The
 // query takes the actual Request so conditional support is expressible:
 // an adapter may honor a filter only when another field is present
@@ -42,6 +69,19 @@ type Capabilities struct {
 	// required field is missing anyway when Fetch runs — a capability
 	// declaration bug — the adapter raises RequiredParamMismatchError.
 	Required Param
+
+	// Custom lists the custom parameters this adapter recognizes for
+	// this request. Conditionally supported parameters are listed only
+	// when their precondition holds (mirrors lrclib's conditional
+	// album semantics). Every name must be legal (ParamNamePattern) and
+	// present in CustomParams() (gate 2; a violation is a source bug).
+	Custom []ParamSpec
+
+	// RequiredCustom lists the names of custom parameters that must be
+	// present for this request. It must be a duplicate-free subset of
+	// this request's Custom names, and every name must be legal and
+	// present in CustomParams() (gate 2; a violation is a source bug).
+	RequiredCustom []string
 }
 
 // Request is the input to a Source.Fetch call. Song is required;
@@ -52,6 +92,10 @@ type Request struct {
 	Album     string
 	ISWC      string
 	Timestamp bool // whether to request timestamped lyrics (from --timestamp)
+	// Custom carries the key/value pairs the user passed via --env
+	// (plus process-environment fallbacks); keys the user did not
+	// supply are absent.
+	Custom map[string]string
 }
 
 // ResultField identifies one result field a Source may populate. A
@@ -126,6 +170,13 @@ type Source interface {
 	// per-field warnings, and enforces Required during precheck.
 	Capabilities(req Request) Capabilities
 
+	// CustomParams returns the full static list of custom parameters
+	// this source supports, independent of any request. It backs the
+	// --help "Source parameters:" section and the pre-fetch
+	// environment-variable fallback; sources without custom parameters
+	// return nil.
+	CustomParams() []ParamSpec
+
 	// Fetch performs the lyrics lookup. It must respect ctx for
 	// cancellation/deadlines. A non-nil error means the lookup failed
 	// and no lyrics are available; warnings about unsupported parameters
@@ -142,6 +193,24 @@ var ErrNotFound = errors.New("source: not found")
 // same Name() is already registered.
 var ErrDuplicate = errors.New("source: duplicate registration")
 
+// ErrInvalidParamName is returned by Registry.Register (gate 1) when a
+// source's static CustomParams() declaration violates the --env key
+// contract: a name not matching ParamNamePattern, or a duplicate entry.
+// It carries the source name and the offending key so the startup panic
+// can point straight at the misbehaving adapter.
+type ErrInvalidParamName struct {
+	Source    string // adapter Name() that declared the invalid key
+	Name      string // the offending key
+	Duplicate bool   // true when the key is a duplicate entry, not a syntax violation
+}
+
+func (e ErrInvalidParamName) Error() string {
+	if e.Duplicate {
+		return fmt.Sprintf("source %q declared duplicate --env key %q (source bug)", e.Source, e.Name)
+	}
+	return fmt.Sprintf("source %q declared invalid --env key %q (source bug: must match %s)", e.Source, e.Name, ParamNamePattern)
+}
+
 // RequiredParamMismatchError is raised by a source's Fetch when it
 // needs a parameter the request does not carry. Precheck normally
 // prevents this by enforcing Capabilities(req).Required, so a missing
@@ -150,9 +219,10 @@ var ErrDuplicate = errors.New("source: duplicate registration")
 // source bug, not a caller error. The fetch layer converts it to a
 // PrecheckMismatch warning and fails over to the next source.
 type RequiredParamMismatchError struct {
-	Source string // adapter Name() that requires the parameter
-	Param  Param  // which Param bit is missing
-	Flag   string // CLI flag spelling for the missing field (e.g. "--author")
+	Source    string // adapter Name() that requires the parameter
+	Param     Param  // typed Param bit; 0 for a custom key
+	ParamName string // custom key name; empty for a typed parameter
+	Flag      string // CLI flag spelling: "--author" etc., or "--env <KEY>"
 }
 
 // Error renders a stable message; the fetch layer re-renders it as a
@@ -175,9 +245,24 @@ func NewRegistry() *Registry {
 
 // Register adds src to the registry under src.Name(). Returns
 // ErrDuplicate if a source with the same name is already registered.
+//
+// Gate 1: the source's static CustomParams() declaration must contain
+// only legal (ParamNamePattern), distinct key names. A violation is a
+// source bug and fails fast at registration time — main's startup panic
+// surfaces it to developers/CI before any CLI handling runs.
 func (r *Registry) Register(src Source) error {
 	if src == nil {
 		return errors.New("source: nil Source")
+	}
+	seen := make(map[string]bool)
+	for _, spec := range src.CustomParams() {
+		if !ValidParamName(spec.Name) {
+			return ErrInvalidParamName{Source: src.Name(), Name: spec.Name}
+		}
+		if seen[spec.Name] {
+			return ErrInvalidParamName{Source: src.Name(), Name: spec.Name, Duplicate: true}
+		}
+		seen[spec.Name] = true
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()

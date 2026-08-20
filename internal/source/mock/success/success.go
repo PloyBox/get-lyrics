@@ -18,6 +18,8 @@ func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 	return source.Capabilities{Filters: source.ParamAuthor, Required: source.ParamAuthor}
 }
 
+func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
+
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	lyrics := "[mock-success] lyrics for: " + req.Song + "\n"
 	return source.Result{

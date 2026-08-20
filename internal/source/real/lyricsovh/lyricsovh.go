@@ -61,6 +61,8 @@ func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 	return source.Capabilities{Filters: source.ParamAuthor, Required: source.ParamAuthor}
 }
 
+func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
+
 // Fetch looks up lyrics via api.lyrics.ovh/v1/{artist}/{title}. The
 // author is guaranteed non-empty by the precheck; the adapter no longer
 // validates it itself.

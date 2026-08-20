@@ -23,6 +23,8 @@ func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 	return source.Capabilities{Filters: source.ParamAuthor}
 }
 
+func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
+
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	if req.Author == "" {
 		return source.Result{}, source.RequiredParamMismatchError{

@@ -4,6 +4,7 @@ package bootstrap
 
 import (
 	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/internal/source/mock/custom"
 	"github.com/PloyBox/get-lyrics/internal/source/mock/fail"
 	"github.com/PloyBox/get-lyrics/internal/source/mock/lrc"
 	"github.com/PloyBox/get-lyrics/internal/source/mock/mismatch"
@@ -24,6 +25,7 @@ func RegisterAllMock(r *source.Registry) error {
 		lrc.New(),
 		nosync.New(),
 		mismatch.New(),
+		custom.New(),
 	}
 	for _, a := range adapters {
 		if err := r.Register(a); err != nil {

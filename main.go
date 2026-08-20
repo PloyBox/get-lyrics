@@ -78,6 +78,18 @@ type parsedFlags struct {
 	overwrite bool
 	help      bool
 	version   bool
+	env       map[string]string // validated --env keys; validated at parse time
+}
+
+// envList collects repeated --env key=value flags. flag.Value calls Set
+// once per occurrence, so both --env LANG=en and --env=LANG=en work.
+type envList []string
+
+func (e *envList) String() string { return strings.Join(*e, ",") }
+
+func (e *envList) Set(value string) error {
+	*e = append(*e, value)
+	return nil
 }
 
 // outputExistsError reports that --output points to an existing file
@@ -94,11 +106,14 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 	parsed, song, err := parseFlags(argv)
 	if err != nil {
 		fmt.Fprintln(stderr, "error[usage]:", err)
-		printUsage(stderr, nil)
+		printUsage(stderr, nil, nil)
 		return exitUsage
 	}
 	if parsed.help {
-		printUsage(stdout, registry)
+		// Full declaration for rendering only; no env fallback. Lenient
+		// mode and the sorted registry names make this query infallible.
+		decls, _ := fetch.New(registry).CustomParamsFor(fetch.Params{Source: registry.Names(), Lenient: true})
+		printUsage(stdout, registry, decls)
 		return exitOK
 	}
 	if parsed.version {
@@ -107,9 +122,31 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 	}
 	if song == "" {
 		fmt.Fprintln(stderr, "error[usage]: song title is required")
-		printUsage(stderr, nil)
+		printUsage(stderr, nil, nil)
 		return exitUsage
 	}
+
+	svc := fetch.New(registry)
+	params := parsedFlagsToParams(parsed, song)
+
+	// Static declarations for the requested sources (exit 3/8 in strict
+	// mode, same codes as the fetch precheck but reported first), then
+	// fill any undeclared-by-flag key from the process environment.
+	decls, err := svc.CustomParamsFor(params)
+	if err != nil {
+		var dupErr fetch.DuplicateSourceError
+		if errors.As(err, &dupErr) {
+			fmt.Fprintln(stderr, "error[usage]:", dupErr.Error())
+			return exitDuplicateSrc
+		}
+		if errors.Is(err, source.ErrNotFound) {
+			fmt.Fprintln(stderr, "error[unknown]:", err.Error())
+			return exitUnknownSrc
+		}
+		fmt.Fprintln(stderr, "error[fetch]:", err)
+		return exitFetchFailed
+	}
+	params.Custom = mergeEnv(params.Custom, decls)
 
 	out, closer, created, err := openOutput(parsed.output, parsed.overwrite, stdout)
 	if err != nil {
@@ -147,20 +184,29 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 		}
 	}()
 
-	svc := fetch.New(registry)
-	params := parsedFlagsToParams(parsed, song)
 	res, warnings, err := svc.Fetch(context.Background(), params)
 	var dupErr fetch.DuplicateSourceError
 	if errors.As(err, &dupErr) {
+		// In-flight warnings (e.g. a gate-2 source-bug warning emitted
+		// before the strict abort) are printed before the error.
+		for _, w := range warnings {
+			fmt.Fprintln(stderr, w.Message)
+		}
 		fmt.Fprintln(stderr, "error[usage]:", dupErr.Error())
 		return exitDuplicateSrc
 	}
 	if errors.Is(err, source.ErrNotFound) {
+		for _, w := range warnings {
+			fmt.Fprintln(stderr, w.Message)
+		}
 		fmt.Fprintln(stderr, "error[unknown]:", err.Error())
 		return exitUnknownSrc
 	}
 	var reqErr fetch.RequiredParamError
 	if errors.As(err, &reqErr) {
+		for _, w := range warnings {
+			fmt.Fprintln(stderr, w.Message)
+		}
 		fmt.Fprintln(stderr, "error[required]:", reqErr.Error())
 		return exitRequired
 	}
@@ -175,6 +221,9 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 		return exitFetchFailed
 	}
 	if err != nil {
+		for _, w := range warnings {
+			fmt.Fprintln(stderr, w.Message)
+		}
 		fmt.Fprintln(stderr, "error[fetch]:", err)
 		return exitFetchFailed
 	}
@@ -222,7 +271,55 @@ func parsedFlagsToParams(f parsedFlags, song string) fetch.Params {
 		ISWC:      f.iswc,
 		Timestamp: splitTrimmed(f.timestamp),
 		Lenient:   f.lenient,
+		Custom:    f.env,
 	}
+}
+
+// validateEnv validates the collected --env entries at parse time and
+// returns them as a key→value map. Each entry is split on the first '=';
+// the key must match ParamNamePattern, the value must be non-empty after
+// trimming (a whitespace-only value counts as empty, mirroring the typed
+// params' TrimSpace semantics), and duplicate keys are rejected. Any
+// violation is a usage error (exit 2).
+func validateEnv(envs envList) (map[string]string, error) {
+	out := make(map[string]string, len(envs))
+	for _, entry := range envs {
+		key, value, _ := strings.Cut(entry, "=")
+		if !source.ValidParamName(key) {
+			return nil, fmt.Errorf("invalid --env key %q (must match %s)", key, source.ParamNamePattern)
+		}
+		if strings.TrimSpace(value) == "" {
+			return nil, fmt.Errorf("invalid --env entry %q: value must be non-empty", entry)
+		}
+		if _, exists := out[key]; exists {
+			return nil, fmt.Errorf("duplicate --env key %q", key)
+		}
+		out[key] = value
+	}
+	return out, nil
+}
+
+// mergeEnv fills every key any requested source declares from the
+// process environment when the user did not supply it via --env.
+// Precedence: --env > environment > missing. An environment variable
+// that exists but is empty (e.g. LANG=) counts as missing and is not
+// injected. Injected keys are treated exactly like user-provided ones —
+// a source that does not declare the key still warns unsupported.
+func mergeEnv(custom map[string]string, decls map[string][]source.ParamSpec) map[string]string {
+	for _, specs := range decls {
+		for _, spec := range specs {
+			if _, provided := custom[spec.Name]; provided {
+				continue
+			}
+			if v, ok := os.LookupEnv(spec.Name); ok && strings.TrimSpace(v) != "" {
+				if custom == nil {
+					custom = make(map[string]string)
+				}
+				custom[spec.Name] = v
+			}
+		}
+	}
+	return custom
 }
 
 // splitTrimmed splits a comma-separated flag value, trimming whitespace
@@ -256,7 +353,9 @@ func validateTimestamp(s string) error {
 
 // printUsage writes the help text. Examples use the long (--) form per
 // the plan; the underlying flag library also accepts short forms.
-func printUsage(w io.Writer, reg *source.Registry) {
+// decls, when non-nil, feeds the "Source parameters:" section: a
+// per-source list of the static --env keys and their descriptions.
+func printUsage(w io.Writer, reg *source.Registry, decls map[string][]source.ParamSpec) {
 	var b bytes.Buffer
 	fmt.Fprintln(&b, "Usage: get-lyrics [--source <names>] [--author <name>] [--album <name>]")
 	fmt.Fprintln(&b, "                   [--iswc <code>] [--output <file>] [--timestamp <fmts>] <song>")
@@ -269,6 +368,7 @@ func printUsage(w io.Writer, reg *source.Registry) {
 	fmt.Fprintln(&b, "  --output <file>,  -o <file>  Write lyrics to file (default: stdout; refuses to overwrite an existing file)")
 	fmt.Fprintln(&b, "  --overwrite, -O               Overwrite an existing --output file")
 	fmt.Fprintln(&b, "  --timestamp <fmts>, -t <fmts> Timestamp formats (default: line,none)")
+	fmt.Fprintln(&b, "  --env <key=value>, -e <key=value> Custom source parameter (repeatable; key must match ^[A-Z][A-Z0-9_]*$)")
 	fmt.Fprintln(&b, "  --lenient, -l               Skip invalid sources instead of failing")
 	fmt.Fprintln(&b, "  --help, -h                   Show this help and exit")
 	fmt.Fprintln(&b, "  --version                    Print version and exit")
@@ -280,6 +380,24 @@ func printUsage(w io.Writer, reg *source.Registry) {
 		fmt.Fprintln(&b, "Available sources:")
 		for _, n := range reg.Names() {
 			fmt.Fprintf(&b, "  %s\n", n)
+		}
+		any := false
+		var paramsBuf bytes.Buffer
+		for _, n := range reg.Names() {
+			specs := decls[n]
+			if len(specs) == 0 {
+				continue
+			}
+			any = true
+			fmt.Fprintf(&paramsBuf, "  %s:\n", n)
+			for _, spec := range specs {
+				fmt.Fprintf(&paramsBuf, "    --env %-10s %s\n", spec.Name, spec.Description)
+			}
+		}
+		if any {
+			fmt.Fprintln(&b, "")
+			fmt.Fprintln(&b, "Source parameters:")
+			_, _ = paramsBuf.WriteTo(&b)
 		}
 	}
 	_, _ = io.Copy(w, &b)
@@ -356,6 +474,9 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	fs.BoolVar(&f.help, "h", false, "show help (short)")
 	fs.BoolVar(&f.version, "version", false, "print version and exit")
 	fs.BoolVar(&f.version, "v", false, "print version and exit (short)")
+	var envs envList
+	fs.Var(&envs, "env", "custom source parameter key=value (repeatable)")
+	fs.Var(&envs, "e", "custom source parameter key=value (repeatable, short)")
 
 	if err := fs.Parse(argv); err != nil {
 		return parsedFlags{}, "", err
@@ -363,6 +484,11 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	if err := validateTimestamp(f.timestamp); err != nil {
 		return parsedFlags{}, "", err
 	}
+	env, err := validateEnv(envs)
+	if err != nil {
+		return parsedFlags{}, "", err
+	}
+	f.env = env
 	positional := fs.Args()
 	if len(positional) == 0 {
 		return f, "", nil
