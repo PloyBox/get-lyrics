@@ -18,7 +18,7 @@ get-lyrics/
 │   ├── bootstrap/              # bootstrap.go: registers real sources; bootstrap_mock.go (test tag): mocks
 │   ├── source/                 # Source interface, Request/Result, Param/ResultField bitmasks, ParamSpec, Registry
 │   │   ├── mock/               # mock-* test-only adapters (success/require/nosupport/fail/lrc/nosync/mismatch/custom)
-│   │   └── real/               # lrclib, lyricsovh, lrccx adapters
+│   │   └── real/               # lrclib, lyricsovh, lrccx, musixmatch adapters
 │   └── fetch/                  # Fetch(ctx, params): precheck (incl. gate 2), failover, synced-vs-plain resolution, CustomParamsFor
 ```
 
