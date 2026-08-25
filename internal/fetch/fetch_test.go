@@ -1150,6 +1150,41 @@ func TestFetch_PassesCustomToRequest(t *testing.T) {
 	}
 }
 
+// TestFetch_PassesUserAgentToRequest locks the data flow:
+// params.UserAgent reaches the adapter's Request.UserAgent verbatim,
+// including an empty value — the fetch layer never substitutes a default;
+// the CLI owns the default UA now.
+func TestFetch_PassesUserAgentToRequest(t *testing.T) {
+	var gotUA string
+	seen := &fakeSrc{
+		name: "seen",
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			gotUA = r.UserAgent
+			return source.Result{Lyrics: "L", Filled: source.FieldLyrics}, nil
+		},
+	}
+	r := newRegistry(t, seen)
+	svc := New(r)
+
+	_, _, err := svc.Fetch(context.Background(), Params{Song: "S", UserAgent: "custom/1.0", Timestamp: []string{"none"}, Source: []string{"seen"}})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if gotUA != "custom/1.0" {
+		t.Fatalf("adapter UserAgent = %q; want %q", gotUA, "custom/1.0")
+	}
+
+	// Empty params.UserAgent must propagate as empty — the fetch layer
+	// never invents a default; the CLI owns it.
+	_, _, err = svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"none"}, Source: []string{"seen"}})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if gotUA != "" {
+		t.Fatalf("adapter UserAgent = %q; want empty for default", gotUA)
+	}
+}
+
 // TestFetch_RequiredParamMismatchCustomRendersEnvFlag verifies the
 // fetch-time mismatch warning reuses mm.Flag: a custom-key mismatch
 // (Param 0) must render "--env <KEY>", not an empty flag spelling.

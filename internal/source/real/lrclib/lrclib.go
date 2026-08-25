@@ -28,10 +28,6 @@ import (
 	"github.com/PloyBox/get-lyrics/internal/source"
 )
 
-// userAgent is sent on every request; lrclib documents a UA preference
-// for downstream attribution.
-const userAgent = "get-lyrics/0.1 (+https://github.com/PloyBox/get-lyrics)"
-
 // requestTimeout caps each upstream call. The value is short on
 // purpose — a stalled request should not stall the CLI.
 const requestTimeout = 10 * time.Second
@@ -83,7 +79,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	if err != nil {
 		return source.Result{}, fmt.Errorf("lrclib: build request: %w", err)
 	}
-	httpReq.Header.Set("User-Agent", userAgent)
+	httpReq.Header.Set("User-Agent", req.UserAgent)
 	httpReq.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(httpReq)

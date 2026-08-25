@@ -72,6 +72,13 @@ get-lyrics --author "Queen" --timestamp "line" "Bohemian Rhapsody"
 get-lyrics --author "Queen" --timestamp "none" "Bohemian Rhapsody"
 ```
 
+**Set a custom User-Agent:**
+
+```sh
+# Override the HTTP User-Agent sent to sources (useful for attribution)
+get-lyrics --user-agent "my-app/1.0 (contact@example.com)" --author "Queen" "Bohemian Rhapsody"
+```
+
 **Custom source parameters (`--env`):**
 
 Sources can declare custom input keys (see "Source Parameters" below). Pass them with a repeatable `--env key=value` flag; a missing key falls back to the process environment:
@@ -105,6 +112,7 @@ get-lyrics --help
 | `--output` | `-o` | Write lyrics to file (default: stdout; refuses to overwrite an existing file) |
 | `--overwrite` | `-O` | Overwrite an existing `--output` file |
 | `--timestamp` | `-t` | Comma-separated timestamp formats (default: `line,none`; `line` enables LRC). User-given order is the priority |
+| `--user-agent` | `-u` | HTTP `User-Agent` header sent to sources (default: `get-lyrics/<ver> (+https://github.com/PloyBox/get-lyrics)`) |
 | `--env` | `-e` | Custom source parameter `key=value` (repeatable; key must match `^[A-Z][A-Z0-9_]*$`) |
 | `--lenient` | `-l` | Skip invalid sources instead of failing fast (precheck only) |
 | `--help` | `-h` | Show help and exit |

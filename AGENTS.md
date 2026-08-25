@@ -37,6 +37,7 @@ get-lyrics/
   - `--author`/`-a`, `--album`/`-A`, `--iswc`/`-i` — filters.
   - `--output`/`-o` — write lyrics to this file instead of stdout. **Refuses to overwrite** an existing file (exit 7) unless `--overwrite`/`-O` is given.
   - `--timestamp`/`-t` — comma-separated `line`/`none` formats; user-given order is the priority (first match wins). Default `line,none`. Any other value is a usage error (exit 2).
+  - `--user-agent`/`-u` — HTTP `User-Agent` header sent to sources. Default `get-lyrics/<ver> (+https://github.com/PloyBox/get-lyrics)` (`<ver>` is the version stamped at build time). The built-in sources carry no default of their own — they trust whatever UA they are handed; a non-empty value replaces the CLI default on every upstream request.
   - `--env`/`-e` — repeatable custom source parameter `key=value` (open-ended; keys are source-declared). Key must match `^[A-Z][A-Z0-9_]*$`; value non-empty after trimming; duplicate keys rejected — any violation is a usage error (exit 2).
   - `--lenient`/`-l` — skip invalid sources with `warning[precheck]` instead of failing fast.
   - `--help`/`-h`, `--version`/`-v` — exit 0.

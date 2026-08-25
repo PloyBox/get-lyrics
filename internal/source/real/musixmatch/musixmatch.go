@@ -33,9 +33,6 @@ import (
 	"github.com/PloyBox/get-lyrics/internal/source"
 )
 
-// userAgent is sent on every request for downstream attribution.
-const userAgent = "get-lyrics/0.1 (+https://github.com/PloyBox/get-lyrics)"
-
 // requestTimeout caps each upstream call so a stalled request does not
 // stall the CLI.
 const requestTimeout = 10 * time.Second
@@ -106,18 +103,19 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	}
 
 	res := source.Result{Title: req.Song, Filled: source.FieldTitle}
+	ua := req.UserAgent
 
 	if strings.TrimSpace(req.Author) != "" {
 		res.Artist = req.Author
 		res.Filled |= source.FieldArtist
 
 		if req.Timestamp {
-			if sub, err := a.fetchMatcherSubtitle(ctx, apiKey, req); err == nil {
+			if sub, err := a.fetchMatcherSubtitle(ctx, apiKey, ua, req); err == nil {
 				res.SyncedLyrics = sub
 				res.Filled |= source.FieldSyncedLyrics
 			}
 		}
-		lyrics, err := a.fetchMatcherLyrics(ctx, apiKey, req)
+		lyrics, err := a.fetchMatcherLyrics(ctx, apiKey, ua, req)
 		if err != nil && !errors.Is(err, errNotFound) {
 			return source.Result{}, err
 		}
@@ -126,7 +124,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 			res.Filled |= source.FieldLyrics
 		}
 	} else {
-		track, err := a.searchTrack(ctx, apiKey, req.Song)
+		track, err := a.searchTrack(ctx, apiKey, ua, req.Song)
 		if err != nil && !errors.Is(err, errNotFound) {
 			return source.Result{}, err
 		}
@@ -142,13 +140,13 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		}
 
 		if req.Timestamp && track.CommontrackID != 0 {
-			if sub, err := a.fetchTrackSubtitle(ctx, apiKey, track.CommontrackID); err == nil {
+			if sub, err := a.fetchTrackSubtitle(ctx, apiKey, ua, track.CommontrackID); err == nil {
 				res.SyncedLyrics = sub
 				res.Filled |= source.FieldSyncedLyrics
 			}
 		}
 		if track.CommontrackID != 0 {
-			lyrics, err := a.fetchTrackLyrics(ctx, apiKey, track.CommontrackID)
+			lyrics, err := a.fetchTrackLyrics(ctx, apiKey, ua, track.CommontrackID)
 			if err != nil && !errors.Is(err, errNotFound) {
 				return source.Result{}, err
 			}
@@ -167,24 +165,24 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 
 // fetchMatcherLyrics returns the plain track via matcher.lyrics.get
 // (fuzzy match by title + artist).
-func (a *Adapter) fetchMatcherLyrics(ctx context.Context, apiKey string, req source.Request) (string, error) {
+func (a *Adapter) fetchMatcherLyrics(ctx context.Context, apiKey, ua string, req source.Request) (string, error) {
 	q := url.Values{}
 	q.Set("q_track", strings.TrimSpace(req.Song))
 	q.Set("q_artist", strings.TrimSpace(req.Author))
 	var out lyricsResponse
-	if err := a.do(ctx, apiKey, "matcher.lyrics.get", q, &out); err != nil {
+	if err := a.do(ctx, apiKey, ua, "matcher.lyrics.get", q, &out); err != nil {
 		return "", err
 	}
 	return cleanLyrics(out.Lyrics.LyricsBody), nil
 }
 
 // fetchMatcherSubtitle returns the LRC track via matcher.subtitle.get.
-func (a *Adapter) fetchMatcherSubtitle(ctx context.Context, apiKey string, req source.Request) (string, error) {
+func (a *Adapter) fetchMatcherSubtitle(ctx context.Context, apiKey, ua string, req source.Request) (string, error) {
 	q := url.Values{}
 	q.Set("q_track", strings.TrimSpace(req.Song))
 	q.Set("q_artist", strings.TrimSpace(req.Author))
 	var out subtitleResponse
-	if err := a.do(ctx, apiKey, "matcher.subtitle.get", q, &out); err != nil {
+	if err := a.do(ctx, apiKey, ua, "matcher.subtitle.get", q, &out); err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(out.Subtitle.SubtitleBody), nil
@@ -192,14 +190,14 @@ func (a *Adapter) fetchMatcherSubtitle(ctx context.Context, apiKey string, req s
 
 // searchTrack finds the first search hit that carries lyrics, ranked by
 // track rating so the best-known match comes first.
-func (a *Adapter) searchTrack(ctx context.Context, apiKey, song string) (musixmatchTrack, error) {
+func (a *Adapter) searchTrack(ctx context.Context, apiKey, ua, song string) (musixmatchTrack, error) {
 	q := url.Values{}
 	q.Set("q_track", strings.TrimSpace(song))
 	q.Set("f_has_lyrics", "1")
 	q.Set("page_size", "5")
 	q.Set("s_track_rating", "desc")
 	var out searchResponse
-	if err := a.do(ctx, apiKey, "track.search", q, &out); err != nil {
+	if err := a.do(ctx, apiKey, ua, "track.search", q, &out); err != nil {
 		return musixmatchTrack{}, err
 	}
 	for _, item := range out.TrackList {
@@ -211,22 +209,22 @@ func (a *Adapter) searchTrack(ctx context.Context, apiKey, song string) (musixma
 }
 
 // fetchTrackLyrics returns the plain track by commontrack id.
-func (a *Adapter) fetchTrackLyrics(ctx context.Context, apiKey string, trackID int64) (string, error) {
+func (a *Adapter) fetchTrackLyrics(ctx context.Context, apiKey, ua string, trackID int64) (string, error) {
 	q := url.Values{}
 	q.Set("commontrack_id", strconv.FormatInt(trackID, 10))
 	var out lyricsResponse
-	if err := a.do(ctx, apiKey, "track.lyrics.get", q, &out); err != nil {
+	if err := a.do(ctx, apiKey, ua, "track.lyrics.get", q, &out); err != nil {
 		return "", err
 	}
 	return cleanLyrics(out.Lyrics.LyricsBody), nil
 }
 
 // fetchTrackSubtitle returns the LRC track by commontrack id.
-func (a *Adapter) fetchTrackSubtitle(ctx context.Context, apiKey string, trackID int64) (string, error) {
+func (a *Adapter) fetchTrackSubtitle(ctx context.Context, apiKey, ua string, trackID int64) (string, error) {
 	q := url.Values{}
 	q.Set("commontrack_id", strconv.FormatInt(trackID, 10))
 	var out subtitleResponse
-	if err := a.do(ctx, apiKey, "track.subtitle.get", q, &out); err != nil {
+	if err := a.do(ctx, apiKey, ua, "track.subtitle.get", q, &out); err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(out.Subtitle.SubtitleBody), nil
@@ -236,13 +234,13 @@ func (a *Adapter) fetchTrackSubtitle(ctx context.Context, apiKey string, trackID
 // the JSON envelope. The effective status is message.header.status_code
 // when present — Musixmatch returns HTTP 200 with an error code in the
 // body for many failures — falling back to the HTTP status.
-func (a *Adapter) do(ctx context.Context, apiKey, method string, q url.Values, out any) error {
+func (a *Adapter) do(ctx context.Context, apiKey, ua, method string, q url.Values, out any) error {
 	q.Set("apikey", apiKey)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, a.endpoint()+"/"+method+"?"+q.Encode(), nil)
 	if err != nil {
 		return fmt.Errorf("musixmatch: build request: %w", err)
 	}
-	httpReq.Header.Set("User-Agent", userAgent)
+	httpReq.Header.Set("User-Agent", ua)
 	httpReq.Header.Set("Accept", "application/json")
 
 	resp, err := a.client().Do(httpReq)

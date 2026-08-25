@@ -27,9 +27,6 @@ import (
 	"github.com/PloyBox/get-lyrics/internal/source"
 )
 
-// userAgent is sent on every request for downstream attribution.
-const userAgent = "get-lyrics/0.1 (+https://github.com/PloyBox/get-lyrics)"
-
 // requestTimeout caps each upstream call so a stalled request does not
 // stall the CLI.
 const requestTimeout = 10 * time.Second
@@ -78,7 +75,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	if err != nil {
 		return source.Result{}, fmt.Errorf("lyricsovh: build request: %w", err)
 	}
-	httpReq.Header.Set("User-Agent", userAgent)
+	httpReq.Header.Set("User-Agent", req.UserAgent)
 	httpReq.Header.Set("Accept", "application/json")
 
 	resp, err := a.client().Do(httpReq)

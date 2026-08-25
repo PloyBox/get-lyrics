@@ -92,6 +92,10 @@ type Request struct {
 	Album     string
 	ISWC      string
 	Timestamp bool // whether to request timestamped lyrics (from --timestamp)
+	// UserAgent is the HTTP User-Agent header the source should send on
+	// upstream requests, taken from --user-agent. When empty, the
+	// source falls back to its own default UA string.
+	UserAgent string
 	// Custom carries the key/value pairs the user passed via --env
 	// (plus process-environment fallbacks); keys the user did not
 	// supply are absent.

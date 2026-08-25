@@ -66,6 +66,10 @@ type Params struct {
 	ISWC      string
 	Timestamp []string
 	Lenient   bool
+	// UserAgent is the HTTP User-Agent header to send on upstream
+	// requests (from --user-agent). It is passed to every requested
+	// source; empty means the source uses its own default UA.
+	UserAgent string
 	// Custom carries the user-supplied --env keys (plus process-
 	// environment fallbacks injected by the CLI). Keys the caller did
 	// not provide are absent; env-injected keys are treated exactly
@@ -202,6 +206,7 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 				Album:     params.Album,
 				ISWC:      params.ISWC,
 				Timestamp: wantSynced,
+				UserAgent: params.UserAgent,
 				Custom:    params.Custom,
 			}
 			sr, ferr := src.Fetch(ctx, req)

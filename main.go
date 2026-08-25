@@ -2,7 +2,7 @@
 //
 // Usage: get-lyrics --source <name> [--author <name>] [--album <name>]
 //
-//	[--iswc <code>] [--output <file>] [--timestamp] <song>
+//	[--iswc <code>] [--output <file>] [--user-agent <ua>] [--timestamp] <song>
 //
 // Use --help or -h for the same summary plus the list of registered sources.
 package main
@@ -50,6 +50,15 @@ const (
 // -ldflags "-X main.version=<tag>"; "dev" is the local-build default.
 var version = "dev"
 
+// defaultUserAgent is the User-Agent the CLI sends on every upstream
+// request unless the caller overrides it with --user-agent. The version
+// is injected automatically (from version, stamped at build time) — it
+// replaces the UA the built-in sources previously hardcoded; the sources
+// now trust whatever they are handed.
+func defaultUserAgent() string {
+	return "get-lyrics/" + version + " (+https://github.com/PloyBox/get-lyrics)"
+}
+
 // registry is populated at package-init time so RegisterAll runs
 // before main() — matches the "init()-style" plan without hidden globals
 // inside adapter packages.
@@ -74,6 +83,7 @@ type parsedFlags struct {
 	iswc      string
 	output    string
 	timestamp string
+	userAgent string
 	lenient   bool
 	overwrite bool
 	help      bool
@@ -270,6 +280,7 @@ func parsedFlagsToParams(f parsedFlags, song string) fetch.Params {
 		Album:     f.album,
 		ISWC:      f.iswc,
 		Timestamp: splitTrimmed(f.timestamp),
+		UserAgent: f.userAgent,
 		Lenient:   f.lenient,
 		Custom:    f.env,
 	}
@@ -358,7 +369,7 @@ func validateTimestamp(s string) error {
 func printUsage(w io.Writer, reg *source.Registry, decls map[string][]source.ParamSpec) {
 	var b bytes.Buffer
 	fmt.Fprintln(&b, "Usage: get-lyrics [--source <names>] [--author <name>] [--album <name>]")
-	fmt.Fprintln(&b, "                   [--iswc <code>] [--output <file>] [--timestamp <fmts>] <song>")
+	fmt.Fprintln(&b, "                   [--iswc <code>] [--output <file>] [--user-agent <ua>] [--timestamp <fmts>] <song>")
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "Options:")
 	fmt.Fprintln(&b, "  --source <names>, -s <names> Lyrics source names (default: lrclib)")
@@ -368,6 +379,7 @@ func printUsage(w io.Writer, reg *source.Registry, decls map[string][]source.Par
 	fmt.Fprintln(&b, "  --output <file>,  -o <file>  Write lyrics to file (default: stdout; refuses to overwrite an existing file)")
 	fmt.Fprintln(&b, "  --overwrite, -O               Overwrite an existing --output file")
 	fmt.Fprintln(&b, "  --timestamp <fmts>, -t <fmts> Timestamp formats (default: line,none)")
+	fmt.Fprintf(&b, "  --user-agent <ua>, -u <ua>    User-Agent header for HTTP requests (default: %s)\n", defaultUserAgent())
 	fmt.Fprintln(&b, "  --env <key=value>, -e <key=value> Custom source parameter (repeatable; key must match ^[A-Z][A-Z0-9_]*$)")
 	fmt.Fprintln(&b, "  --lenient, -l               Skip invalid sources instead of failing")
 	fmt.Fprintln(&b, "  --help, -h                   Show this help and exit")
@@ -466,6 +478,8 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	fs.StringVar(&f.output, "o", "", "output file path (short)")
 	fs.StringVar(&f.timestamp, "timestamp", "line,none", "request timestamped lyrics")
 	fs.StringVar(&f.timestamp, "t", "line,none", "request timestamped lyrics (short)")
+	fs.StringVar(&f.userAgent, "user-agent", defaultUserAgent(), "User-Agent header for HTTP requests")
+	fs.StringVar(&f.userAgent, "u", defaultUserAgent(), "User-Agent header for HTTP requests (short)")
 	fs.BoolVar(&f.lenient, "lenient", false, "skip invalid sources instead of failing")
 	fs.BoolVar(&f.lenient, "l", false, "skip invalid sources instead of failing (short)")
 	fs.BoolVar(&f.overwrite, "overwrite", false, "overwrite an existing output file")
