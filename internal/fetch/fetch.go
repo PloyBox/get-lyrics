@@ -2,7 +2,7 @@
 // the pluggable source adapters. It prechecks every requested source
 // (existence + required params), then tries them in user-given order
 // per timestamp format, failing over on adapter errors and matching
-// results against the requested synced/plain flag via a per-call cache.
+// results against the requested SyncLevel via a per-call cache.
 package fetch
 
 import (
@@ -21,8 +21,10 @@ const (
 	// UnsupportedParam: a user-supplied optional parameter the source
 	// does not honor; emitted alongside a successful result.
 	UnsupportedParam WarningKind = iota
-	// Downgraded: synced lyrics were requested but the source returned
-	// plain lyrics only.
+	// Downgraded: the requested timestamp format got no match — synced
+	// was requested but only plain lyrics returned, or plain was
+	// requested but only synced lyrics returned. The unmatched result
+	// stays cached and can satisfy a later iteration.
 	Downgraded
 	// PreCheck: --lenient mode skipped a source during precheck
 	// (unknown name, missing required parameter, or duplicate).
@@ -77,9 +79,24 @@ type Params struct {
 	Custom map[string]string
 }
 
+// SyncLevel classifies the lyrics content a fetch.Result carries by its
+// timestamp format.
+type SyncLevel uint8
+
+const (
+	// SyncUnknown: unknown / no valid lyrics content (neither lyrics
+	// track was populated).
+	SyncUnknown SyncLevel = iota
+	// SyncNone: plain (non-timestamped) lyrics.
+	SyncNone
+	// SyncLine: synced (LRC timestamped) lyrics.
+	SyncLine
+)
+
 // Result is the fetch layer's output, consolidating the two lyrics
-// tracks into a single field. Synced is true when Lyrics contains
-// synced (LRC) content.
+// tracks into a single field. Level records which track Lyrics
+// carries: SyncNone for plain text, SyncLine for synced (LRC) content,
+// SyncUnknown when neither track was populated.
 //
 // Source always names the adapter that produced the result. SubSource
 // is the sub-source identifier reported by aggregate sources (e.g. a
@@ -92,7 +109,7 @@ type Result struct {
 	ISWC      string
 	Source    string // adapter that produced the result
 	SubSource string // sub-source for aggregate adapters, copied only when the adapter declared FieldSubSource; empty otherwise
-	Synced    bool
+	Level     SyncLevel
 }
 
 // NoResultError is returned when every source was skipped or failed and
@@ -154,10 +171,10 @@ func New(reg *source.Registry) *Service {
 }
 
 // Fetch prechecks every requested source, then tries them in order for
-// each requested timestamp format. The first result whose Synced flag
-// matches the current iteration is returned immediately; mismatched
-// results are cached per call so a later iteration ("none" after
-// "line") can reuse them without a second request.
+// each requested timestamp format. The first result whose Level matches
+// the current iteration is returned immediately; when nothing matches,
+// every produced track is cached per call so a later iteration ("none"
+// after "line") can reuse them without a second request.
 //
 // Error semantics:
 //   - strict precheck (default) → the single first problem: a
@@ -180,16 +197,16 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 		return Result{}, warnings, err
 	}
 
-	// Per-call cache of results that did not match the requested flag.
-	// Lookup scans for Source == name && Synced == current flag.
+	// Per-call cache of tracks that did not match the requested level.
+	// Lookup scans for Source == name && Level == want.
 	cache := make([]Result, 0, len(eligible))
 	warnedUnsupported := make(map[string]bool, len(eligible))
 
 	for _, tsName := range params.Timestamp {
-		wantSynced := tsName == "line"
+		want := tsLevel(tsName)
 
 		for _, name := range eligible {
-			if hit := findCached(cache, name, wantSynced); hit != nil {
+			if hit := findCached(cache, name, want); hit != nil {
 				return *hit, warnings, nil
 			}
 
@@ -205,7 +222,7 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 				Author:    params.Author,
 				Album:     params.Album,
 				ISWC:      params.ISWC,
-				Timestamp: wantSynced,
+				Timestamp: want == SyncLine,
 				UserAgent: params.UserAgent,
 				Custom:    params.Custom,
 			}
@@ -234,19 +251,26 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 
 			warnings = append(warnings, detectResultMismatch(name, sr)...)
 
-			res := toResult(src.Name(), sr, wantSynced)
-			if wantSynced && !res.Synced {
+			match, storable := filtResult(src.Name(), sr, want)
+			if match != nil {
+				return *match, warnings, nil
+			}
+			if len(storable) > 0 {
+				// Nothing matched the requested level: store every
+				// produced track for later iterations and warn on the
+				// downgrade. storable only holds tracks whose Level
+				// differs from want, so want picks the message.
+				cache = append(cache, storable...)
+				msg := "returned no timestamped lyrics"
+				if want == SyncNone {
+					msg = "returned only timestamped lyrics"
+				}
 				warnings = append(warnings, Warning{
 					Kind:    Downgraded,
 					Source:  name,
-					Message: fmt.Sprintf(`warning[downgraded]: source "%s" returned no timestamped lyrics`, name),
+					Message: fmt.Sprintf(`warning[downgraded]: source "%s" %s`, name, msg),
 				})
 			}
-
-			if res.Synced == wantSynced {
-				return res, warnings, nil
-			}
-			cache = append(cache, res)
 		}
 	}
 
@@ -520,7 +544,7 @@ func detectUnsupported(params Params, src source.Source) []Warning {
 }
 
 // resultFieldSpecs lists every field tracked by the Filled mask, with
-// the accessor used both by toResult and by the mismatch detector.
+// the accessor used by the mismatch detector.
 type resultFieldSpec struct {
 	bit   source.ResultField
 	name  string
@@ -564,45 +588,72 @@ func detectResultMismatch(srcName string, sr source.Result) []Warning {
 	return out
 }
 
-// toResult converts an adapter result into a fetch.Result. Field
-// population follows the adapter's Filled mask — never string contents:
-// a field whose bit is unset is treated as empty. When synced output
-// was requested and the adapter declared SyncedLyrics, Lyrics carries
-// the timestamped track and Synced is true; otherwise Lyrics carries
-// the declared plain track and Synced is false.
-func toResult(srcName string, sr source.Result, wantSynced bool) Result {
-	res := Result{Source: srcName}
-	for _, spec := range resultFieldSpecs {
-		if sr.Filled&spec.bit != 0 {
-			switch spec.bit {
-			case source.FieldLyrics:
-				res.Lyrics = sr.Lyrics
-			case source.FieldSyncedLyrics:
-				if wantSynced {
-					res.Lyrics = sr.SyncedLyrics
-					res.Synced = true
-				}
-			case source.FieldTitle:
-				res.Title = sr.Title
-			case source.FieldArtist:
-				res.Artist = sr.Artist
-			case source.FieldAlbum:
-				res.Album = sr.Album
-			case source.FieldISWC:
-				res.ISWC = sr.ISWC
-			case source.FieldSubSource:
-				res.SubSource = sr.SubSource
-			}
-		}
+// tsLevel maps a --timestamp format name to the SyncLevel it requests:
+// "line" → SyncLine, "none" (and any other value, which the CLI
+// rejects at parse time) → SyncNone.
+func tsLevel(name string) SyncLevel {
+	if name == "line" {
+		return SyncLine
 	}
-	return res
+	return SyncNone
 }
 
-// findCached returns the first cached result produced by name whose
-// Synced flag matches wantSynced, or nil.
-func findCached(cache []Result, name string, wantSynced bool) *Result {
+// filtResult converts an adapter result into the fetch.Result tracks it
+// legitimately contains. Field population follows the adapter's Filled
+// mask — never string contents: a field whose bit is unset is treated
+// as empty. A declared-and-populated Lyrics yields one SyncNone track,
+// a declared-and-populated SyncedLyrics one SyncLine track; both
+// together yield two tracks sharing the adapter's metadata.
+//
+// Matching is level-based: when any produced track's Level equals want,
+// it is returned as match and nothing is stored — the caller returns
+// immediately. Only when nothing matches does the caller receive every
+// produced track as storable for the per-call cache: want decides
+// matching, never storage. When the adapter populated neither lyrics
+// track (despite declaring one — a detectResultMismatch case), nothing
+// is produced and nothing is stored.
+func filtResult(srcName string, sr source.Result, want SyncLevel) (match *Result, storable []Result) {
+	var tracks []Result
+	addTrack := func(bit source.ResultField, text string, level SyncLevel) {
+		if sr.Filled&bit == 0 || strings.TrimSpace(text) == "" {
+			return
+		}
+		r := Result{Source: srcName, Lyrics: text, Level: level}
+		if sr.Filled&source.FieldTitle != 0 {
+			r.Title = sr.Title
+		}
+		if sr.Filled&source.FieldArtist != 0 {
+			r.Artist = sr.Artist
+		}
+		if sr.Filled&source.FieldAlbum != 0 {
+			r.Album = sr.Album
+		}
+		if sr.Filled&source.FieldISWC != 0 {
+			r.ISWC = sr.ISWC
+		}
+		if sr.Filled&source.FieldSubSource != 0 {
+			r.SubSource = sr.SubSource
+		}
+		tracks = append(tracks, r)
+	}
+	addTrack(source.FieldLyrics, sr.Lyrics, SyncNone)
+	addTrack(source.FieldSyncedLyrics, sr.SyncedLyrics, SyncLine)
+	if len(tracks) == 0 {
+		return nil, nil
+	}
+	for i := range tracks {
+		if tracks[i].Level == want {
+			return &tracks[i], nil
+		}
+	}
+	return nil, tracks
+}
+
+// findCached returns the first cached track produced by name whose
+// Level matches want, or nil.
+func findCached(cache []Result, name string, want SyncLevel) *Result {
 	for i := range cache {
-		if cache[i].Source == name && cache[i].Synced == wantSynced {
+		if cache[i].Source == name && cache[i].Level == want {
 			return &cache[i]
 		}
 	}

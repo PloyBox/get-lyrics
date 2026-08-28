@@ -521,6 +521,52 @@ func TestRun_TimestampLineNoSyncedExitsFour(t *testing.T) {
 	}
 }
 
+// TestRun_SyncedOnlySourceWithNoneExitsFour is the empty-success
+// regression end to end: mock-synconly never fills plain Lyrics, so a
+// lone "none" iteration cannot match — exit 4 with the symmetric
+// downgrade warning printed before the no-result error and empty
+// stdout.
+func TestRun_SyncedOnlySourceWithNoneExitsFour(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-synconly", "--timestamp", "none", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitFetchFailed {
+		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitFetchFailed, stderr.String())
+	}
+	if stdout.String() != "" {
+		t.Fatalf("stdout should be empty on failure: %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), `warning[downgraded]: source "mock-synconly" returned only timestamped lyrics`) {
+		t.Fatalf("stderr missing symmetric downgrade warning: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "error[no-result]") {
+		t.Fatalf("stderr missing no-result error: %q", stderr.String())
+	}
+	stderrStr := stderr.String()
+	wi := strings.Index(stderrStr, "warning[downgraded]")
+	ei := strings.Index(stderrStr, "error[no-result]")
+	if wi == -1 || ei == -1 || wi > ei {
+		t.Fatalf("expected downgrade warning before error; stderr=%q", stderrStr)
+	}
+}
+
+// TestRun_SyncedOnlySourceNoneThenLineReusesCache drives the cache-reuse
+// path: "none,line" on mock-synconly — the first (none) round stores the
+// synced track with one downgrade warning, the second (line) round
+// matches it from the cache and prints the LRC content.
+func TestRun_SyncedOnlySourceNoneThenLineReusesCache(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-synconly", "--timestamp", "none,line", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "[00:00.00]") {
+		t.Fatalf("stdout missing synced lyrics from the cache round: %q", stdout.String())
+	}
+	if got := strings.Count(stderr.String(), "warning[downgraded]"); got != 1 {
+		t.Fatalf("downgraded warnings = %d; want exactly 1 (stderr=%q)", got, stderr.String())
+	}
+}
+
 // TestRun_TimestampNoneBeforeLinePrefersPlain proves the user-given
 // timestamp order is the priority: "none,line" returns plain lyrics
 // from the first iteration, no warning, exit 0.

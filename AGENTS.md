@@ -64,13 +64,13 @@ Thin CLI layer over a pluggable-source abstraction:
    - `Registry.Register` is **gate 1**: a source's static `CustomParams()` list must contain only legal (`^[A-Z][A-Z0-9_]*$`), distinct keys — a violation returns `ErrInvalidParamName` and panics at startup (adapter init failure is a programmer error).
 2. **Parse** — required positional `<song>` plus flags via `flag.NewFlagSet`; `--timestamp` and `--env` values validated at parse time (violations are usage errors, exit 2).
 3. **Env fallback** — before the fetch, `main` calls `svc.CustomParamsFor(params)` (strict: unknown source → exit 3, duplicate → exit 8, reported before the fetch; lenient: problem sources silently skipped) and fills every declared key the user did not pass via `-e` from the process environment (`-e` > env > missing; an empty env var counts as missing). Injected keys behave exactly like user-passed ones.
-4. **Fetch** (`fetch.New(registry).Fetch(ctx, params)`) — two-level loop: outer over `params.Timestamp` (priority order), inner over sources (failover); a per-call result cache dedupes by source+synced flag.
+4. **Fetch** (`fetch.New(registry).Fetch(ctx, params)`) — two-level loop: outer over `params.Timestamp` (priority order), inner over sources (failover); a per-call result cache dedupes by source+SyncLevel.
    - **Precheck** — duplicate source → exit 8, unknown name → exit 3, missing required param (typed first, then `RequiredCustom` in declaration order) → exit 6 (`--lenient` downgrades these to `warning[precheck]` + skip).
    - **Gate 2** — runs before the missing check: a request-aware custom declaration inconsistent with the static list (invalid name, static mismatch, `RequiredCustom` not a subset of `Custom`, or duplicate `RequiredCustom`) skips the source with `warning[precheck-mismatch]` in BOTH modes — never exit 6.
    - **Abort warnings** — strict precheck errors return the warnings accumulated before the abort, so `main` can print them before the error.
    - **Adapter errors** — `warning[fetch]`, next source (a fetch-time `RequiredParamMismatchError` → `warning[precheck-mismatch]` reusing the error's own `Flag`, next source).
    - **Result trust policy** — a result whose `Filled` mask disagrees with its contents (declared-but-empty or filled-but-undeclared) → `warning[result]`, result still used as-is (trust policy).
-   - **Downgrade** — a synced request yielding plain lyrics → `warning[downgraded]`; the result stays cached and can satisfy a later `none` iteration.
+   - **Downgrade** — symmetric in both directions: a synced request yielding plain lyrics → `warning[downgraded]` ("returned no timestamped lyrics"); a plain request yielding only synced lyrics → the same warning ("returned only timestamped lyrics"). In both cases the unmatched result stays cached and can satisfy a later iteration (`none` after `line`, or `line` after `none`).
 5. **Output** — opened before the fetch (`O_CREATE|O_EXCL` for new files, `O_WRONLY` without `O_TRUNC` otherwise); on any failure a freshly created file is removed (guarded by a same-inode check). Truncate+Seek happen only after a successful fetch, so existing files keep their content on every failure path (exit 3/4/6/7/8).
 6. **Warnings** — pre-formatted by the fetch layer with their `[kind]` tag and printed verbatim to stderr; they never change the exit code. Every error path in `main` prints the fetched warnings before the `error[...]` line.
 
@@ -93,7 +93,7 @@ Adapters declare required typed params via `Capabilities(req).Required` and requ
 **Key types (`internal/fetch/fetch.go`):**
 
 - `Params` — now carries `Custom map[string]string`.
-- `Result` — `Source` = adapter name, `SubSource` = aggregate sub-source, `Synced` = lyrics contain LRC.
+- `Result` — `Source` = adapter name, `SubSource` = aggregate sub-source, `Level` = SyncLevel of the lyrics (`SyncUnknown`/`SyncNone`/`SyncLine`).
 - `Warning` — kinds: `UnsupportedParam`/`Downgraded`/`PreCheck`/`PrecheckMismatch`/`FetchFailed`/`ResultMismatch`; `ParamName` for custom keys — `Param` stays 0 for them.
 - `NoResultError` — exit 4.
 - `UnknownSourceError` — exit 3.
@@ -122,6 +122,7 @@ Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (neve
 - `mock-fail` — exit 4.
 - `mock-lrc` — synced path.
 - `mock-nosync` — downgrade path.
+- `mock-synconly` — synced-only path (never fills plain `Lyrics`).
 - `mock-mismatch` — precheck-vs-requirement mismatch path.
 - `mock-custom` — custom `--env` params: `LANG` always recognized+required, `COUNTRY` conditional on `LANG`.
 

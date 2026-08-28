@@ -12,6 +12,7 @@ import (
 	"github.com/PloyBox/get-lyrics/internal/source/mock/nosync"
 	"github.com/PloyBox/get-lyrics/internal/source/mock/require"
 	"github.com/PloyBox/get-lyrics/internal/source/mock/success"
+	"github.com/PloyBox/get-lyrics/internal/source/mock/synconly"
 )
 
 // RegisterAllMock registers every mock/test-only adapter into r.
@@ -24,6 +25,7 @@ func RegisterAllMock(r *source.Registry) error {
 		fail.New(),
 		lrc.New(),
 		nosync.New(),
+		synconly.New(),
 		mismatch.New(),
 		custom.New(),
 	}

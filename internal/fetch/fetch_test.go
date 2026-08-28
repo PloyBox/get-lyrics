@@ -212,7 +212,7 @@ func TestFetch_DefaultLineNoneReusesDowngradedResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if res.Synced || res.Lyrics != "plain" {
+	if res.Level != SyncNone || res.Lyrics != "plain" {
 		t.Fatalf("res = %+v; want plain lyrics", res)
 	}
 	if stub.fetchCalls != 1 {
@@ -467,7 +467,7 @@ func TestFetch_TimestampOrderDeterminesPriority(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if res.Synced || res.Lyrics != "plain" {
+	if res.Level != SyncNone || res.Lyrics != "plain" {
 		t.Fatalf("res = %+v; want plain lyrics from the first iteration", res)
 	}
 	if lrc.fetchCalls != 1 {
@@ -502,7 +502,7 @@ func TestFetch_SyncedSourceMatchesLineIteration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if !res.Synced || res.Lyrics != "[00:00.00] synced" {
+	if res.Level != SyncLine || res.Lyrics != "[00:00.00] synced" {
 		t.Fatalf("res = %+v; want synced lyrics", res)
 	}
 	if len(warnings) != 0 {
@@ -693,11 +693,132 @@ func TestFetch_SyncedOnlyResultFillsLyrics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if !res.Synced || res.Lyrics != "[00:00.00] synced line" {
+	if res.Level != SyncLine || res.Lyrics != "[00:00.00] synced line" {
 		t.Fatalf("res = %+v; want synced lyrics from the declared synced track", res)
 	}
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %+v; want none for a consistent result", warnings)
+	}
+}
+
+// TestFetch_PlainRequestOnSyncedOnlySourceNoResult is the empty-success
+// regression: a synced-only adapter (FieldSyncedLyrics declared, no
+// FieldLyrics) with a lone "none" iteration must NOT silently succeed
+// with empty lyrics — the synced track cannot match the plain request,
+// so the fetch ends in NoResultError with one symmetric Downgraded
+// warning.
+func TestFetch_PlainRequestOnSyncedOnlySourceNoResult(t *testing.T) {
+	stub := &fakeSrc{
+		name: "synconly",
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			return source.Result{
+				SyncedLyrics: "[00:00.00] synced",
+				Title:        r.Song,
+				Filled:       source.FieldSyncedLyrics | source.FieldTitle,
+			}, nil
+		},
+	}
+	r := newRegistry(t, stub)
+	svc := New(r)
+
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"none"}, Source: []string{"synconly"}})
+	var noRes NoResultError
+	if !errors.As(err, &noRes) {
+		t.Fatalf("err = %v; want NoResultError instead of an empty success", err)
+	}
+	if res.Lyrics != "" || res.Level != SyncUnknown {
+		t.Fatalf("res = %+v; want empty result on NoResultError", res)
+	}
+	if len(warnings) != 1 || warnings[0].Kind != Downgraded || warnings[0].Source != "synconly" {
+		t.Fatalf("warnings = %+v; want one Downgraded warning for synconly", warnings)
+	}
+	if !strings.Contains(warnings[0].Message, "returned only timestamped lyrics") {
+		t.Fatalf("warning message = %q; want symmetric downgrade note", warnings[0].Message)
+	}
+}
+
+// TestFetch_PlainThenSyncedReusesCachedSyncedTrack: with "none,line" on
+// a synced-only source, the "none" iteration stores the synced track
+// (Downgraded warning) and the "line" iteration matches it from the
+// cache — one adapter call total.
+func TestFetch_PlainThenSyncedReusesCachedSyncedTrack(t *testing.T) {
+	stub := &fakeSrc{
+		name: "synconly",
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			return source.Result{
+				SyncedLyrics: "[00:00.00] synced",
+				Title:        r.Song,
+				Filled:       source.FieldSyncedLyrics | source.FieldTitle,
+			}, nil
+		},
+	}
+	r := newRegistry(t, stub)
+	svc := New(r)
+
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"none", "line"}, Source: []string{"synconly"}})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.Level != SyncLine || res.Lyrics != "[00:00.00] synced" {
+		t.Fatalf("res = %+v; want the cached synced track", res)
+	}
+	if stub.fetchCalls != 1 {
+		t.Fatalf("fetchCalls = %d; want 1 (cache hit on second iteration)", stub.fetchCalls)
+	}
+	if len(warnings) != 1 || warnings[0].Kind != Downgraded {
+		t.Fatalf("warnings = %+v; want one Downgraded warning", warnings)
+	}
+}
+
+// TestFetch_DualTrackLineRoundShortCircuitsWithoutCaching locks the
+// short-circuit semantics: a dual-track source (plain + synced both
+// declared) with a "line" request matches the synced track and returns
+// immediately, storing nothing — so a follow-up "none" call misses the
+// (per-call) cache and must fetch again, returning plain.
+func TestFetch_DualTrackLineRoundShortCircuitsWithoutCaching(t *testing.T) {
+	dual := &fakeSrc{
+		name: "dual",
+		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
+			res := source.Result{
+				Lyrics: "plain",
+				Title:  r.Song,
+				Filled: source.FieldLyrics | source.FieldTitle,
+			}
+			if r.Timestamp {
+				res.SyncedLyrics = "[00:00.00] synced"
+				res.Filled |= source.FieldSyncedLyrics
+			}
+			return res, nil
+		},
+	}
+	r := newRegistry(t, dual)
+	svc := New(r)
+
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"line", "none"}, Source: []string{"dual"}})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.Level != SyncLine || res.Lyrics != "[00:00.00] synced" {
+		t.Fatalf("res = %+v; want the synced track from the line round", res)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %+v; want none", warnings)
+	}
+
+	// Nothing was stored by the short-circuit, so a fresh call with
+	// "none" misses the cache and fetches again.
+	res, warnings, err = svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"none"}, Source: []string{"dual"}})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if res.Level != SyncNone || res.Lyrics != "plain" {
+		t.Fatalf("res = %+v; want plain lyrics from the none round", res)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %+v; want none", warnings)
+	}
+	if dual.fetchCalls != 2 {
+		t.Fatalf("fetchCalls = %d; want 2 (short-circuit stores nothing)", dual.fetchCalls)
 	}
 }
 
@@ -727,7 +848,7 @@ func TestFetch_ResultUsesOnlyDeclaredFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if res.Lyrics != "L" || res.Title != "S" || res.Synced {
+	if res.Lyrics != "L" || res.Title != "S" || res.Level != SyncNone {
 		t.Fatalf("res = %+v; want only declared lyrics/title", res)
 	}
 	if res.Artist != "" || res.Album != "" || res.SubSource != "" {
@@ -744,8 +865,10 @@ func TestFetch_ResultUsesOnlyDeclaredFields(t *testing.T) {
 }
 
 // TestFetch_DeclaredButEmptyFieldWarns proves a declared bit with an
-// empty value is flagged as a source implementation problem while the
-// rest of the result is still used as-is (trust policy).
+// empty value is flagged as a source implementation problem, and that
+// it produces no result track: with no usable lyrics the fetch cannot
+// match any format and ends in NoResultError (the mismatch warning is
+// still emitted).
 func TestFetch_DeclaredButEmptyFieldWarns(t *testing.T) {
 	empty := &fakeSrc{
 		name: "empty",
@@ -760,11 +883,12 @@ func TestFetch_DeclaredButEmptyFieldWarns(t *testing.T) {
 	svc := New(r)
 
 	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []string{"none"}, Source: []string{"empty"}})
-	if err != nil {
-		t.Fatalf("err: %v", err)
+	var noRes NoResultError
+	if !errors.As(err, &noRes) {
+		t.Fatalf("err = %v; want NoResultError (no usable lyrics produced)", err)
 	}
-	if res.Title != "S" {
-		t.Fatalf("res = %+v; want title preserved despite the mismatch", res)
+	if res.Lyrics != "" || res.Title != "" || res.Level != SyncUnknown {
+		t.Fatalf("res = %+v; want empty result on NoResultError", res)
 	}
 	if len(warnings) != 1 || warnings[0].Kind != ResultMismatch {
 		t.Fatalf("warnings = %+v; want one ResultMismatch warning", warnings)
