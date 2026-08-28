@@ -62,7 +62,7 @@ Thin CLI layer over a pluggable-source abstraction:
 
 1. **Registration** — `main.go` runs `bootstrap.RegisterAll(r)` once before `main()`; test builds additionally register `mock-*` sources via `init()` in `main_loadmock.go`.
    - `Registry.Register` is **gate 1**: a source's static `CustomParams()` list must contain only legal (`^[A-Z][A-Z0-9_]*$`), distinct keys — a violation returns `ErrInvalidParamName` and panics at startup (adapter init failure is a programmer error).
-2. **Parse** — required positional `<song>` plus flags via `flag.NewFlagSet`; `--timestamp` and `--env` values validated at parse time (violations are usage errors, exit 2).
+2. **Parse** — required positional `<song>` plus flags via `flag.NewFlagSet`; `--timestamp` (`line`/`none` → `[]fetch.SyncLevel`) and `--env` values parsed and validated at parse time (violations are usage errors, exit 2).
 3. **Env fallback** — before the fetch, `main` calls `svc.CustomParamsFor(params)` (strict: unknown source → exit 3, duplicate → exit 8, reported before the fetch; lenient: problem sources silently skipped) and fills every declared key the user did not pass via `-e` from the process environment (`-e` > env > missing; an empty env var counts as missing). Injected keys behave exactly like user-passed ones.
 4. **Fetch** (`fetch.New(registry).Fetch(ctx, params)`) — two-level loop: outer over `params.Timestamp` (priority order), inner over sources (failover); a per-call result cache dedupes by source+SyncLevel.
    - **Precheck** — duplicate source → exit 8, unknown name → exit 3, missing required param (typed first, then `RequiredCustom` in declaration order) → exit 6 (`--lenient` downgrades these to `warning[precheck]` + skip).

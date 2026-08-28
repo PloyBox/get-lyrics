@@ -77,18 +77,18 @@ func mustRegisterAll() *source.Registry {
 // parsedFlags holds the parsed CLI inputs. song is kept separate because
 // it is a positional argument, not a flag.
 type parsedFlags struct {
-	source    string
-	author    string
-	album     string
-	iswc      string
-	output    string
-	timestamp string
-	userAgent string
-	lenient   bool
-	overwrite bool
-	help      bool
-	version   bool
-	env       map[string]string // validated --env keys; validated at parse time
+	source     string
+	author     string
+	album      string
+	iswc       string
+	output     string
+	timestamps []fetch.SyncLevel // parsed from --timestamp at parse time
+	userAgent  string
+	lenient    bool
+	overwrite  bool
+	help       bool
+	version    bool
+	env        map[string]string // validated --env keys; validated at parse time
 }
 
 // envList collects repeated --env key=value flags. flag.Value calls Set
@@ -270,8 +270,9 @@ func main() {
 
 // parsedFlagsToParams converts the raw CLI flags and positional song
 // argument into the fetch.Params struct, without applying defaults
-// (those live in parseFlags). Source and timestamp lists are trimmed and
-// empty entries dropped here so they match validateTimestamp's behavior.
+// (those live in parseFlags). Source lists are trimmed and empty
+// entries dropped here; timestamps are already parsed into SyncLevels
+// by parseTimestamp.
 func parsedFlagsToParams(f parsedFlags, song string) fetch.Params {
 	return fetch.Params{
 		Song:      song,
@@ -279,7 +280,7 @@ func parsedFlagsToParams(f parsedFlags, song string) fetch.Params {
 		Author:    f.author,
 		Album:     f.album,
 		ISWC:      f.iswc,
-		Timestamp: splitTrimmed(f.timestamp),
+		Timestamp: f.timestamps,
 		UserAgent: f.userAgent,
 		Lenient:   f.lenient,
 		Custom:    f.env,
@@ -347,19 +348,27 @@ func splitTrimmed(s string) []string {
 	return out
 }
 
-// validateTimestamp rejects any comma-separated --timestamp value other
-// than "line" or "none"; empty entries are ignored.
-func validateTimestamp(s string) error {
-	for _, v := range strings.Split(s, ",") {
-		v = strings.TrimSpace(v)
-		if v == "" {
+// parseTimestamp converts a comma-separated --timestamp value into the
+// ordered SyncLevels the fetch layer consumes: "line" → SyncLine,
+// "none" → SyncNone. Whitespace around entries is trimmed and empty
+// entries are dropped; any other value is a usage error (exit 2).
+func parseTimestamp(s string) ([]fetch.SyncLevel, error) {
+	parts := strings.Split(s, ",")
+	out := make([]fetch.SyncLevel, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		switch p {
+		case "":
 			continue
-		}
-		if v != "line" && v != "none" {
-			return fmt.Errorf("invalid timestamp value %q (want \"line\" or \"none\")", v)
+		case "line":
+			out = append(out, fetch.SyncLine)
+		case "none":
+			out = append(out, fetch.SyncNone)
+		default:
+			return nil, fmt.Errorf("invalid timestamp value %q (want \"line\" or \"none\")", p)
 		}
 	}
-	return nil
+	return out, nil
 }
 
 // printUsage writes the help text. Examples use the long (--) form per
@@ -476,8 +485,9 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	fs.StringVar(&f.iswc, "i", "", "ISWC identifier (short)")
 	fs.StringVar(&f.output, "output", "", "output file path")
 	fs.StringVar(&f.output, "o", "", "output file path (short)")
-	fs.StringVar(&f.timestamp, "timestamp", "line,none", "request timestamped lyrics")
-	fs.StringVar(&f.timestamp, "t", "line,none", "request timestamped lyrics (short)")
+	var timestamp string
+	fs.StringVar(&timestamp, "timestamp", "line,none", "request timestamped lyrics")
+	fs.StringVar(&timestamp, "t", "line,none", "request timestamped lyrics (short)")
 	fs.StringVar(&f.userAgent, "user-agent", defaultUserAgent(), "User-Agent header for HTTP requests")
 	fs.StringVar(&f.userAgent, "u", defaultUserAgent(), "User-Agent header for HTTP requests (short)")
 	fs.BoolVar(&f.lenient, "lenient", false, "skip invalid sources instead of failing")
@@ -495,9 +505,11 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	if err := fs.Parse(argv); err != nil {
 		return parsedFlags{}, "", err
 	}
-	if err := validateTimestamp(f.timestamp); err != nil {
+	timestamps, err := parseTimestamp(timestamp)
+	if err != nil {
 		return parsedFlags{}, "", err
 	}
+	f.timestamps = timestamps
 	env, err := validateEnv(envs)
 	if err != nil {
 		return parsedFlags{}, "", err

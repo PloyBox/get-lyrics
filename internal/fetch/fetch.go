@@ -56,8 +56,9 @@ type Warning struct {
 
 // Params bundles all CLI inputs the fetch layer needs. Source is the
 // ordered list of source names to try (failover order). Timestamp is
-// the ordered list of requested output formats ("line" → synced,
-// "none" → plain); the first match wins. Lenient controls the precheck
+// the ordered list of requested SyncLevels (SyncLine → synced,
+// SyncNone → plain) — the CLI parses the --timestamp format names into
+// them; the first match wins. Lenient controls the precheck
 // stage only: when false, the first precheck problem aborts; when true,
 // problem sources are skipped with a PreCheck warning.
 type Params struct {
@@ -66,7 +67,7 @@ type Params struct {
 	Author    string
 	Album     string
 	ISWC      string
-	Timestamp []string
+	Timestamp []SyncLevel
 	Lenient   bool
 	// UserAgent is the HTTP User-Agent header to send on upstream
 	// requests (from --user-agent). It is passed to every requested
@@ -202,9 +203,7 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 	cache := make([]Result, 0, len(eligible))
 	warnedUnsupported := make(map[string]bool, len(eligible))
 
-	for _, tsName := range params.Timestamp {
-		want := tsLevel(tsName)
-
+	for _, want := range params.Timestamp {
 		for _, name := range eligible {
 			if hit := findCached(cache, name, want); hit != nil {
 				return *hit, warnings, nil
@@ -586,16 +585,6 @@ func detectResultMismatch(srcName string, sr source.Result) []Warning {
 		}
 	}
 	return out
-}
-
-// tsLevel maps a --timestamp format name to the SyncLevel it requests:
-// "line" → SyncLine, "none" (and any other value, which the CLI
-// rejects at parse time) → SyncNone.
-func tsLevel(name string) SyncLevel {
-	if name == "line" {
-		return SyncLine
-	}
-	return SyncNone
 }
 
 // filtResult converts an adapter result into the fetch.Result tracks it
