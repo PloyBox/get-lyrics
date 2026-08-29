@@ -11,9 +11,8 @@ A Go CLI that fetches song lyrics from pluggable sources. No TUI/GUI — pure co
 
 ```
 get-lyrics/
-├── main.go                     # CLI wiring: argv parsing, exit-code mapping, output routing, --env validation + env fallback
-├── main_loadmock.go            # //go:build test — registers mock sources via bootstrap.RegisterAllMock
-├── main_test.go                # End-to-end tests for Run(argv, stdout, stderr)
+├── cli/
+│   └── get-lyrics/             # command package (package main): run.go entrypoint, flags/env/usage/output, loadmock.go (test tag), tests
 ├── internal/
 │   ├── bootstrap/              # bootstrap.go: registers real sources; bootstrap_mock.go (test tag): mocks
 │   ├── provider/               # concrete adapters implementing source.Source
@@ -26,7 +25,7 @@ get-lyrics/
 ## Build & Test
 
 - `go build ./...` — compile
-- `go test -tags test ./...` — test suite (the `test` tag is required: `main_test.go` and the mock sources compile only under it)
+- `go test -tags test ./...` — test suite (the `test` tag is required: the `cli/get-lyrics` `*_test.go` tests exercise the `mock-*` sources registered by `loadmock.go`, which compiles only under the tag)
 - `go vet -tags test ./...` — static checks (same tag requirement)
 - Prerequisites: Go toolchain (module declares Go 1.25.10); network access for real sources at runtime
 
@@ -61,7 +60,7 @@ get-lyrics/
 
 Thin CLI layer over a pluggable-source abstraction:
 
-1. **Registration** — `main.go` runs `bootstrap.RegisterAll(r)` once before `main()`; test builds additionally register `mock-*` sources via `init()` in `main_loadmock.go`.
+1. **Registration** — `cli/get-lyrics/run.go` runs `bootstrap.RegisterAll(r)` once at package-init time, before `main()`; test builds additionally register `mock-*` sources via `init()` in `cli/get-lyrics/loadmock.go`.
    - `Registry.Register` is **gate 1**: a source's static `CustomParams()` list must contain only legal (`^[A-Z][A-Z0-9_]*$`), distinct keys — a violation returns `ErrInvalidParamName` and panics at startup (adapter init failure is a programmer error).
 2. **Parse** — required positional `<song>` plus flags via `flag.NewFlagSet`; `--sync-level` (`line`/`none` → `[]fetch.SyncLevel`) and `--env` values parsed and validated at parse time (violations are usage errors, exit 2).
 3. **Env fallback** — before the fetch, `main` calls `svc.CustomParamsFor(params)` (strict: unknown source → exit 3, duplicate → exit 8, reported before the fetch; lenient: problem sources silently skipped) and fills every declared key the user did not pass via `-e` from the process environment (`-e` > env > missing; an empty env var counts as missing). Injected keys behave exactly like user-passed ones.
@@ -130,7 +129,7 @@ Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (neve
 
 ## Testing
 
-- Tests live alongside code as `*_test.go`; `main_test.go` drives `Run(argv, stdout, stderr)` with buffers and asserts exit code, stdout, and stderr independently.
+- Tests live alongside code as `*_test.go`; the `cli/get-lyrics` `*_test.go` files drive `Run(argv, stdout, stderr)` with buffers and assert exit code, stdout, and stderr independently.
 - **Real sources are NOT covered by automated tests** — `lrclib`/`lyricsovh`/`lrccx`/`musixmatch` are exercised manually against their live endpoints. Only the mocks and the CLI/fetch layers are under test.
 - CI (`.github/workflows/simple_ci_cd.yml`) is **release-only** — on `v*` tag pushes it:
   - runs `go test -tags test` + `go vet -tags test`;

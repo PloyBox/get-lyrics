@@ -39,7 +39,7 @@ jobs:
               -trimpath \
               -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
               -o "dist/${BINARY_NAME}-${GOOS}-${GOARCH}${ext}" \
-              .
+              ./cli/get-lyrics
           done
           cd dist && sha256sum * > checksums.txt
 
