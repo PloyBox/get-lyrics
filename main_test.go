@@ -125,7 +125,7 @@ func TestRun_VersionShortFlagAlsoWorks(t *testing.T) {
 }
 
 // TestRun_WritesLyricsToStdoutByDefault exercises the default
-// line,none timestamp order on a plain-only source: the "line"
+// line,none sync level order on a plain-only source: the "line"
 // iteration stores the plain result with a downgrade warning, and the
 // "none" iteration matches the cache and returns it.
 func TestRun_WritesLyricsToStdoutByDefault(t *testing.T) {
@@ -264,7 +264,7 @@ func TestRun_AcceptsSingleDashLongForm(t *testing.T) {
 // nothing matches — ending in exit 4 with the no-result error.
 func TestRun_SyncedOnlyRequestOnPlainSourceExitsFour(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-success", "--author", "TEST_AUTHOR", "--timestamp", "line", "TEST_SONG"}, &stdout, &stderr)
+	code := Run([]string{"--source", "mock-success", "--author", "TEST_AUTHOR", "--sync-level", "line", "TEST_SONG"}, &stdout, &stderr)
 	if code != exitFetchFailed {
 		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitFetchFailed, stderr.String())
 	}
@@ -471,49 +471,49 @@ func TestRun_UnknownFlagExitsTwo(t *testing.T) {
 	}
 }
 
-// TestRun_InvalidTimestampValueExitsTwo: any comma-separated value other
+// TestRun_InvalidSyncLevelValueExitsTwo: any comma-separated value other
 // than line/none is rejected at parse time with a usage error.
-func TestRun_InvalidTimestampValueExitsTwo(t *testing.T) {
+func TestRun_InvalidSyncLevelValueExitsTwo(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-lrc", "--timestamp", "karaoke", "TEST_SONG"}, &stdout, &stderr)
+	code := Run([]string{"--source", "mock-lrc", "--sync-level", "karaoke", "TEST_SONG"}, &stdout, &stderr)
 	if code != exitUsage {
 		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitUsage, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), `invalid timestamp value "karaoke"`) {
-		t.Fatalf("stderr missing invalid-timestamp message: %q", stderr.String())
+	if !strings.Contains(stderr.String(), `invalid sync level value "karaoke"`) {
+		t.Fatalf("stderr missing invalid sync level message: %q", stderr.String())
 	}
 }
 
-// TestRun_TimestampWritesSyncedLyrics drives the synced output path via
-// mock-lrc, which returns LRC-style SyncedLyrics when --timestamp line
-// is set.
-func TestRun_TimestampWritesSyncedLyrics(t *testing.T) {
+// TestRun_SyncLevelLineWritesSyncedLyrics drives the synced output path
+// via mock-lrc, which returns LRC-style SyncedLyrics when --sync-level
+// line is set.
+func TestRun_SyncLevelLineWritesSyncedLyrics(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-lrc", "--timestamp", "line", "TEST_SONG"}, &stdout, &stderr)
+	code := Run([]string{"--source", "mock-lrc", "--sync-level", "line", "TEST_SONG"}, &stdout, &stderr)
 	if code != exitOK {
 		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "[00:00.00]") {
-		t.Fatalf("stdout missing timestamped LRC line: %q", stdout.String())
+		t.Fatalf("stdout missing synced LRC line: %q", stdout.String())
 	}
 	if stderr.String() != "" {
 		t.Fatalf("stderr not empty: %q", stderr.String())
 	}
 }
 
-// TestRun_TimestampLineNoSyncedExitsFour drives the "synced requested,
+// TestRun_SyncLevelLineNoSyncedExitsFour drives the "synced requested,
 // source returned only plain, no plain iteration to fall back on" path
 // via mock-nosync: exit 4 with the downgrade warning and no-result error.
-func TestRun_TimestampLineNoSyncedExitsFour(t *testing.T) {
+func TestRun_SyncLevelLineNoSyncedExitsFour(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-nosync", "--timestamp", "line", "TEST_SONG"}, &stdout, &stderr)
+	code := Run([]string{"--source", "mock-nosync", "--sync-level", "line", "TEST_SONG"}, &stdout, &stderr)
 	if code != exitFetchFailed {
 		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitFetchFailed, stderr.String())
 	}
 	if stdout.String() != "" {
 		t.Fatalf("stdout should be empty on failure: %q", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "returned no timestamped lyrics") {
+	if !strings.Contains(stderr.String(), "returned no synced lyrics") {
 		t.Fatalf("stderr missing fallback warning: %q", stderr.String())
 	}
 	if !strings.Contains(stderr.String(), "error[no-result]") {
@@ -528,14 +528,14 @@ func TestRun_TimestampLineNoSyncedExitsFour(t *testing.T) {
 // stdout.
 func TestRun_SyncedOnlySourceWithNoneExitsFour(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-synconly", "--timestamp", "none", "TEST_SONG"}, &stdout, &stderr)
+	code := Run([]string{"--source", "mock-synconly", "--sync-level", "none", "TEST_SONG"}, &stdout, &stderr)
 	if code != exitFetchFailed {
 		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitFetchFailed, stderr.String())
 	}
 	if stdout.String() != "" {
 		t.Fatalf("stdout should be empty on failure: %q", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), `warning[downgraded]: source "mock-synconly" returned only timestamped lyrics`) {
+	if !strings.Contains(stderr.String(), `warning[downgraded]: source "mock-synconly" returned only synced lyrics`) {
 		t.Fatalf("stderr missing symmetric downgrade warning: %q", stderr.String())
 	}
 	if !strings.Contains(stderr.String(), "error[no-result]") {
@@ -555,7 +555,7 @@ func TestRun_SyncedOnlySourceWithNoneExitsFour(t *testing.T) {
 // matches it from the cache and prints the LRC content.
 func TestRun_SyncedOnlySourceNoneThenLineReusesCache(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-synconly", "--timestamp", "none,line", "TEST_SONG"}, &stdout, &stderr)
+	code := Run([]string{"--source", "mock-synconly", "--sync-level", "none,line", "TEST_SONG"}, &stdout, &stderr)
 	if code != exitOK {
 		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
 	}
@@ -567,12 +567,12 @@ func TestRun_SyncedOnlySourceNoneThenLineReusesCache(t *testing.T) {
 	}
 }
 
-// TestRun_TimestampNoneBeforeLinePrefersPlain proves the user-given
-// timestamp order is the priority: "none,line" returns plain lyrics
+// TestRun_SyncLevelNoneBeforeLinePrefersPlain proves the user-given
+// sync level order is the priority: "none,line" returns plain lyrics
 // from the first iteration, no warning, exit 0.
-func TestRun_TimestampNoneBeforeLinePrefersPlain(t *testing.T) {
+func TestRun_SyncLevelNoneBeforeLinePrefersPlain(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-lrc", "--timestamp", "none,line", "TEST_SONG"}, &stdout, &stderr)
+	code := Run([]string{"--source", "mock-lrc", "--sync-level", "none,line", "TEST_SONG"}, &stdout, &stderr)
 	if code != exitOK {
 		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
 	}
@@ -768,20 +768,20 @@ func TestRun_OverwriteShortFlagWorks(t *testing.T) {
 	}
 }
 
-func TestRun_TimestampValueIsTrimmed(t *testing.T) {
+func TestRun_SyncLevelValueIsTrimmed(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-lrc", "--timestamp", " line", "TEST_SONG"}, &stdout, &stderr)
+	code := Run([]string{"--source", "mock-lrc", "--sync-level", " line", "TEST_SONG"}, &stdout, &stderr)
 	if code != exitOK {
 		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "[00:00.00]") {
-		t.Fatalf("stdout missing timestamped lyrics: %q", stdout.String())
+		t.Fatalf("stdout missing synced lyrics: %q", stdout.String())
 	}
 }
 
-func TestRun_TimestampOnlyEmptyEntriesExitsFour(t *testing.T) {
+func TestRun_SyncLevelOnlyEmptyEntriesExitsFour(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-lrc", "--timestamp", ",", "TEST_SONG"}, &stdout, &stderr)
+	code := Run([]string{"--source", "mock-lrc", "--sync-level", ",", "TEST_SONG"}, &stdout, &stderr)
 	if code != exitFetchFailed {
 		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitFetchFailed, stderr.String())
 	}

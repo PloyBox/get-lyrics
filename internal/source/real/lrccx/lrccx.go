@@ -147,7 +147,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	if strings.TrimSpace(res.Lyrics) != "" {
 		res.Filled |= source.FieldLyrics
 	}
-	if req.Timestamp && hasTimestampLines(raw) {
+	if req.SyncLevel == source.SyncLine && hasTimestampLines(raw) {
 		res.SyncedLyrics = raw
 		res.Filled |= source.FieldSyncedLyrics
 	}
@@ -204,8 +204,8 @@ func stripLRC(s string) string {
 }
 
 // hasTimestampLines reports whether any line carries a [mm:ss] time
-// tag. Unsynced entries (marked [!text]) contain none, so a --timestamp
-// request on them falls back to plain lyrics.
+// tag. Unsynced entries (marked [!text]) contain none, so a --sync-level
+// line request on them falls back to plain lyrics.
 func hasTimestampLines(s string) bool {
 	return timestampTag.MatchString(s)
 }

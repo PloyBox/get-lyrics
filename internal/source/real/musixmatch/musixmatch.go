@@ -109,7 +109,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		res.Artist = req.Author
 		res.Filled |= source.FieldArtist
 
-		if req.Timestamp {
+		if req.SyncLevel == source.SyncLine {
 			if sub, err := a.fetchMatcherSubtitle(ctx, apiKey, ua, req); err == nil {
 				res.SyncedLyrics = sub
 				res.Filled |= source.FieldSyncedLyrics
@@ -139,7 +139,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 			res.Filled |= source.FieldAlbum
 		}
 
-		if req.Timestamp && track.CommontrackID != 0 {
+		if req.SyncLevel == source.SyncLine && track.CommontrackID != 0 {
 			if sub, err := a.fetchTrackSubtitle(ctx, apiKey, ua, track.CommontrackID); err == nil {
 				res.SyncedLyrics = sub
 				res.Filled |= source.FieldSyncedLyrics

@@ -36,7 +36,7 @@ get-lyrics/
   - `--source`/`-s` — comma-separated source names, tried in order (failover). Default `lrclib`. Entries are trimmed; empty ones dropped.
   - `--author`/`-a`, `--album`/`-A`, `--iswc`/`-i` — filters.
   - `--output`/`-o` — write lyrics to this file instead of stdout. **Refuses to overwrite** an existing file (exit 7) unless `--overwrite`/`-O` is given.
-  - `--timestamp`/`-t` — comma-separated `line`/`none` formats; user-given order is the priority (first match wins). Default `line,none`. Any other value is a usage error (exit 2).
+  - `--sync-level`/`-S` — comma-separated `line`/`none` levels; user-given order is the priority (first match wins). Default `line,none`. Any other value is a usage error (exit 2).
   - `--user-agent`/`-u` — HTTP `User-Agent` header sent to sources. Default `get-lyrics/<ver> (+https://github.com/PloyBox/get-lyrics)` (`<ver>` is the version stamped at build time). The built-in sources carry no default of their own — they trust whatever UA they are handed; a non-empty value replaces the CLI default on every upstream request.
   - `--env`/`-e` — repeatable custom source parameter `key=value` (open-ended; keys are source-declared). Key must match `^[A-Z][A-Z0-9_]*$`; value non-empty after trimming; duplicate keys rejected — any violation is a usage error (exit 2).
   - `--lenient`/`-l` — skip invalid sources with `warning[precheck]` instead of failing fast.
@@ -48,7 +48,7 @@ get-lyrics/
 | Code | Meaning |
 |------|---------|
 | 0 | Success (warnings may still go to stderr) |
-| 2 | Usage error (missing song, unknown flag, invalid `--timestamp`, invalid/duplicate `--env` entry) |
+| 2 | Usage error (missing song, unknown flag, invalid `--sync-level`, invalid/duplicate `--env` entry) |
 | 3 | Unknown `--source` name (strict precheck) |
 | 4 | No valid result: all sources skipped/failed, or no format match |
 | 5 | Output failure (file open, truncate, write, or close) |
@@ -62,15 +62,15 @@ Thin CLI layer over a pluggable-source abstraction:
 
 1. **Registration** — `main.go` runs `bootstrap.RegisterAll(r)` once before `main()`; test builds additionally register `mock-*` sources via `init()` in `main_loadmock.go`.
    - `Registry.Register` is **gate 1**: a source's static `CustomParams()` list must contain only legal (`^[A-Z][A-Z0-9_]*$`), distinct keys — a violation returns `ErrInvalidParamName` and panics at startup (adapter init failure is a programmer error).
-2. **Parse** — required positional `<song>` plus flags via `flag.NewFlagSet`; `--timestamp` (`line`/`none` → `[]fetch.SyncLevel`) and `--env` values parsed and validated at parse time (violations are usage errors, exit 2).
+2. **Parse** — required positional `<song>` plus flags via `flag.NewFlagSet`; `--sync-level` (`line`/`none` → `[]fetch.SyncLevel`) and `--env` values parsed and validated at parse time (violations are usage errors, exit 2).
 3. **Env fallback** — before the fetch, `main` calls `svc.CustomParamsFor(params)` (strict: unknown source → exit 3, duplicate → exit 8, reported before the fetch; lenient: problem sources silently skipped) and fills every declared key the user did not pass via `-e` from the process environment (`-e` > env > missing; an empty env var counts as missing). Injected keys behave exactly like user-passed ones.
-4. **Fetch** (`fetch.New(registry).Fetch(ctx, params)`) — two-level loop: outer over `params.Timestamp` (priority order), inner over sources (failover); a per-call result cache dedupes by source+SyncLevel.
-   - **Precheck** — duplicate source → exit 8, unknown name → exit 3, missing required param (typed first, then `RequiredCustom` in declaration order) → exit 6 (`--lenient` downgrades these to `warning[precheck]` + skip).
+4. **Fetch** (`fetch.New(registry).Fetch(ctx, params)`) — two-level loop: outer over `params.SyncLevels` (priority order), inner over sources (failover); a per-call result cache dedupes by source+SyncLevel.
+   - **Precheck** — first a request-level check: `SyncUnknown` in `params.SyncLevels` → `InvalidSyncLevelError` (a caller bug; rejected before any per-source validation including gate 2, in BOTH modes — never downgraded to a warning). Then, per source: duplicate source → exit 8, unknown name → exit 3, missing required param (typed first, then `RequiredCustom` in declaration order) → exit 6 (`--lenient` downgrades these to `warning[precheck]` + skip).
    - **Gate 2** — runs before the missing check: a request-aware custom declaration inconsistent with the static list (invalid name, static mismatch, `RequiredCustom` not a subset of `Custom`, or duplicate `RequiredCustom`) skips the source with `warning[precheck-mismatch]` in BOTH modes — never exit 6.
    - **Abort warnings** — strict precheck errors return the warnings accumulated before the abort, so `main` can print them before the error.
    - **Adapter errors** — `warning[fetch]`, next source (a fetch-time `RequiredParamMismatchError` → `warning[precheck-mismatch]` reusing the error's own `Flag`, next source).
    - **Result trust policy** — a result whose `Filled` mask disagrees with its contents (declared-but-empty or filled-but-undeclared) → `warning[result]`, result still used as-is (trust policy).
-   - **Downgrade** — symmetric in both directions: a synced request yielding plain lyrics → `warning[downgraded]` ("returned no timestamped lyrics"); a plain request yielding only synced lyrics → the same warning ("returned only timestamped lyrics"). In both cases the unmatched result stays cached and can satisfy a later iteration (`none` after `line`, or `line` after `none`).
+   - **Downgrade** — symmetric in both directions: a synced request yielding plain lyrics → `warning[downgraded]` ("returned no synced lyrics"); a plain request yielding only synced lyrics → the same warning ("returned only synced lyrics"). In both cases the unmatched result stays cached and can satisfy a later iteration (`none` after `line`, or `line` after `none`).
 5. **Output** — opened before the fetch (`O_CREATE|O_EXCL` for new files, `O_WRONLY` without `O_TRUNC` otherwise); on any failure a freshly created file is removed (guarded by a same-inode check). Truncate+Seek happen only after a successful fetch, so existing files keep their content on every failure path (exit 3/4/6/7/8).
 6. **Warnings** — pre-formatted by the fetch layer with their `[kind]` tag and printed verbatim to stderr; they never change the exit code. Every error path in `main` prints the fetched warnings before the `error[...]` line.
 
@@ -96,6 +96,7 @@ Adapters declare required typed params via `Capabilities(req).Required` and requ
 - `Result` — `Source` = adapter name, `SubSource` = aggregate sub-source, `Level` = SyncLevel of the lyrics (`SyncUnknown`/`SyncNone`/`SyncLine`).
 - `Warning` — kinds: `UnsupportedParam`/`Downgraded`/`PreCheck`/`PrecheckMismatch`/`FetchFailed`/`ResultMismatch`; `ParamName` for custom keys — `Param` stays 0 for them.
 - `NoResultError` — exit 4.
+- `InvalidSyncLevelError` — precheck rejects `SyncUnknown` in `Params.SyncLevels` (a caller bug; request-level check before per-source validation, not downgraded by `--lenient`).
 - `UnknownSourceError` — exit 3.
 - `DuplicateSourceError` — exit 8.
 - `RequiredParamError` — exit 6; `ParamName` + `Flag` rendered as `--env <KEY>` for custom.

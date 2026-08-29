@@ -11,7 +11,7 @@
 //
 // Both endpoints return a single track (or first hit) with plainLyrics
 // and syncedLyrics (LRC) fields. Synced output is produced when
-// Request.Timestamp is true.
+// Request.SyncLevel is SyncLine.
 package lrclib
 
 import (
@@ -150,7 +150,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	if strings.TrimSpace(res.Lyrics) != "" {
 		res.Filled |= source.FieldLyrics
 	}
-	if req.Timestamp && strings.TrimSpace(hit.SyncedLyrics) != "" {
+	if req.SyncLevel == source.SyncLine && strings.TrimSpace(hit.SyncedLyrics) != "" {
 		res.SyncedLyrics = hit.SyncedLyrics
 		res.Filled |= source.FieldSyncedLyrics
 	}

@@ -62,14 +62,14 @@ get-lyrics --author "Queen" --output "lyrics.txt" "Bohemian Rhapsody"
 get-lyrics --author "Queen" --output "lyrics.txt" --overwrite "Bohemian Rhapsody"
 ```
 
-**Force timestamp format:**
+**Force sync level:**
 
 ```sh
 # Force LRC output
-get-lyrics --author "Queen" --timestamp "line" "Bohemian Rhapsody"
+get-lyrics --author "Queen" --sync-level "line" "Bohemian Rhapsody"
 
 # Force plain lyrics instead
-get-lyrics --author "Queen" --timestamp "none" "Bohemian Rhapsody"
+get-lyrics --author "Queen" --sync-level "none" "Bohemian Rhapsody"
 ```
 
 **Set a custom User-Agent:**
@@ -111,7 +111,7 @@ get-lyrics --help
 | `--iswc` | `-i` | ISWC identifier |
 | `--output` | `-o` | Write lyrics to file (default: stdout; refuses to overwrite an existing file) |
 | `--overwrite` | `-O` | Overwrite an existing `--output` file |
-| `--timestamp` | `-t` | Comma-separated timestamp formats (default: `line,none`; `line` enables LRC). User-given order is the priority |
+| `--sync-level` | `-S` | Comma-separated sync levels (default: `line,none`; `line` enables LRC). User-given order is the priority |
 | `--user-agent` | `-u` | HTTP `User-Agent` header sent to sources (default: `get-lyrics/<ver> (+https://github.com/PloyBox/get-lyrics)`) |
 | `--env` | `-e` | Custom source parameter `key=value` (repeatable; key must match `^[A-Z][A-Z0-9_]*$`) |
 | `--lenient` | `-l` | Skip invalid sources instead of failing fast (precheck only) |
@@ -127,9 +127,9 @@ get-lyrics --help
 | Code | Meaning |
 |------|---------|
 | 0 | Success (warnings may be on stderr) |
-| 2 | Usage error (missing song, unknown flag, invalid `--timestamp` value, invalid/duplicate `--env` entry) |
+| 2 | Usage error (missing song, unknown flag, invalid `--sync-level` value, invalid/duplicate `--env` entry) |
 | 3 | Unknown `--source` name |
-| 4 | No valid result (all sources failed/skipped, or nothing matched the requested timestamp format) |
+| 4 | No valid result (all sources failed/skipped, or nothing matched the requested sync level) |
 | 5 | Output failure (can't create/write file) |
 | 6 | Source requires a parameter (e.g. `--author` missing for `lyricsovh`, or a required `--env` key missing) |
 | 7 | `--output` file already exists and `--overwrite` was not given |
@@ -153,12 +153,12 @@ Rules:
 
 Legend: `Y` = supported, `N` = not supported, `F` = required (must be given).
 
-| Source | Author | Album | ISWC | Timestamp | Notes |
+| Source | Author | Album | ISWC | Sync level | Notes |
 |--------|--------|-------|------|-----------|-------|
 | `lrclib` | Y | Y | N | Y | Searches [lrclib.net](https://lrclib.net); uses `/api/get` when artist is given, `/api/search` otherwise |
 | `lyricsovh` | F | N | N | N | Uses [api.lyrics.ovh](https://api.lyrics.ovh); plain text only |
 | `lrccx` | Y | Y | N | Y | Searches [lrc.cx](https://lrc.cx) via its legacy `/jsonapi` endpoint; the response is always LRC-flavoured text, stripped of timestamps for plain output |
-| `musixmatch` | Y | N | N | Y* | [Musixmatch](https://developer.musixmatch.com) via `matcher.lyrics.get`/`matcher.subtitle.get` (with `--author`) or `track.search` → `track.lyrics.get`/`track.subtitle.get` (title only). Requires the `MUSIXMATCH_API_KEY` custom parameter. Synced LRC needs the paid Scale plan; on cheaper plans a `--timestamp` request falls back to plain lyrics with a `warning[downgraded]` |
+| `musixmatch` | Y | N | N | Y* | [Musixmatch](https://developer.musixmatch.com) via `matcher.lyrics.get`/`matcher.subtitle.get` (with `--author`) or `track.search` → `track.lyrics.get`/`track.subtitle.get` (title only). Requires the `MUSIXMATCH_API_KEY` custom parameter. Synced LRC needs the paid Scale plan; on cheaper plans a `--sync-level` request falls back to plain lyrics with a `warning[downgraded]` |
 
 `musixmatch` is the only built-in source that declares a custom `--env` parameter: `MUSIXMATCH_API_KEY` (required, fallback to the `MUSIXMATCH_API_KEY` environment variable). Get a free Basic key at <https://developer.musixmatch.com>.
 

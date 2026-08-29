@@ -1,7 +1,7 @@
 // Package fetch is the thin orchestration layer between the CLI and
 // the pluggable source adapters. It prechecks every requested source
 // (existence + required params), then tries them in user-given order
-// per timestamp format, failing over on adapter errors and matching
+// per sync level, failing over on adapter errors and matching
 // results against the requested SyncLevel via a per-call cache.
 package fetch
 
@@ -21,7 +21,7 @@ const (
 	// UnsupportedParam: a user-supplied optional parameter the source
 	// does not honor; emitted alongside a successful result.
 	UnsupportedParam WarningKind = iota
-	// Downgraded: the requested timestamp format got no match — synced
+	// Downgraded: the requested sync level got no match — synced
 	// was requested but only plain lyrics returned, or plain was
 	// requested but only synced lyrics returned. The unmatched result
 	// stays cached and can satisfy a later iteration.
@@ -55,20 +55,21 @@ type Warning struct {
 }
 
 // Params bundles all CLI inputs the fetch layer needs. Source is the
-// ordered list of source names to try (failover order). Timestamp is
-// the ordered list of requested SyncLevels (SyncLine → synced,
-// SyncNone → plain) — the CLI parses the --timestamp format names into
-// them; the first match wins. Lenient controls the precheck
-// stage only: when false, the first precheck problem aborts; when true,
+// ordered list of source names to try (failover order). SyncLevels is
+// the ordered list of requested sync levels (SyncLine → synced,
+// SyncNone → plain) — the CLI parses the --sync-level level names into
+// it; the first match wins. SyncUnknown is not a legal request value;
+// precheck rejects it with InvalidSyncLevelError. Lenient controls the
+// precheck stage only: when false, the first precheck problem aborts; when true,
 // problem sources are skipped with a PreCheck warning.
 type Params struct {
-	Song      string
-	Source    []string
-	Author    string
-	Album     string
-	ISWC      string
-	Timestamp []SyncLevel
-	Lenient   bool
+	Song       string
+	Source     []string
+	Author     string
+	Album      string
+	ISWC       string
+	SyncLevels []SyncLevel
+	Lenient    bool
 	// UserAgent is the HTTP User-Agent header to send on upstream
 	// requests (from --user-agent). It is passed to every requested
 	// source; empty means the source uses its own default UA.
@@ -81,7 +82,7 @@ type Params struct {
 }
 
 // SyncLevel classifies the lyrics content a fetch.Result carries by its
-// timestamp format.
+// sync level.
 type SyncLevel uint8
 
 const (
@@ -114,11 +115,22 @@ type Result struct {
 }
 
 // NoResultError is returned when every source was skipped or failed and
-// no result matched any requested timestamp format. The CLI maps it to
+// no result matched any requested sync level. The CLI maps it to
 // exit code 4 and prints the collected warnings first.
 type NoResultError struct{}
 
 func (NoResultError) Error() string { return "no source returned a valid result" }
+
+// InvalidSyncLevelError is returned by precheck when Params.SyncLevels
+// contains SyncUnknown, which classifies results but is not a
+// requestable level — callers must request only SyncNone/SyncLine.
+// It is a caller bug (the CLI rejects such values at parse time), so
+// it aborts in BOTH strict and lenient mode.
+type InvalidSyncLevelError struct{}
+
+func (InvalidSyncLevelError) Error() string {
+	return `invalid sync level "unknown" (want "line" or "none")`
+}
 
 // UnknownSourceError identifies the requested but unregistered source
 // name. It unwraps to source.ErrNotFound so callers can match with
@@ -172,12 +184,15 @@ func New(reg *source.Registry) *Service {
 }
 
 // Fetch prechecks every requested source, then tries them in order for
-// each requested timestamp format. The first result whose Level matches
+// each requested sync level. The first result whose Level matches
 // the current iteration is returned immediately; when nothing matches,
 // every produced track is cached per call so a later iteration ("none"
 // after "line") can reuse them without a second request.
 //
 // Error semantics:
+//   - SyncUnknown in Params.SyncLevels → InvalidSyncLevelError (a
+//     caller bug; rejected before any per-source validation, in BOTH
+//     strict and lenient mode).
 //   - strict precheck (default) → the single first problem: a
 //     DuplicateSourceError (exit 8), source.ErrNotFound (exit 3), or a
 //     RequiredParamError (exit 6); no source is fetched, but warnings
@@ -189,7 +204,7 @@ func New(reg *source.Registry) *Service {
 //     the next source (never aborts, regardless of lenient); a source
 //     raising RequiredParamMismatchError instead becomes a
 //     PrecheckMismatch warning + fail over.
-//   - no result matched any timestamp format → NoResultError, with the
+//   - no result matched any sync level → NoResultError, with the
 //     in-flight warnings so the caller can print why each source failed.
 func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, error) {
 	warnings := make([]Warning, 0, 4)
@@ -203,7 +218,7 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 	cache := make([]Result, 0, len(eligible))
 	warnedUnsupported := make(map[string]bool, len(eligible))
 
-	for _, want := range params.Timestamp {
+	for _, want := range params.SyncLevels {
 		for _, name := range eligible {
 			if hit := findCached(cache, name, want); hit != nil {
 				return *hit, warnings, nil
@@ -221,7 +236,7 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 				Author:    params.Author,
 				Album:     params.Album,
 				ISWC:      params.ISWC,
-				Timestamp: want == SyncLine,
+				SyncLevel: sourceSyncLevel(want),
 				UserAgent: params.UserAgent,
 				Custom:    params.Custom,
 			}
@@ -260,9 +275,9 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 				// downgrade. storable only holds tracks whose Level
 				// differs from want, so want picks the message.
 				cache = append(cache, storable...)
-				msg := "returned no timestamped lyrics"
+				msg := "returned no synced lyrics"
 				if want == SyncNone {
-					msg = "returned only timestamped lyrics"
+					msg = "returned only synced lyrics"
 				}
 				warnings = append(warnings, Warning{
 					Kind:    Downgraded,
@@ -279,7 +294,7 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 // CustomParamsFor returns, in params.Source order, the static
 // CustomParams() declaration of every source that passes validation; the
 // map is keyed by source name. Only params.Source and params.Lenient
-// participate — Song/Author/Album/ISWC/Timestamp/Custom are ignored.
+// participate — Song/Author/Album/ISWC/SyncLevels/Custom are ignored.
 //
 // Strict mode: the first problem aborts with UnknownSourceError
 // (unregistered name) or DuplicateSourceError (duplicate entry), the
@@ -318,12 +333,22 @@ func (s *Service) CustomParamsFor(params Params) (map[string][]source.ParamSpec,
 // error in strict mode. The returned slice holds the eligible source
 // names in the user-given order.
 //
+// Before any per-source validation (including gate 2 and the lenient
+// skip logic), a request-level check rejects SyncUnknown in
+// Params.SyncLevels with InvalidSyncLevelError — a caller bug that no
+// source could satisfy, so neither mode downgrades it to a warning.
+//
 // Gate 2 runs before the missing-required check: a source whose
 // request-aware custom declaration is inconsistent (a source bug) is
 // skipped with a precheck-mismatch warning in BOTH strict and lenient
 // mode — never a RequiredParamError, since the offending key cannot be
 // legitimately supplied by the caller.
 func (s *Service) precheck(params Params, warnings *[]Warning) ([]string, error) {
+	for _, want := range params.SyncLevels {
+		if want == SyncUnknown {
+			return nil, InvalidSyncLevelError{}
+		}
+	}
 	eligible := make([]string, 0, len(params.Source))
 	seen := make(map[string]bool, len(params.Source))
 	for _, name := range params.Source {
@@ -451,8 +476,8 @@ func checkRequired(caps source.Capabilities, params Params) (missingParam source
 }
 
 // requestFromParams projects the CLI params onto a source.Request for
-// capability queries. The timestamp flag is deliberately omitted:
-// synced output is a runtime property, not part of capability checks.
+// capability queries. SyncLevel is deliberately omitted — zero value is
+// SyncNone (plain), synced output is a runtime property.
 // Custom is projected so capability queries see the user-supplied keys
 // — conditional recognition/requirements (e.g. mock-custom's COUNTRY
 // depending on LANG) would otherwise never hold in precheck and
@@ -465,6 +490,19 @@ func requestFromParams(params Params) source.Request {
 		ISWC:   params.ISWC,
 		Custom: params.Custom,
 	}
+}
+
+// sourceSyncLevel maps a requested fetch.SyncLevel onto its
+// source.Request counterpart one-to-one. SyncUnknown never reaches
+// this point: precheck rejects it before the fetch loop runs.
+func sourceSyncLevel(want SyncLevel) source.SyncLevel {
+	switch want {
+	case SyncNone:
+		return source.SyncNone
+	case SyncLine:
+		return source.SyncLine
+	}
+	panic(fmt.Sprintf("fetch: invalid sync level %d (precheck must reject SyncUnknown)", want))
 }
 
 // flagForParam maps a Param bit to the CLI flag spelling used in
@@ -483,9 +521,9 @@ func flagForParam(p source.Param) string {
 
 // detectUnsupported compares the non-empty optional fields in params
 // against the adapter's filters for this request and returns one
-// UnsupportedParam warning per mismatch. The timestamp format is
-// deliberately excluded: a synced request on a plain-only source is
-// covered by the Downgraded warning.
+// UnsupportedParam warning per mismatch. The sync level is deliberately
+// excluded: a synced request on a plain-only source is covered by the
+// Downgraded warning.
 //
 // Custom keys run a parallel path: every user-supplied key the adapter
 // does not recognize for this request gets one warning. The map

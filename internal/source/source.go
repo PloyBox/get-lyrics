@@ -1,7 +1,7 @@
 // Package source defines the pluggable lyrics-source abstraction.
 //
 // A Source is a named adapter that knows which optional metadata parameters
-// (author, album, ISWC, timestamp) it can use to refine a lyrics lookup, and
+// (author, album, ISWC, sync level) it can use to refine a lyrics lookup, and
 // can fetch lyrics for a given Request. Built-in adapters are registered
 // explicitly via RegisterAll in package internal/bootstrap.
 package source
@@ -84,14 +84,31 @@ type Capabilities struct {
 	RequiredCustom []string
 }
 
+// SyncLevel identifies the lyrics format a Request asks for.
+//
+// It mirrors fetch.SyncLevel minus SyncUnknown: the fetch layer needs
+// SyncUnknown to classify results, a request does not. The numeric
+// values deliberately do NOT match (fetch.SyncNone is 1) — never cast
+// between the two types; map explicitly.
+type SyncLevel uint8
+
+const (
+	// SyncNone: plain (non-timestamped) lyrics. Zero value.
+	SyncNone SyncLevel = iota
+	// SyncLine: synced (LRC timestamped) lyrics.
+	SyncLine
+)
+
 // Request is the input to a Source.Fetch call. Song is required;
 // Author/Album/ISWC are optional refinements and may be empty strings.
 type Request struct {
-	Song      string // required
-	Author    string
-	Album     string
-	ISWC      string
-	Timestamp bool // whether to request timestamped lyrics (from --timestamp)
+	Song   string // required
+	Author string
+	Album  string
+	ISWC   string
+	// SyncLevel is the lyrics format the request asks for (from
+	// --sync-level). Zero value is SyncNone (plain lyrics).
+	SyncLevel SyncLevel
 	// UserAgent is the HTTP User-Agent header the source should send on
 	// upstream requests, taken from --user-agent. When empty, the
 	// source falls back to its own default UA string.
@@ -146,8 +163,8 @@ type Result struct {
 	// layer selects SyncedLyrics as the output.
 	Lyrics string
 	// SyncedLyrics is the LRC-style ([mm:ss.xx] lines) track.
-	// Populated (FieldSyncedLyrics) only when Request.Timestamp is true
-	// and the source had synced lyrics.
+	// Populated (FieldSyncedLyrics) only when Request.SyncLevel is
+	// SyncLine and the source had synced lyrics.
 	SyncedLyrics string
 	Title        string
 	Artist       string

@@ -28,7 +28,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		Title:  req.Song,
 		Filled: source.FieldLyrics | source.FieldTitle,
 	}
-	if req.Timestamp {
+	if req.SyncLevel == source.SyncLine {
 		res.SyncedLyrics = "[00:00.00] [mock-lrc] first line for: " + req.Song + "\n" +
 			"[00:05.00] [mock-lrc] second line for: " + req.Song + "\n"
 		res.Filled |= source.FieldSyncedLyrics

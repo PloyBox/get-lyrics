@@ -20,7 +20,7 @@ func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 
 func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
 
-// Fetch honors --timestamp in principle but only ever fills
+// Fetch honors --sync-level in principle but only ever fills
 // SyncedLyrics, never plain Lyrics — exercising the synced-only result
 // path: a plain request cannot match it (downgrade warning, no empty
 // success), while a later "line" iteration reuses it from the cache.

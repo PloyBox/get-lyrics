@@ -2,7 +2,7 @@
 //
 // Usage: get-lyrics --source <name> [--author <name>] [--album <name>]
 //
-//	[--iswc <code>] [--output <file>] [--user-agent <ua>] [--timestamp] <song>
+//	[--iswc <code>] [--output <file>] [--user-agent <ua>] [--sync-level <levels>] <song>
 //
 // Use --help or -h for the same summary plus the list of registered sources.
 package main
@@ -26,10 +26,10 @@ import (
 // Exit codes documented for shell consumers:
 //
 //	0 → success (stderr may still carry warnings)
-//	2 → usage error (missing song, unknown/typo flag, invalid --timestamp value)
+//	2 → usage error (missing song, unknown/typo flag, invalid --sync-level value)
 //	3 → unknown source (strict precheck)
 //	4 → no valid result: every source skipped (lenient) or failed, or no
-//	     result matched the requested timestamp formats
+//	     result matched the requested sync levels
 //	5 → output failure (file open, write, or close)
 //	6 → source-required parameter missing in strict precheck (e.g. the
 //	     caller did not supply --author to a source that requires it)
@@ -82,7 +82,7 @@ type parsedFlags struct {
 	album      string
 	iswc       string
 	output     string
-	timestamps []fetch.SyncLevel // parsed from --timestamp at parse time
+	syncLevels []fetch.SyncLevel // parsed from --sync-level at parse time
 	userAgent  string
 	lenient    bool
 	overwrite  bool
@@ -271,19 +271,19 @@ func main() {
 // parsedFlagsToParams converts the raw CLI flags and positional song
 // argument into the fetch.Params struct, without applying defaults
 // (those live in parseFlags). Source lists are trimmed and empty
-// entries dropped here; timestamps are already parsed into SyncLevels
-// by parseTimestamp.
+// entries dropped here; sync levels are already parsed into SyncLevels
+// by parseSyncLevels.
 func parsedFlagsToParams(f parsedFlags, song string) fetch.Params {
 	return fetch.Params{
-		Song:      song,
-		Source:    splitTrimmed(f.source),
-		Author:    f.author,
-		Album:     f.album,
-		ISWC:      f.iswc,
-		Timestamp: f.timestamps,
-		UserAgent: f.userAgent,
-		Lenient:   f.lenient,
-		Custom:    f.env,
+		Song:       song,
+		Source:     splitTrimmed(f.source),
+		Author:     f.author,
+		Album:      f.album,
+		ISWC:       f.iswc,
+		SyncLevels: f.syncLevels,
+		UserAgent:  f.userAgent,
+		Lenient:    f.lenient,
+		Custom:     f.env,
 	}
 }
 
@@ -348,11 +348,11 @@ func splitTrimmed(s string) []string {
 	return out
 }
 
-// parseTimestamp converts a comma-separated --timestamp value into the
-// ordered SyncLevels the fetch layer consumes: "line" → SyncLine,
+// parseSyncLevels converts a comma-separated --sync-level value into
+// the ordered SyncLevels the fetch layer consumes: "line" → SyncLine,
 // "none" → SyncNone. Whitespace around entries is trimmed and empty
 // entries are dropped; any other value is a usage error (exit 2).
-func parseTimestamp(s string) ([]fetch.SyncLevel, error) {
+func parseSyncLevels(s string) ([]fetch.SyncLevel, error) {
 	parts := strings.Split(s, ",")
 	out := make([]fetch.SyncLevel, 0, len(parts))
 	for _, p := range parts {
@@ -365,7 +365,7 @@ func parseTimestamp(s string) ([]fetch.SyncLevel, error) {
 		case "none":
 			out = append(out, fetch.SyncNone)
 		default:
-			return nil, fmt.Errorf("invalid timestamp value %q (want \"line\" or \"none\")", p)
+			return nil, fmt.Errorf("invalid sync level value %q (want \"line\" or \"none\")", p)
 		}
 	}
 	return out, nil
@@ -378,7 +378,7 @@ func parseTimestamp(s string) ([]fetch.SyncLevel, error) {
 func printUsage(w io.Writer, reg *source.Registry, decls map[string][]source.ParamSpec) {
 	var b bytes.Buffer
 	fmt.Fprintln(&b, "Usage: get-lyrics [--source <names>] [--author <name>] [--album <name>]")
-	fmt.Fprintln(&b, "                   [--iswc <code>] [--output <file>] [--user-agent <ua>] [--timestamp <fmts>] <song>")
+	fmt.Fprintln(&b, "                   [--iswc <code>] [--output <file>] [--user-agent <ua>] [--sync-level <levels>] <song>")
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "Options:")
 	fmt.Fprintln(&b, "  --source <names>, -s <names> Lyrics source names (default: lrclib)")
@@ -387,7 +387,7 @@ func printUsage(w io.Writer, reg *source.Registry, decls map[string][]source.Par
 	fmt.Fprintln(&b, "  --iswc <code>,    -i <code>  ISWC identifier")
 	fmt.Fprintln(&b, "  --output <file>,  -o <file>  Write lyrics to file (default: stdout; refuses to overwrite an existing file)")
 	fmt.Fprintln(&b, "  --overwrite, -O               Overwrite an existing --output file")
-	fmt.Fprintln(&b, "  --timestamp <fmts>, -t <fmts> Timestamp formats (default: line,none)")
+	fmt.Fprintln(&b, "  --sync-level <levels>, -S <levels> Sync levels (default: line,none)")
 	fmt.Fprintf(&b, "  --user-agent <ua>, -u <ua>    User-Agent header for HTTP requests (default: %s)\n", defaultUserAgent())
 	fmt.Fprintln(&b, "  --env <key=value>, -e <key=value> Custom source parameter (repeatable; key must match ^[A-Z][A-Z0-9_]*$)")
 	fmt.Fprintln(&b, "  --lenient, -l               Skip invalid sources instead of failing")
@@ -485,9 +485,9 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	fs.StringVar(&f.iswc, "i", "", "ISWC identifier (short)")
 	fs.StringVar(&f.output, "output", "", "output file path")
 	fs.StringVar(&f.output, "o", "", "output file path (short)")
-	var timestamp string
-	fs.StringVar(&timestamp, "timestamp", "line,none", "request timestamped lyrics")
-	fs.StringVar(&timestamp, "t", "line,none", "request timestamped lyrics (short)")
+	var syncLevel string
+	fs.StringVar(&syncLevel, "sync-level", "line,none", "synced (line) or plain (none) lyrics")
+	fs.StringVar(&syncLevel, "S", "line,none", "synced (line) or plain (none) lyrics (short)")
 	fs.StringVar(&f.userAgent, "user-agent", defaultUserAgent(), "User-Agent header for HTTP requests")
 	fs.StringVar(&f.userAgent, "u", defaultUserAgent(), "User-Agent header for HTTP requests (short)")
 	fs.BoolVar(&f.lenient, "lenient", false, "skip invalid sources instead of failing")
@@ -505,11 +505,11 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	if err := fs.Parse(argv); err != nil {
 		return parsedFlags{}, "", err
 	}
-	timestamps, err := parseTimestamp(timestamp)
+	syncLevels, err := parseSyncLevels(syncLevel)
 	if err != nil {
 		return parsedFlags{}, "", err
 	}
-	f.timestamps = timestamps
+	f.syncLevels = syncLevels
 	env, err := validateEnv(envs)
 	if err != nil {
 		return parsedFlags{}, "", err

@@ -75,7 +75,7 @@ func TestFetch_AllParamsUnsupportedEmitsThreeWarnings(t *testing.T) {
 	r := newRegistry(t, stub)
 	svc := New(r)
 
-	params := Params{Song: "Song", Author: "A", Album: "B", ISWC: "I", Timestamp: []SyncLevel{SyncNone}, Source: []string{"stub"}}
+	params := Params{Song: "Song", Author: "A", Album: "B", ISWC: "I", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"stub"}}
 	res, warnings, err := svc.Fetch(context.Background(), params)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -108,7 +108,7 @@ func TestFetch_AllParamsSupportedEmitsNoWarnings(t *testing.T) {
 				Title:  r.Song,
 				Filled: source.FieldLyrics | source.FieldTitle,
 			}
-			if r.Timestamp {
+			if r.SyncLevel == source.SyncLine {
 				res.SyncedLyrics = "[00:00.00] x"
 				res.Filled |= source.FieldSyncedLyrics
 			}
@@ -118,7 +118,7 @@ func TestFetch_AllParamsSupportedEmitsNoWarnings(t *testing.T) {
 	r := newRegistry(t, full)
 	svc := New(r)
 
-	params := Params{Song: "S", Author: "A", Album: "B", ISWC: "I", Timestamp: []SyncLevel{SyncLine}, Source: []string{"full"}}
+	params := Params{Song: "S", Author: "A", Album: "B", ISWC: "I", SyncLevels: []SyncLevel{SyncLine}, Source: []string{"full"}}
 	res, warnings, err := svc.Fetch(context.Background(), params)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -145,7 +145,7 @@ func TestFetch_AggregateSourceSubSource(t *testing.T) {
 	r := newRegistry(t, agg)
 	svc := New(r)
 
-	res, _, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncNone}, Source: []string{"agg"}})
+	res, _, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"agg"}})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestFetch_SyncedRequestOnPlainOnlySourceDowngrades(t *testing.T) {
 	r := newRegistry(t, stub)
 	svc := New(r)
 
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncLine}, Source: []string{"stub"}})
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncLine}, Source: []string{"stub"}})
 	if res.Lyrics != "" {
 		t.Fatalf("res = %+v; want empty result on NoResultError", res)
 	}
@@ -208,7 +208,7 @@ func TestFetch_DefaultLineNoneReusesDowngradedResult(t *testing.T) {
 	r := newRegistry(t, stub)
 	svc := New(r)
 
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncLine, SyncNone}, Source: []string{"stub"}})
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncLine, SyncNone}, Source: []string{"stub"}})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestFetch_AdapterErrorFailsOverToNextSource(t *testing.T) {
 	r := newRegistry(t, bad, ok)
 	svc := New(r)
 
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncNone}, Source: []string{"bad", "ok"}})
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"bad", "ok"}})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestFetch_AllSourcesFailReturnsNoResult(t *testing.T) {
 	r := newRegistry(t, bad)
 	svc := New(r)
 
-	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncNone}, Source: []string{"bad"}})
+	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"bad"}})
 	var noRes NoResultError
 	if !errors.As(err, &noRes) {
 		t.Fatalf("err = %v; want NoResultError", err)
@@ -334,7 +334,7 @@ func TestFetch_RequiredParamMismatchFailsOverWithWarning(t *testing.T) {
 	r := newRegistry(t, buggy, ok)
 	svc := New(r)
 
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncNone}, Source: []string{"buggy", "ok"}})
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"buggy", "ok"}})
 	if err != nil {
 		t.Fatalf("err = %v; want success via failover", err)
 	}
@@ -375,6 +375,53 @@ func TestFetch_StrictPrecheckUnknownSourceFailsFast(t *testing.T) {
 	}
 }
 
+// TestFetch_UnknownSyncLevelRejectedInPrecheck locks the request-level
+// precheck: SyncUnknown in Params.SyncLevels is a caller bug (the CLI
+// rejects such values at parse time), so it aborts with
+// InvalidSyncLevelError before any fetch, in BOTH strict and lenient
+// mode, and even before per-source validation (an unknown source name
+// never masks it).
+func TestFetch_UnknownSyncLevelRejectedInPrecheck(t *testing.T) {
+	probe := &fakeSrc{
+		name: "probe",
+		fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
+			return source.Result{}, errors.New("probe must not be fetched")
+		},
+	}
+	r := newRegistry(t, probe)
+	svc := New(r)
+
+	// Strict mode: the error aborts, no warnings, the probe is never called.
+	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncUnknown}, Source: []string{"probe"}})
+	var inv InvalidSyncLevelError
+	if !errors.As(err, &inv) {
+		t.Fatalf("err = %v; want InvalidSyncLevelError", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %+v; want none", warnings)
+	}
+	if probe.fetchCalls != 0 {
+		t.Fatalf("probe.fetchCalls = %d; want 0 (fail-fast before any fetch)", probe.fetchCalls)
+	}
+
+	// Lenient mode: still the error — a caller bug has no source to skip.
+	_, warnings, err = svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncUnknown}, Source: []string{"probe"}, Lenient: true})
+	if !errors.As(err, &inv) {
+		t.Fatalf("err = %v; want InvalidSyncLevelError in lenient mode too", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %+v; want none (no downgrade to a warning)", warnings)
+	}
+
+	// Order: the request-level check precedes per-source validation, so
+	// an unknown source name in strict mode must not mask the invalid
+	// sync level.
+	_, _, err = svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncUnknown}, Source: []string{"nope"}})
+	if !errors.As(err, &inv) {
+		t.Fatalf("err = %v; want InvalidSyncLevelError before unknown-source validation", err)
+	}
+}
+
 // TestFetch_LenientSkipsProblemSources verifies --lenient semantics:
 // sources failing precheck are skipped with a PreCheck warning, the
 // eligible ones proceed.
@@ -396,7 +443,7 @@ func TestFetch_LenientSkipsProblemSources(t *testing.T) {
 	r := newRegistry(t, req, nosup)
 	svc := New(r)
 
-	params := Params{Song: "S", Timestamp: []SyncLevel{SyncNone}, Source: []string{"req", "nope", "nosup"}, Lenient: true}
+	params := Params{Song: "S", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"req", "nope", "nosup"}, Lenient: true}
 	res, warnings, err := svc.Fetch(context.Background(), params)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -440,10 +487,10 @@ func TestFetch_LenientAllSkippedReturnsNoResult(t *testing.T) {
 	}
 }
 
-// TestFetch_TimestampOrderDeterminesPriority proves the user-given
-// timestamp order is the priority: with "none,line" a plain result from
+// TestFetch_SyncLevelOrderDeterminesPriority proves the user-given
+// sync level order is the priority: with "none,line" a plain result from
 // the first iteration matches and is returned before any synced request.
-func TestFetch_TimestampOrderDeterminesPriority(t *testing.T) {
+func TestFetch_SyncLevelOrderDeterminesPriority(t *testing.T) {
 	lrc := &fakeSrc{
 		name: "lrc",
 		caps: source.Capabilities{},
@@ -453,7 +500,7 @@ func TestFetch_TimestampOrderDeterminesPriority(t *testing.T) {
 				Title:  r.Song,
 				Filled: source.FieldLyrics | source.FieldTitle,
 			}
-			if r.Timestamp {
+			if r.SyncLevel == source.SyncLine {
 				res.SyncedLyrics = "[00:00.00] synced"
 				res.Filled |= source.FieldSyncedLyrics
 			}
@@ -463,7 +510,7 @@ func TestFetch_TimestampOrderDeterminesPriority(t *testing.T) {
 	r := newRegistry(t, lrc)
 	svc := New(r)
 
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncNone, SyncLine}, Source: []string{"lrc"}})
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone, SyncLine}, Source: []string{"lrc"}})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -488,7 +535,7 @@ func TestFetch_SyncedSourceMatchesLineIteration(t *testing.T) {
 				Title:  r.Song,
 				Filled: source.FieldLyrics | source.FieldTitle,
 			}
-			if r.Timestamp {
+			if r.SyncLevel == source.SyncLine {
 				res.SyncedLyrics = "[00:00.00] synced"
 				res.Filled |= source.FieldSyncedLyrics
 			}
@@ -498,7 +545,7 @@ func TestFetch_SyncedSourceMatchesLineIteration(t *testing.T) {
 	r := newRegistry(t, lrc)
 	svc := New(r)
 
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncLine}, Source: []string{"lrc"}})
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncLine}, Source: []string{"lrc"}})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -522,13 +569,13 @@ func TestDetectUnsupported_EmptyRequestYieldsNoWarnings(t *testing.T) {
 
 func TestDetectUnsupported_ParamOrder(t *testing.T) {
 	// Lock in stable warning ordering: author, album, iswc. The
-	// timestamp format is intentionally absent — it is covered by the
+	// sync level is intentionally absent — it is covered by the
 	// Downgraded warning instead.
 	stub := &fakeSrc{name: "stub", caps: source.Capabilities{}, fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
 		return source.Result{}, nil
 	}}
 	got := detectUnsupported(
-		Params{Song: "S", Author: "A", Album: "B", ISWC: "I", Timestamp: []SyncLevel{SyncLine}},
+		Params{Song: "S", Author: "A", Album: "B", ISWC: "I", SyncLevels: []SyncLevel{SyncLine}},
 		stub,
 	)
 	want := []source.Param{source.ParamAuthor, source.ParamAlbum, source.ParamISWC}
@@ -551,7 +598,7 @@ func TestFetch_DuplicateSourceStrictReturnsUsageError(t *testing.T) {
 	r := newRegistry(t, src)
 	svc := New(r)
 
-	_, _, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncNone}, Source: []string{"a", "a"}})
+	_, _, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"a", "a"}})
 	var dup DuplicateSourceError
 	if !errors.As(err, &dup) || dup.Name != "a" {
 		t.Fatalf("err = %v; want DuplicateSourceError{Name: a}", err)
@@ -575,7 +622,7 @@ func TestFetch_DuplicateSourceLenientDedupes(t *testing.T) {
 	r := newRegistry(t, src)
 	svc := New(r)
 
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncNone}, Source: []string{"a", "a"}, Lenient: true})
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"a", "a"}, Lenient: true})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -655,7 +702,7 @@ func TestFetch_ConditionalAlbumWarnsWithoutAuthor(t *testing.T) {
 	r := newRegistry(t, cond)
 	svc := New(r)
 
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Album: "B", Timestamp: []SyncLevel{SyncNone}, Source: []string{"cond"}})
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Album: "B", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"cond"}})
 	if err != nil || res.Lyrics != "L" {
 		t.Fatalf("res = %+v, err = %v; want lyrics", res, err)
 	}
@@ -663,7 +710,7 @@ func TestFetch_ConditionalAlbumWarnsWithoutAuthor(t *testing.T) {
 		t.Fatalf("warnings = %+v; want one Album unsupported warning", warnings)
 	}
 
-	res, warnings, err = svc.Fetch(context.Background(), Params{Song: "S", Author: "A", Album: "B", Timestamp: []SyncLevel{SyncNone}, Source: []string{"cond"}})
+	res, warnings, err = svc.Fetch(context.Background(), Params{Song: "S", Author: "A", Album: "B", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"cond"}})
 	if err != nil || res.Lyrics != "L" {
 		t.Fatalf("res = %+v, err = %v; want lyrics", res, err)
 	}
@@ -689,7 +736,7 @@ func TestFetch_SyncedOnlyResultFillsLyrics(t *testing.T) {
 	r := newRegistry(t, syncedOnly)
 	svc := New(r)
 
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncLine}, Source: []string{"synced-only"}})
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncLine}, Source: []string{"synced-only"}})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -721,7 +768,7 @@ func TestFetch_PlainRequestOnSyncedOnlySourceNoResult(t *testing.T) {
 	r := newRegistry(t, stub)
 	svc := New(r)
 
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncNone}, Source: []string{"synconly"}})
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"synconly"}})
 	var noRes NoResultError
 	if !errors.As(err, &noRes) {
 		t.Fatalf("err = %v; want NoResultError instead of an empty success", err)
@@ -732,7 +779,7 @@ func TestFetch_PlainRequestOnSyncedOnlySourceNoResult(t *testing.T) {
 	if len(warnings) != 1 || warnings[0].Kind != Downgraded || warnings[0].Source != "synconly" {
 		t.Fatalf("warnings = %+v; want one Downgraded warning for synconly", warnings)
 	}
-	if !strings.Contains(warnings[0].Message, "returned only timestamped lyrics") {
+	if !strings.Contains(warnings[0].Message, "returned only synced lyrics") {
 		t.Fatalf("warning message = %q; want symmetric downgrade note", warnings[0].Message)
 	}
 }
@@ -755,7 +802,7 @@ func TestFetch_PlainThenSyncedReusesCachedSyncedTrack(t *testing.T) {
 	r := newRegistry(t, stub)
 	svc := New(r)
 
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncNone, SyncLine}, Source: []string{"synconly"}})
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone, SyncLine}, Source: []string{"synconly"}})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -784,7 +831,7 @@ func TestFetch_DualTrackLineRoundShortCircuitsWithoutCaching(t *testing.T) {
 				Title:  r.Song,
 				Filled: source.FieldLyrics | source.FieldTitle,
 			}
-			if r.Timestamp {
+			if r.SyncLevel == source.SyncLine {
 				res.SyncedLyrics = "[00:00.00] synced"
 				res.Filled |= source.FieldSyncedLyrics
 			}
@@ -794,7 +841,7 @@ func TestFetch_DualTrackLineRoundShortCircuitsWithoutCaching(t *testing.T) {
 	r := newRegistry(t, dual)
 	svc := New(r)
 
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncLine, SyncNone}, Source: []string{"dual"}})
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncLine, SyncNone}, Source: []string{"dual"}})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -807,7 +854,7 @@ func TestFetch_DualTrackLineRoundShortCircuitsWithoutCaching(t *testing.T) {
 
 	// Nothing was stored by the short-circuit, so a fresh call with
 	// "none" misses the cache and fetches again.
-	res, warnings, err = svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncNone}, Source: []string{"dual"}})
+	res, warnings, err = svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"dual"}})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -844,7 +891,7 @@ func TestFetch_ResultUsesOnlyDeclaredFields(t *testing.T) {
 	r := newRegistry(t, sloppy)
 	svc := New(r)
 
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncNone}, Source: []string{"sloppy"}})
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"sloppy"}})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -882,7 +929,7 @@ func TestFetch_DeclaredButEmptyFieldWarns(t *testing.T) {
 	r := newRegistry(t, empty)
 	svc := New(r)
 
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncNone}, Source: []string{"empty"}})
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"empty"}})
 	var noRes NoResultError
 	if !errors.As(err, &noRes) {
 		t.Fatalf("err = %v; want NoResultError (no usable lyrics produced)", err)
@@ -916,7 +963,7 @@ func TestFetch_DeclaredButEmptySubSourceWarns(t *testing.T) {
 	r := newRegistry(t, empty)
 	svc := New(r)
 
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncNone}, Source: []string{"empty"}})
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"empty"}})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -1027,7 +1074,7 @@ func TestFetch_Gate2BugFailsOverToNextSource(t *testing.T) {
 	r := newRegistry(t, buggy, ok)
 	svc := New(r)
 
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncNone}, Source: []string{"buggy", "ok"}})
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"buggy", "ok"}})
 	if err != nil || res.Lyrics != "L" {
 		t.Fatalf("res = %+v, err = %v; want failover result from ok", res, err)
 	}
@@ -1134,7 +1181,7 @@ func TestFetch_MissingRequiredCustomLenientSkips(t *testing.T) {
 	r := newRegistry(t, custom, ok)
 	svc := New(r)
 
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncNone}, Source: []string{"custom", "ok"}, Lenient: true})
+	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"custom", "ok"}, Lenient: true})
 	if err != nil || res.Lyrics != "L" {
 		t.Fatalf("res = %+v, err = %v; want failover result from ok", res, err)
 	}
@@ -1188,7 +1235,7 @@ func TestFetch_ConditionalRequiredCustom(t *testing.T) {
 	}
 
 	// Both present: success, and the adapter saw req.Custom.
-	res, _, err := svc.Fetch(context.Background(), Params{Song: "S", Custom: map[string]string{"LANG": "en", "COUNTRY": "cn"}, Timestamp: []SyncLevel{SyncNone}, Source: []string{"cond"}})
+	res, _, err := svc.Fetch(context.Background(), Params{Song: "S", Custom: map[string]string{"LANG": "en", "COUNTRY": "cn"}, SyncLevels: []SyncLevel{SyncNone}, Source: []string{"cond"}})
 	if err != nil || res.Lyrics != "L:en" {
 		t.Fatalf("res = %+v, err = %v; want lyrics carrying LANG", res, err)
 	}
@@ -1262,7 +1309,7 @@ func TestFetch_PassesCustomToRequest(t *testing.T) {
 	r := newRegistry(t, cond)
 	svc := New(r)
 
-	res, _, err := svc.Fetch(context.Background(), Params{Song: "S", Custom: map[string]string{"LANG": "en"}, Timestamp: []SyncLevel{SyncNone}, Source: []string{"cond"}})
+	res, _, err := svc.Fetch(context.Background(), Params{Song: "S", Custom: map[string]string{"LANG": "en"}, SyncLevels: []SyncLevel{SyncNone}, Source: []string{"cond"}})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -1290,7 +1337,7 @@ func TestFetch_PassesUserAgentToRequest(t *testing.T) {
 	r := newRegistry(t, seen)
 	svc := New(r)
 
-	_, _, err := svc.Fetch(context.Background(), Params{Song: "S", UserAgent: "custom/1.0", Timestamp: []SyncLevel{SyncNone}, Source: []string{"seen"}})
+	_, _, err := svc.Fetch(context.Background(), Params{Song: "S", UserAgent: "custom/1.0", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"seen"}})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -1300,7 +1347,7 @@ func TestFetch_PassesUserAgentToRequest(t *testing.T) {
 
 	// Empty params.UserAgent must propagate as empty — the fetch layer
 	// never invents a default; the CLI owns it.
-	_, _, err = svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncNone}, Source: []string{"seen"}})
+	_, _, err = svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"seen"}})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -1326,7 +1373,7 @@ func TestFetch_RequiredParamMismatchCustomRendersEnvFlag(t *testing.T) {
 	r := newRegistry(t, buggy)
 	svc := New(r)
 
-	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Timestamp: []SyncLevel{SyncNone}, Source: []string{"buggy"}})
+	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"buggy"}})
 	var noRes NoResultError
 	if !errors.As(err, &noRes) {
 		t.Fatalf("err = %v; want NoResultError", err)
