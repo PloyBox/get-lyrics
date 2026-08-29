@@ -16,9 +16,10 @@ get-lyrics/
 ├── main_test.go                # End-to-end tests for Run(argv, stdout, stderr)
 ├── internal/
 │   ├── bootstrap/              # bootstrap.go: registers real sources; bootstrap_mock.go (test tag): mocks
-│   ├── source/                 # Source interface, Request/Result, Param/ResultField bitmasks, ParamSpec, Registry
+│   ├── provider/               # concrete adapters implementing source.Source
 │   │   ├── mock/               # mock-* test-only adapters (success/require/nosupport/fail/lrc/nosync/mismatch/custom)
 │   │   └── real/               # lrclib, lyricsovh, lrccx, musixmatch adapters
+│   ├── source/                 # Source interface, Request/Result, Param/ResultField bitmasks, ParamSpec, Registry
 │   └── fetch/                  # Fetch(ctx, params): precheck (incl. gate 2), failover, synced-vs-plain resolution, CustomParamsFor
 ```
 
@@ -111,7 +112,7 @@ Unsupported custom keys produce per-source `warning[unsupported]` in map iterati
 - **`lrccx`** — `https://api.lrc.cx/jsonapi`. Filters: Author, Album (independent of each other). Always LRC-flavoured text: plain lyrics strip `[mm:ss]`/marker tags; synced lyrics only when the text has timestamped lines. 10s timeout.
 - **`musixmatch`** — `https://api.musixmatch.com/ws/1.1`. Requires the custom `--env` key `MUSIXMATCH_API_KEY` (RequiredCustom). Filter: Author. With `--author`: `matcher.lyrics.get` / `matcher.subtitle.get`; title-only: `track.search` → `track.lyrics.get` / `track.subtitle.get` by commontrack id. Subtitle endpoints need the paid Scale plan — on Basic they 402/403, which the adapter treats as "no synced" and falls back to plain (fetch layer warns `downgraded`). Album/ISWC unsupported (no album param; `track_isrc` is ISRC, not ISWC). Instrumental `"...."` and the `*******` usage trailer are stripped. 10s timeout.
 
-Adding a built-in source: create `internal/source/real/<name>/`, then add an import and `r.Register(<name>.New())` in `internal/bootstrap/bootstrap.go`. No CLI-layer changes required.
+Adding a built-in source: create `internal/provider/real/<name>/`, then add an import and `r.Register(<name>.New())` in `internal/bootstrap/bootstrap.go`. No CLI-layer changes required.
 
 ### Mock sources
 

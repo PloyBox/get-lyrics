@@ -3,16 +3,16 @@
 package bootstrap
 
 import (
+	"github.com/PloyBox/get-lyrics/internal/provider/mock/custom"
+	"github.com/PloyBox/get-lyrics/internal/provider/mock/fail"
+	"github.com/PloyBox/get-lyrics/internal/provider/mock/lrc"
+	"github.com/PloyBox/get-lyrics/internal/provider/mock/mismatch"
+	"github.com/PloyBox/get-lyrics/internal/provider/mock/nosupport"
+	"github.com/PloyBox/get-lyrics/internal/provider/mock/nosync"
+	"github.com/PloyBox/get-lyrics/internal/provider/mock/require"
+	"github.com/PloyBox/get-lyrics/internal/provider/mock/success"
+	"github.com/PloyBox/get-lyrics/internal/provider/mock/synconly"
 	"github.com/PloyBox/get-lyrics/internal/source"
-	"github.com/PloyBox/get-lyrics/internal/source/mock/custom"
-	"github.com/PloyBox/get-lyrics/internal/source/mock/fail"
-	"github.com/PloyBox/get-lyrics/internal/source/mock/lrc"
-	"github.com/PloyBox/get-lyrics/internal/source/mock/mismatch"
-	"github.com/PloyBox/get-lyrics/internal/source/mock/nosupport"
-	"github.com/PloyBox/get-lyrics/internal/source/mock/nosync"
-	"github.com/PloyBox/get-lyrics/internal/source/mock/require"
-	"github.com/PloyBox/get-lyrics/internal/source/mock/success"
-	"github.com/PloyBox/get-lyrics/internal/source/mock/synconly"
 )
 
 // RegisterAllMock registers every mock/test-only adapter into r.

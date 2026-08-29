@@ -164,9 +164,9 @@ Legend: `Y` = supported, `N` = not supported, `F` = required (must be given).
 
 ## Add a New Source
 
-Backends are pluggable via the `source.Source` interface. Use an existing adapter as a template, such as `internal/source/real/lrclib/` — it covers the full surface (filters, required params, plain + synced output):
+Backends are pluggable via the `source.Source` interface. Use an existing adapter as a template, such as `internal/provider/real/lrclib/` — it covers the full surface (filters, required params, plain + synced output):
 
-1. Create `internal/source/real/<name>/` implementing `source.Source` (`Name` / `Capabilities` / `Fetch` / `CustomParams`), modeled on the template.
+1. Create `internal/provider/real/<name>/` implementing `source.Source` (`Name` / `Capabilities` / `Fetch` / `CustomParams`), modeled on the template.
 2. Modify it to fit your needs — endpoint, filters, required params, output behavior.
 3. Add an import and `r.Register(<name>.New())` in `internal/bootstrap/bootstrap.go`.
 
