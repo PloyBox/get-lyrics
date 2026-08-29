@@ -3,7 +3,7 @@ package fetch
 import (
 	"strings"
 
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 // precheck walks params.Source in order, filtering out problem sources

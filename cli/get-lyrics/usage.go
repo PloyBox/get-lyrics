@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 // printUsage writes the help text. Examples use the long (--) form per

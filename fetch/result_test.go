@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 func TestFetch_AllParamsSupportedEmitsNoWarnings(t *testing.T) {

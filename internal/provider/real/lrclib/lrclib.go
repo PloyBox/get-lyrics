@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 // requestTimeout caps each upstream call. The value is short on

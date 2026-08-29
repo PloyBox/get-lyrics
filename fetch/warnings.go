@@ -3,7 +3,7 @@ package fetch
 import (
 	"strings"
 
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 // WarningKind classifies a Warning by the stage that produced it.

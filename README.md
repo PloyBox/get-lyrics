@@ -6,6 +6,8 @@ A binary under 10MB, an easy-to-use CLI, and clear, meaningful exit codes -- all
 
 Fetch song lyrics from the command line. Supports multiple backend sources with a pluggable adapter system.
 
+It is now also available as a dependency library — the `source`, `fetch`, and `bootstrap` packages can be imported directly in your own Go projects.
+
 ## Install
 
 ### Option 1: Download a prebuilt binary from Releases (Recommended)
@@ -168,7 +170,7 @@ Backends are pluggable via the `source.Source` interface. Use an existing adapte
 
 1. Create `internal/provider/real/<name>/` implementing `source.Source` (`Name` / `Capabilities` / `Fetch` / `CustomParams`), modeled on the template.
 2. Modify it to fit your needs — endpoint, filters, required params, output behavior.
-3. Add an import and `r.Register(<name>.New())` in `internal/bootstrap/bootstrap.go`.
+3. Add an import and `r.Register(<name>.New())` in `bootstrap/bootstrap.go`.
 
 To declare custom input keys:
 

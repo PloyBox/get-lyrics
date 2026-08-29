@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 func TestFetch_UnknownSourceReturnsErrNotFound(t *testing.T) {

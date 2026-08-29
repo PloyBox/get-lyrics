@@ -3,7 +3,7 @@ package fetch
 import (
 	"fmt"
 
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 // Params bundles all CLI inputs the fetch layer needs. Source is the

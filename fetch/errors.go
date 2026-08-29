@@ -3,7 +3,7 @@ package fetch
 import (
 	"fmt"
 
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 // NoResultError is returned when every source was skipped or failed and

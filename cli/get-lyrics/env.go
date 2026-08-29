@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 // envList collects repeated --env key=value flags. flag.Value calls Set

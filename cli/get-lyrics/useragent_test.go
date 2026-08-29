@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 // userAgentSource is a test-only fixture that echoes the incoming

@@ -15,9 +15,9 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/PloyBox/get-lyrics/internal/bootstrap"
-	"github.com/PloyBox/get-lyrics/internal/fetch"
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/bootstrap"
+	"github.com/PloyBox/get-lyrics/fetch"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 // version is stamped at release build time via

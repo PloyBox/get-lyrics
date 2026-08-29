@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/PloyBox/get-lyrics/internal/fetch"
+	"github.com/PloyBox/get-lyrics/fetch"
 )
 
 // parsedFlags holds the parsed CLI inputs. song is kept separate because

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 // TestFetch_SyncedRequestOnPlainOnlySourceDowngrades drives the

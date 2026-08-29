@@ -7,19 +7,21 @@ The contents of this document should be in English.
 
 A Go CLI that fetches song lyrics from pluggable sources. No TUI/GUI — pure command line. The song title is a mandatory positional argument; everything else comes via flags. No third-party runtime dependencies; stdlib `flag` for parsing.
 
+The `source`, `fetch`, and `bootstrap` packages live outside `internal/` and are importable as a dependency library; `internal/provider` (concrete adapters) stays private.
+
 ## Repository Layout
 
 ```
 get-lyrics/
 ├── cli/
 │   └── get-lyrics/             # command package (package main): run.go entrypoint, flags/env/usage/output, loadmock.go (test tag), tests
-├── internal/
-│   ├── bootstrap/              # bootstrap.go: registers real sources; bootstrap_mock.go (test tag): mocks
-│   ├── provider/               # concrete adapters implementing source.Source
-│   │   ├── mock/               # mock-* test-only adapters (success/require/nosupport/fail/lrc/nosync/mismatch/custom)
-│   │   └── real/               # lrclib, lyricsovh, lrccx, musixmatch adapters
-│   ├── source/                 # Source interface, Request/Result, Param/ResultField bitmasks, ParamSpec, Registry
-│   └── fetch/                  # Fetch(ctx, params): precheck (incl. gate 2), failover, synced-vs-plain resolution, CustomParamsFor
+├── source/                     # Source interface, Request/Result, Param/ResultField bitmasks, ParamSpec, Registry
+├── fetch/                      # Fetch(ctx, params): precheck (incl. gate 2), failover, synced-vs-plain resolution, CustomParamsFor
+├── bootstrap/                  # bootstrap.go: registers real sources; bootstrap_mock.go (test tag): mocks
+└── internal/
+    └── provider/               # concrete adapters implementing source.Source
+        ├── mock/               # mock-* test-only adapters (success/require/nosupport/fail/lrc/nosync/mismatch/custom)
+        └── real/               # lrclib, lyricsovh, lrccx, musixmatch adapters
 ```
 
 ## Build & Test
@@ -74,7 +76,7 @@ Thin CLI layer over a pluggable-source abstraction:
 5. **Output** — opened before the fetch (`O_CREATE|O_EXCL` for new files, `O_WRONLY` without `O_TRUNC` otherwise); on any failure a freshly created file is removed (guarded by a same-inode check). Truncate+Seek happen only after a successful fetch, so existing files keep their content on every failure path (exit 3/4/6/7/8).
 6. **Warnings** — structured data produced by the fetch layer; the CLI (`cli/get-lyrics/render.go`) renders every byte of display text, including the `[kind]` tag. Warnings never change the exit code. Every error path in `main` prints the rendered warnings before the `error[...]` line.
 
-**Key types (`internal/source/source.go`):**
+**Key types (`source/source.go`):**
 
 - `Param` bitmask — `ParamAuthor | ParamAlbum | ParamISWC`.
 - `ResultField` bitmask — `FieldLyrics | FieldSyncedLyrics | FieldTitle | FieldArtist | FieldAlbum | FieldISWC | FieldSubSource`.
@@ -90,7 +92,7 @@ Thin CLI layer over a pluggable-source abstraction:
 
 Adapters declare required typed params via `Capabilities(req).Required` and required custom keys via `Capabilities(req).RequiredCustom` (a subset of that request's `Custom` names); the fetch layer enforces them via `fetch.RequiredParamError`, and a fetch-time miss surfaces as `RequiredParamMismatchError`. `Capabilities(req)` is request-aware so conditional support is expressible (lrclib drops `--album` when `--author` is absent; mock-custom recognizes `COUNTRY` only when `LANG` is present).
 
-**Key types (`internal/fetch/fetch.go`):**
+**Key types (`fetch/fetch.go`):**
 
 - `Params` — now carries `Custom map[string]string`.
 - `Result` — `Source` = adapter name, `SubSource` = aggregate sub-source, `Level` = SyncLevel of the lyrics (`SyncUnknown`/`SyncNone`/`SyncLine`).
@@ -111,7 +113,7 @@ Unsupported custom keys produce per-source `warning[unsupported]` in map iterati
 - **`lrccx`** — `https://api.lrc.cx/jsonapi`. Filters: Author, Album (independent of each other). Always LRC-flavoured text: plain lyrics strip `[mm:ss]`/marker tags; synced lyrics only when the text has timestamped lines. 10s timeout.
 - **`musixmatch`** — `https://api.musixmatch.com/ws/1.1`. Requires the custom `--env` key `MUSIXMATCH_API_KEY` (RequiredCustom). Filter: Author. With `--author`: `matcher.lyrics.get` / `matcher.subtitle.get`; title-only: `track.search` → `track.lyrics.get` / `track.subtitle.get` by commontrack id. Subtitle endpoints need the paid Scale plan — on Basic they 402/403, which the adapter treats as "no synced" and falls back to plain (fetch layer warns `downgraded`). Album/ISWC unsupported (no album param; `track_isrc` is ISRC, not ISWC). Instrumental `"...."` and the `*******` usage trailer are stripped. 10s timeout.
 
-Adding a built-in source: create `internal/provider/real/<name>/`, then add an import and `r.Register(<name>.New())` in `internal/bootstrap/bootstrap.go`. No CLI-layer changes required.
+Adding a built-in source: create `internal/provider/real/<name>/`, then add an import and `r.Register(<name>.New())` in `bootstrap/bootstrap.go`. No CLI-layer changes required.
 
 ### Mock sources
 

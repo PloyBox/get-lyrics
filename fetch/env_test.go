@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 // TestFetch_MissingRequiredCustomParamName drives the custom

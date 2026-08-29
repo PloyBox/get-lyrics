@@ -11,7 +11,7 @@ import (
 	"github.com/PloyBox/get-lyrics/internal/provider/real/lrclib"
 	"github.com/PloyBox/get-lyrics/internal/provider/real/lyricsovh"
 	"github.com/PloyBox/get-lyrics/internal/provider/real/musixmatch"
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 // RegisterAll registers every built-in adapter into r. main calls this

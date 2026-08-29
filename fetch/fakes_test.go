@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 type fakeSrc struct {

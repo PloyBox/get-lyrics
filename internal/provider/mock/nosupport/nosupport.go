@@ -5,7 +5,7 @@ package nosupport
 import (
 	"context"
 
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 type Adapter struct{}

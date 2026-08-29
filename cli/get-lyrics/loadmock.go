@@ -6,7 +6,7 @@
 package main
 
 import (
-	"github.com/PloyBox/get-lyrics/internal/bootstrap"
+	"github.com/PloyBox/get-lyrics/bootstrap"
 )
 
 func init() {

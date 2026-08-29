@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/PloyBox/get-lyrics/internal/fetch"
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/fetch"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 // TestRenderWarning locks the exact stderr text for every WarningKind

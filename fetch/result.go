@@ -3,7 +3,7 @@ package fetch
 import (
 	"strings"
 
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 // Result is the fetch layer's output, consolidating the two lyrics

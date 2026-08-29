@@ -12,7 +12,7 @@ import (
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/require"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/success"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/synconly"
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 // RegisterAllMock registers every mock/test-only adapter into r.

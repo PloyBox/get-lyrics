@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/PloyBox/get-lyrics/internal/fetch"
-	"github.com/PloyBox/get-lyrics/internal/source"
+	"github.com/PloyBox/get-lyrics/fetch"
+	"github.com/PloyBox/get-lyrics/source"
 )
 
 // flagForParam maps a Param bit to the CLI flag spelling used in
