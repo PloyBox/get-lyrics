@@ -1,7 +1,6 @@
 package fetch
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/PloyBox/get-lyrics/internal/source"
@@ -36,9 +35,8 @@ func (s *Service) precheck(params Params, warnings *[]Warning) ([]string, error)
 				return nil, DuplicateSourceError{Name: name}
 			}
 			*warnings = append(*warnings, Warning{
-				Kind:    PreCheck,
-				Source:  name,
-				Message: fmt.Sprintf(`warning[precheck]: source "%s" skipped: duplicate`, name),
+				Kind:   PreCheck,
+				Source: name,
 			})
 			continue
 		}
@@ -50,9 +48,9 @@ func (s *Service) precheck(params Params, warnings *[]Warning) ([]string, error)
 				return nil, UnknownSourceError{Name: name}
 			}
 			*warnings = append(*warnings, Warning{
-				Kind:    PreCheck,
-				Source:  name,
-				Message: fmt.Sprintf(`warning[precheck]: source "%s" skipped: not found`, name),
+				Kind:   PreCheck,
+				Source: name,
+				Err:    err,
 			})
 			continue
 		}
@@ -65,23 +63,17 @@ func (s *Service) precheck(params Params, warnings *[]Warning) ([]string, error)
 				Kind:      PrecheckMismatch,
 				Source:    name,
 				ParamName: bad,
-				Message:   fmt.Sprintf(`warning[precheck-mismatch]: source "%s" declared invalid --env key %q (source bug)`, name, bad),
 			})
 			continue
 		}
 
 		missing, missingCustom, need := checkRequired(caps, params)
 		if need {
-			flag := flagForParam(missing)
-			if missingCustom != "" {
-				flag = "--env " + missingCustom
-			}
 			if !params.Lenient {
 				return nil, RequiredParamError{
 					Source:    src.Name(),
 					Param:     missing,
 					ParamName: missingCustom,
-					Flag:      flag,
 				}
 			}
 			*warnings = append(*warnings, Warning{
@@ -89,7 +81,6 @@ func (s *Service) precheck(params Params, warnings *[]Warning) ([]string, error)
 				Source:    name,
 				Param:     missing,
 				ParamName: missingCustom,
-				Message:   fmt.Sprintf(`warning[precheck]: source "%s" skipped: requires %s`, name, flag),
 			})
 			continue
 		}
@@ -152,18 +143,4 @@ func checkRequired(caps source.Capabilities, params Params) (missingParam source
 		}
 	}
 	return 0, "", false
-}
-
-// flagForParam maps a Param bit to the CLI flag spelling used in
-// messages and RequiredParamError.
-func flagForParam(p source.Param) string {
-	switch p {
-	case source.ParamAuthor:
-		return "--author"
-	case source.ParamAlbum:
-		return "--album"
-	case source.ParamISWC:
-		return "--iswc"
-	}
-	return ""
 }

@@ -21,7 +21,7 @@ func (NoResultError) Error() string { return "no source returned a valid result"
 type InvalidSyncLevelError struct{}
 
 func (InvalidSyncLevelError) Error() string {
-	return `invalid sync level "unknown" (want "line" or "none")`
+	return "invalid sync level: SyncUnknown is not requestable"
 }
 
 // UnknownSourceError identifies the requested but unregistered source
@@ -51,16 +51,16 @@ func (e DuplicateSourceError) Error() string {
 // RequiredParamError reports a source whose Capabilities.Required list
 // (or RequiredCustom list) includes a parameter the caller did not
 // supply. The precheck stage builds it for the first missing field;
-// adapters never return it themselves. The CLI maps it to exit code 6.
+// adapters never return it themselves. The CLI maps it to exit code 6
+// and renders the user-facing text from the structured fields.
 type RequiredParamError struct {
 	Source    string       // adapter Name() that requires the parameter
 	Param     source.Param // typed Param bit; 0 for a custom key
 	ParamName string       // custom key name; empty for a typed parameter
-	Flag      string       // CLI flag spelling: "--author" etc., or "--env <KEY>"
 }
 
-// Error renders a stable message; main prints it verbatim after the
-// error[required] tag.
+// Error renders a neutral message; the CLI renders the user-facing
+// text (including the flag spelling) from the structured fields.
 func (e RequiredParamError) Error() string {
-	return "source \"" + e.Source + "\" requires " + e.Flag
+	return fmt.Sprintf("source %q requires a parameter the caller did not supply", e.Source)
 }

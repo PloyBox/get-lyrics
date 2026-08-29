@@ -4,17 +4,16 @@ import (
 	"context"
 	"errors"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/PloyBox/get-lyrics/internal/source"
 )
 
-// TestFetch_MissingRequiredCustomReportsEnvFlag drives the custom
+// TestFetch_MissingRequiredCustomParamName drives the custom
 // required-param precheck: a missing RequiredCustom key produces a
-// RequiredParamError whose Flag renders as "--env <KEY>" and whose
-// Param bit stays 0.
-func TestFetch_MissingRequiredCustomReportsEnvFlag(t *testing.T) {
+// RequiredParamError carrying ParamName=<KEY> with the Param bit
+// unset (0).
+func TestFetch_MissingRequiredCustomParamName(t *testing.T) {
 	custom := &fakeSrc{
 		name:   "custom",
 		caps:   source.Capabilities{Custom: []source.ParamSpec{{Name: "LANG"}}, RequiredCustom: []string{"LANG"}},
@@ -28,11 +27,8 @@ func TestFetch_MissingRequiredCustomReportsEnvFlag(t *testing.T) {
 	if !errors.As(err, &reqErr) {
 		t.Fatalf("err = %v; want RequiredParamError", err)
 	}
-	if reqErr.Source != "custom" || reqErr.Param != 0 || reqErr.ParamName != "LANG" || reqErr.Flag != "--env LANG" {
-		t.Fatalf("reqErr = %+v; want custom LANG required, Flag=--env LANG", reqErr)
-	}
-	if !strings.Contains(reqErr.Error(), "requires --env LANG") {
-		t.Fatalf("message = %q; want --env LANG spelling", reqErr.Error())
+	if reqErr.Source != "custom" || reqErr.Param != 0 || reqErr.ParamName != "LANG" {
+		t.Fatalf("reqErr = %+v; want custom LANG required", reqErr)
 	}
 }
 
@@ -64,9 +60,6 @@ func TestFetch_MissingRequiredCustomLenientSkips(t *testing.T) {
 	if warnings[0].ParamName != "LANG" || warnings[0].Param != 0 {
 		t.Fatalf("warning = %+v; want ParamName=LANG, Param=0", warnings[0])
 	}
-	if !strings.Contains(warnings[0].Message, "skipped: requires --env LANG") {
-		t.Fatalf("message = %q; want --env LANG spelling", warnings[0].Message)
-	}
 }
 
 // TestFetch_ConditionalRequiredCustom drives mock-custom semantics:
@@ -97,14 +90,14 @@ func TestFetch_ConditionalRequiredCustom(t *testing.T) {
 	// No custom keys: only LANG is required.
 	_, _, err := svc.Fetch(context.Background(), Params{Song: "S", Source: []string{"cond"}})
 	var reqErr RequiredParamError
-	if !errors.As(err, &reqErr) || reqErr.Flag != "--env LANG" {
-		t.Fatalf("err = %v; want --env LANG required", err)
+	if !errors.As(err, &reqErr) || reqErr.ParamName != "LANG" {
+		t.Fatalf("err = %v; want LANG required", err)
 	}
 
 	// LANG present: COUNTRY joins the required list and is now missing.
 	_, _, err = svc.Fetch(context.Background(), Params{Song: "S", Custom: map[string]string{"LANG": "en"}, Source: []string{"cond"}})
-	if !errors.As(err, &reqErr) || reqErr.Flag != "--env COUNTRY" || reqErr.ParamName != "COUNTRY" {
-		t.Fatalf("err = %v; want --env COUNTRY required once LANG is present", err)
+	if !errors.As(err, &reqErr) || reqErr.ParamName != "COUNTRY" {
+		t.Fatalf("err = %v; want COUNTRY required once LANG is present", err)
 	}
 
 	// Both present: success, and the adapter saw req.Custom.
@@ -139,9 +132,6 @@ func TestDetectUnsupported_CustomKeys(t *testing.T) {
 	w := got[0]
 	if w.Kind != UnsupportedParam || w.ParamName != "FOO" || w.Param != 0 {
 		t.Fatalf("warning = %+v; want UnsupportedParam FOO with Param 0", w)
-	}
-	if !strings.Contains(w.Message, `does not support --env FOO`) {
-		t.Fatalf("message = %q; want --env FOO spelling", w.Message)
 	}
 
 	if got := detectUnsupported(Params{Song: "S", Custom: map[string]string{"FOO": " "}}, stub); len(got) != 0 {
@@ -194,17 +184,16 @@ func TestFetch_PassesCustomToRequest(t *testing.T) {
 	}
 }
 
-// TestFetch_RequiredParamMismatchCustomRendersEnvFlag verifies the
-// fetch-time mismatch warning reuses mm.Flag: a custom-key mismatch
-// (Param 0) must render "--env <KEY>", not an empty flag spelling.
-func TestFetch_RequiredParamMismatchCustomRendersEnvFlag(t *testing.T) {
+// TestFetch_RequiredParamMismatchCustomCarriesErr verifies the
+// fetch-time mismatch warning for a custom key carries ParamName with
+// the Param bit unset and the adapter error as Err.
+func TestFetch_RequiredParamMismatchCustomCarriesErr(t *testing.T) {
 	buggy := &fakeSrc{
 		name: "buggy",
 		fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
 			return source.Result{}, source.RequiredParamMismatchError{
 				Source:    "buggy",
 				ParamName: "LANG",
-				Flag:      "--env LANG",
 			}
 		},
 	}
@@ -222,8 +211,9 @@ func TestFetch_RequiredParamMismatchCustomRendersEnvFlag(t *testing.T) {
 	if warnings[0].ParamName != "LANG" || warnings[0].Param != 0 {
 		t.Fatalf("warning = %+v; want ParamName=LANG, Param=0", warnings[0])
 	}
-	if !strings.Contains(warnings[0].Message, "requires --env LANG") {
-		t.Fatalf("message = %q; want --env LANG spelling", warnings[0].Message)
+	var mmErr source.RequiredParamMismatchError
+	if !errors.As(warnings[0].Err, &mmErr) {
+		t.Fatalf("warning Err = %v; want RequiredParamMismatchError", warnings[0].Err)
 	}
 }
 

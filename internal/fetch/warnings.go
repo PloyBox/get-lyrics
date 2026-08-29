@@ -1,7 +1,6 @@
 package fetch
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/PloyBox/get-lyrics/internal/source"
@@ -36,15 +35,30 @@ const (
 	ResultMismatch
 )
 
-// Warning describes one issue observed while resolving lyrics. The CLI
-// writes each Warning.Message to stderr verbatim — messages are
-// pre-formatted here, including the [kind] tag.
+// Warning describes one issue observed while resolving lyrics. It
+// carries structured data only — the CLI renders all display text,
+// including the [kind] tag, from these fields.
 type Warning struct {
 	Kind      WarningKind  // which stage produced the warning
 	Source    string       // name of the source the warning refers to
-	Param     source.Param // typed parameter involved (UnsupportedParam / PreCheck); 0 for custom
-	ParamName string       // custom --env key involved; empty for typed parameters
-	Message   string       // pre-formatted, user-facing text (for stderr)
+	Param     source.Param // typed parameter involved; 0 for a custom key or no parameter
+	ParamName string       // custom parameter key involved; empty for typed parameters
+	// Want is the sync level requested by the iteration that produced a
+	// Downgraded warning: SyncLine means the source returned no synced
+	// lyrics, SyncNone means it returned only synced lyrics. Zero for
+	// every other kind.
+	Want SyncLevel
+	// Field is the result field a ResultMismatch warning refers to.
+	Field source.ResultField
+	// Declared reports, for a ResultMismatch warning, whether the source
+	// declared Field via its Filled mask but left it empty (true), or
+	// filled it without declaring it (false).
+	Declared bool
+	// Err is the underlying cause when one exists: the adapter error for
+	// FetchFailed, the registry error for a not-found PreCheck, the
+	// RequiredParamMismatchError for a fetch-time PrecheckMismatch; nil
+	// otherwise.
+	Err error
 }
 
 // detectUnsupported compares the non-empty optional fields in params
@@ -65,26 +79,23 @@ func detectUnsupported(params Params, src source.Source) []Warning {
 
 	if strings.TrimSpace(params.Author) != "" && filters&source.ParamAuthor == 0 {
 		out = append(out, Warning{
-			Kind:    UnsupportedParam,
-			Source:  src.Name(),
-			Param:   source.ParamAuthor,
-			Message: fmt.Sprintf(`warning[unsupported]: source "%s" does not support --author`, src.Name()),
+			Kind:   UnsupportedParam,
+			Source: src.Name(),
+			Param:  source.ParamAuthor,
 		})
 	}
 	if strings.TrimSpace(params.Album) != "" && filters&source.ParamAlbum == 0 {
 		out = append(out, Warning{
-			Kind:    UnsupportedParam,
-			Source:  src.Name(),
-			Param:   source.ParamAlbum,
-			Message: fmt.Sprintf(`warning[unsupported]: source "%s" does not support --album`, src.Name()),
+			Kind:   UnsupportedParam,
+			Source: src.Name(),
+			Param:  source.ParamAlbum,
 		})
 	}
 	if strings.TrimSpace(params.ISWC) != "" && filters&source.ParamISWC == 0 {
 		out = append(out, Warning{
-			Kind:    UnsupportedParam,
-			Source:  src.Name(),
-			Param:   source.ParamISWC,
-			Message: fmt.Sprintf(`warning[unsupported]: source "%s" does not support --iswc`, src.Name()),
+			Kind:   UnsupportedParam,
+			Source: src.Name(),
+			Param:  source.ParamISWC,
 		})
 	}
 
@@ -101,7 +112,6 @@ func detectUnsupported(params Params, src source.Source) []Warning {
 				Kind:      UnsupportedParam,
 				Source:    src.Name(),
 				ParamName: key,
-				Message:   fmt.Sprintf(`warning[unsupported]: source "%s" does not support --env %s`, src.Name(), key),
 			})
 		}
 	}
@@ -112,18 +122,17 @@ func detectUnsupported(params Params, src source.Source) []Warning {
 // the accessor used by the mismatch detector.
 type resultFieldSpec struct {
 	bit   source.ResultField
-	name  string
 	value func(source.Result) string
 }
 
 var resultFieldSpecs = []resultFieldSpec{
-	{source.FieldLyrics, "Lyrics", func(r source.Result) string { return r.Lyrics }},
-	{source.FieldSyncedLyrics, "SyncedLyrics", func(r source.Result) string { return r.SyncedLyrics }},
-	{source.FieldTitle, "Title", func(r source.Result) string { return r.Title }},
-	{source.FieldArtist, "Artist", func(r source.Result) string { return r.Artist }},
-	{source.FieldAlbum, "Album", func(r source.Result) string { return r.Album }},
-	{source.FieldISWC, "ISWC", func(r source.Result) string { return r.ISWC }},
-	{source.FieldSubSource, "SubSource", func(r source.Result) string { return r.SubSource }},
+	{source.FieldLyrics, func(r source.Result) string { return r.Lyrics }},
+	{source.FieldSyncedLyrics, func(r source.Result) string { return r.SyncedLyrics }},
+	{source.FieldTitle, func(r source.Result) string { return r.Title }},
+	{source.FieldArtist, func(r source.Result) string { return r.Artist }},
+	{source.FieldAlbum, func(r source.Result) string { return r.Album }},
+	{source.FieldISWC, func(r source.Result) string { return r.ISWC }},
+	{source.FieldSubSource, func(r source.Result) string { return r.SubSource }},
 }
 
 // detectResultMismatch compares sr.Filled against the actual field
@@ -138,15 +147,16 @@ func detectResultMismatch(srcName string, sr source.Result) []Warning {
 		empty := strings.TrimSpace(spec.value(sr)) == ""
 		if declared && empty {
 			out = append(out, Warning{
-				Kind:    ResultMismatch,
-				Source:  srcName,
-				Message: fmt.Sprintf(`warning[result]: source "%s" declares field %q but left it empty (source issue)`, srcName, spec.name),
+				Kind:     ResultMismatch,
+				Source:   srcName,
+				Field:    spec.bit,
+				Declared: true,
 			})
 		} else if !declared && !empty {
 			out = append(out, Warning{
-				Kind:    ResultMismatch,
-				Source:  srcName,
-				Message: fmt.Sprintf(`warning[result]: source "%s" filled field %q without declaring it (source issue)`, srcName, spec.name),
+				Kind:   ResultMismatch,
+				Source: srcName,
+				Field:  spec.bit,
 			})
 		}
 	}

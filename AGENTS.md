@@ -68,11 +68,11 @@ Thin CLI layer over a pluggable-source abstraction:
    - **Precheck** — first a request-level check: `SyncUnknown` in `params.SyncLevels` → `InvalidSyncLevelError` (a caller bug; rejected before any per-source validation including gate 2, in BOTH modes — never downgraded to a warning). Then, per source: duplicate source → exit 8, unknown name → exit 3, missing required param (typed first, then `RequiredCustom` in declaration order) → exit 6 (`--lenient` downgrades these to `warning[precheck]` + skip).
    - **Gate 2** — runs before the missing check: a request-aware custom declaration inconsistent with the static list (invalid name, static mismatch, `RequiredCustom` not a subset of `Custom`, or duplicate `RequiredCustom`) skips the source with `warning[precheck-mismatch]` in BOTH modes — never exit 6.
    - **Abort warnings** — strict precheck errors return the warnings accumulated before the abort, so `main` can print them before the error.
-   - **Adapter errors** — `warning[fetch]`, next source (a fetch-time `RequiredParamMismatchError` → `warning[precheck-mismatch]` reusing the error's own `Flag`, next source).
+   - **Adapter errors** — `warning[fetch]`, next source (a fetch-time `RequiredParamMismatchError` → `warning[precheck-mismatch]` carrying the error as `Err`, next source).
    - **Result trust policy** — a result whose `Filled` mask disagrees with its contents (declared-but-empty or filled-but-undeclared) → `warning[result]`, result still used as-is (trust policy).
    - **Downgrade** — symmetric in both directions: a synced request yielding plain lyrics → `warning[downgraded]` ("returned no synced lyrics"); a plain request yielding only synced lyrics → the same warning ("returned only synced lyrics"). In both cases the unmatched result stays cached and can satisfy a later iteration (`none` after `line`, or `line` after `none`).
 5. **Output** — opened before the fetch (`O_CREATE|O_EXCL` for new files, `O_WRONLY` without `O_TRUNC` otherwise); on any failure a freshly created file is removed (guarded by a same-inode check). Truncate+Seek happen only after a successful fetch, so existing files keep their content on every failure path (exit 3/4/6/7/8).
-6. **Warnings** — pre-formatted by the fetch layer with their `[kind]` tag and printed verbatim to stderr; they never change the exit code. Every error path in `main` prints the fetched warnings before the `error[...]` line.
+6. **Warnings** — structured data produced by the fetch layer; the CLI (`cli/get-lyrics/render.go`) renders every byte of display text, including the `[kind]` tag. Warnings never change the exit code. Every error path in `main` prints the rendered warnings before the `error[...]` line.
 
 **Key types (`internal/source/source.go`):**
 
@@ -86,7 +86,7 @@ Thin CLI layer over a pluggable-source abstraction:
 - `Source` interface — `Name`/`Capabilities`/`CustomParams`/`Fetch`; `CustomParams()` returns the static, request-independent list for `--help` rendering and env fallback.
 - `Registry` — concurrency-safe name→source map; gate 1 validation in `Register`.
 - `ErrInvalidParamName` — gate 1, carries source + key, `Duplicate` flag.
-- `RequiredParamMismatchError` — raised by `Fetch` when a required parameter is missing (a capability declaration bug); carries `ParamName` for custom keys and `Flag` for message rendering.
+- `RequiredParamMismatchError` — raised by `Fetch` when a required parameter is missing (a capability declaration bug); carries `Param`/`ParamName` for the CLI renderer.
 
 Adapters declare required typed params via `Capabilities(req).Required` and required custom keys via `Capabilities(req).RequiredCustom` (a subset of that request's `Custom` names); the fetch layer enforces them via `fetch.RequiredParamError`, and a fetch-time miss surfaces as `RequiredParamMismatchError`. `Capabilities(req)` is request-aware so conditional support is expressible (lrclib drops `--album` when `--author` is absent; mock-custom recognizes `COUNTRY` only when `LANG` is present).
 
@@ -94,12 +94,12 @@ Adapters declare required typed params via `Capabilities(req).Required` and requ
 
 - `Params` — now carries `Custom map[string]string`.
 - `Result` — `Source` = adapter name, `SubSource` = aggregate sub-source, `Level` = SyncLevel of the lyrics (`SyncUnknown`/`SyncNone`/`SyncLine`).
-- `Warning` — kinds: `UnsupportedParam`/`Downgraded`/`PreCheck`/`PrecheckMismatch`/`FetchFailed`/`ResultMismatch`; `ParamName` for custom keys — `Param` stays 0 for them.
+- `Warning` — structured data only (the CLI renders all display text): kinds `UnsupportedParam`/`Downgraded`/`PreCheck`/`PrecheckMismatch`/`FetchFailed`/`ResultMismatch`; `ParamName` for custom keys — `Param` stays 0 for them; plus `Want` (Downgraded direction), `Field`+`Declared` (ResultMismatch), `Err` (underlying cause).
 - `NoResultError` — exit 4.
 - `InvalidSyncLevelError` — precheck rejects `SyncUnknown` in `Params.SyncLevels` (a caller bug; request-level check before per-source validation, not downgraded by `--lenient`).
 - `UnknownSourceError` — exit 3.
 - `DuplicateSourceError` — exit 8.
-- `RequiredParamError` — exit 6; `ParamName` + `Flag` rendered as `--env <KEY>` for custom.
+- `RequiredParamError` — exit 6; carries `Param` + `ParamName` (the CLI renderer spells custom keys as `--env <KEY>`).
 - `CustomParamsFor(params)` — read-only query: static declarations per requested source, only `Source`/`Lenient` participate, no warnings/required checks/gate 2 — used by `main` for help rendering and env fallback.
 
 Unsupported custom keys produce per-source `warning[unsupported]` in map iteration order (unspecified; assert warning sets, never order).
@@ -150,7 +150,7 @@ Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (neve
 - **Do NOT:** add a TUI/GUI; make the song title optional; write warnings to stdout; bypass the `source.Source` interface for new providers.
 - **Adapters must:**
   - self-declare `Capabilities(req)` — filters honored + required params; request-aware so conditional support is expressible (most adapters return a constant);
-  - declare required typed params via `Capabilities(req).Required` and required custom keys via `Capabilities(req).RequiredCustom` (a subset of that request's `Custom` names; both are precheck-enforced — if `Fetch` finds a required parameter missing anyway, a declaration bug — raise `RequiredParamMismatchError` with `Flag` filled so the fetch layer renders a correct message);
+  - declare required typed params via `Capabilities(req).Required` and required custom keys via `Capabilities(req).RequiredCustom` (a subset of that request's `Custom` names; both are precheck-enforced — if `Fetch` finds a required parameter missing anyway, a declaration bug — raise `RequiredParamMismatchError` with `Param`/`ParamName` filled so the CLI renders a correct message);
   - return the static custom-parameter list from `CustomParams()` — legal `^[A-Z][A-Z0-9_]*$`, distinct keys; sources without custom params return nil;
   - respect `ctx`;
   - set `Result.Filled` to declare exactly which result fields were populated (the fetch layer reads only declared fields and warns on mismatches);

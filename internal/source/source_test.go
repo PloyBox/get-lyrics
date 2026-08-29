@@ -151,12 +151,12 @@ func TestRegistry_RegisterRejectsDuplicateParamName(t *testing.T) {
 
 func TestErrInvalidParamName_Message(t *testing.T) {
 	got := (ErrInvalidParamName{Source: "x", Name: "lang"}).Error()
-	want := `source "x" declared invalid --env key "lang" (source bug: must match ^[A-Z][A-Z0-9_]*$)`
+	want := `source "x" declared invalid custom key "lang" (source bug: must match ^[A-Z][A-Z0-9_]*$)`
 	if got != want {
 		t.Fatalf("message = %q; want %q", got, want)
 	}
 	got = (ErrInvalidParamName{Source: "x", Name: "LANG", Duplicate: true}).Error()
-	want = `source "x" declared duplicate --env key "LANG" (source bug)`
+	want = `source "x" declared duplicate custom key "LANG" (source bug)`
 	if got != want {
 		t.Fatalf("message = %q; want %q", got, want)
 	}

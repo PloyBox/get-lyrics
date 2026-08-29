@@ -161,14 +161,14 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 		// In-flight warnings (e.g. a gate-2 source-bug warning emitted
 		// before the strict abort) are printed before the error.
 		for _, w := range warnings {
-			fmt.Fprintln(stderr, w.Message)
+			fmt.Fprintln(stderr, renderWarning(w))
 		}
 		fmt.Fprintln(stderr, "error[usage]:", dupErr.Error())
 		return exitDuplicateSrc
 	}
 	if errors.Is(err, source.ErrNotFound) {
 		for _, w := range warnings {
-			fmt.Fprintln(stderr, w.Message)
+			fmt.Fprintln(stderr, renderWarning(w))
 		}
 		fmt.Fprintln(stderr, "error[unknown]:", err.Error())
 		return exitUnknownSrc
@@ -176,9 +176,9 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 	var reqErr fetch.RequiredParamError
 	if errors.As(err, &reqErr) {
 		for _, w := range warnings {
-			fmt.Fprintln(stderr, w.Message)
+			fmt.Fprintln(stderr, renderWarning(w))
 		}
-		fmt.Fprintln(stderr, "error[required]:", reqErr.Error())
+		fmt.Fprintln(stderr, "error[required]:", renderRequiredError(reqErr))
 		return exitRequired
 	}
 	var noRes fetch.NoResultError
@@ -186,21 +186,21 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 		// Failure path: in-flight warnings still tell the user why each
 		// source was skipped or failed, printed before the error.
 		for _, w := range warnings {
-			fmt.Fprintln(stderr, w.Message)
+			fmt.Fprintln(stderr, renderWarning(w))
 		}
 		fmt.Fprintln(stderr, "error[no-result]:", noRes.Error())
 		return exitFetchFailed
 	}
 	if err != nil {
 		for _, w := range warnings {
-			fmt.Fprintln(stderr, w.Message)
+			fmt.Fprintln(stderr, renderWarning(w))
 		}
 		fmt.Fprintln(stderr, "error[fetch]:", err)
 		return exitFetchFailed
 	}
 
 	for _, w := range warnings {
-		fmt.Fprintln(stderr, w.Message)
+		fmt.Fprintln(stderr, renderWarning(w))
 	}
 
 	// Only the real output file is truncated here — stdout (the

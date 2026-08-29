@@ -145,6 +145,30 @@ const (
 	FieldSubSource
 )
 
+// String returns the name of the first set bit in f (e.g. "Lyrics",
+// "SyncedLyrics") — the CLI renders it into result-mismatch warnings.
+// f is a single-bit mask by contract: the result is undefined for a
+// zero value or a multi-bit combination.
+func (f ResultField) String() string {
+	switch {
+	case f&FieldLyrics != 0:
+		return "Lyrics"
+	case f&FieldSyncedLyrics != 0:
+		return "SyncedLyrics"
+	case f&FieldTitle != 0:
+		return "Title"
+	case f&FieldArtist != 0:
+		return "Artist"
+	case f&FieldAlbum != 0:
+		return "Album"
+	case f&FieldISWC != 0:
+		return "ISWC"
+	case f&FieldSubSource != 0:
+		return "SubSource"
+	}
+	return fmt.Sprintf("ResultField(%d)", uint(f))
+}
+
 // Result carries the fetched lyrics together with the metadata that
 // identifies the matched song. Filled declares which fields below are
 // populated: fields without their bit set must be treated as empty,
@@ -227,9 +251,9 @@ type ErrInvalidParamName struct {
 
 func (e ErrInvalidParamName) Error() string {
 	if e.Duplicate {
-		return fmt.Sprintf("source %q declared duplicate --env key %q (source bug)", e.Source, e.Name)
+		return fmt.Sprintf("source %q declared duplicate custom key %q (source bug)", e.Source, e.Name)
 	}
-	return fmt.Sprintf("source %q declared invalid --env key %q (source bug: must match %s)", e.Source, e.Name, ParamNamePattern)
+	return fmt.Sprintf("source %q declared invalid custom key %q (source bug: must match %s)", e.Source, e.Name, ParamNamePattern)
 }
 
 // RequiredParamMismatchError is raised by a source's Fetch when it
@@ -243,13 +267,12 @@ type RequiredParamMismatchError struct {
 	Source    string // adapter Name() that requires the parameter
 	Param     Param  // typed Param bit; 0 for a custom key
 	ParamName string // custom key name; empty for a typed parameter
-	Flag      string // CLI flag spelling: "--author" etc., or "--env <KEY>"
 }
 
-// Error renders a stable message; the fetch layer re-renders it as a
-// PrecheckMismatch warning using its own flag mapping.
+// Error renders a neutral message; the CLI renders the user-facing
+// text from the structured fields.
 func (e RequiredParamMismatchError) Error() string {
-	return "source \"" + e.Source + "\" requires " + e.Flag + " but precheck did not enforce it (source bug)"
+	return fmt.Sprintf("source %q requires a parameter precheck did not enforce (source bug)", e.Source)
 }
 
 // Registry is a concurrency-safe, name→Source lookup table populated

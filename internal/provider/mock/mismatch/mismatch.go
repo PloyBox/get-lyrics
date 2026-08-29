@@ -30,7 +30,6 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		return source.Result{}, source.RequiredParamMismatchError{
 			Source: a.Name(),
 			Param:  source.ParamAuthor,
-			Flag:   "--author",
 		}
 	}
 	lyrics := "[mock-mismatch] lyrics for: " + req.Song + "\n"

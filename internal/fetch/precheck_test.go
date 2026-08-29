@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/PloyBox/get-lyrics/internal/source"
@@ -52,7 +51,7 @@ func TestFetch_StrictPrecheckRequiredParamFailsFast(t *testing.T) {
 	if !errors.As(err, &reqErr) {
 		t.Fatalf("err = %v; want RequiredParamError", err)
 	}
-	if reqErr.Source != "req" || reqErr.Param != source.ParamAuthor || reqErr.Flag != "--author" {
+	if reqErr.Source != "req" || reqErr.Param != source.ParamAuthor {
 		t.Fatalf("reqErr = %+v; want author-required for req", reqErr)
 	}
 	if len(warnings) != 0 {
@@ -70,7 +69,6 @@ func TestFetch_RequiredParamMismatchFailsOverWithWarning(t *testing.T) {
 			return source.Result{}, source.RequiredParamMismatchError{
 				Source: "buggy",
 				Param:  source.ParamAuthor,
-				Flag:   "--author",
 			}
 		},
 	}
@@ -97,8 +95,9 @@ func TestFetch_RequiredParamMismatchFailsOverWithWarning(t *testing.T) {
 	if w.Kind != PrecheckMismatch || w.Source != "buggy" || w.Param != source.ParamAuthor {
 		t.Fatalf("warning = %+v; want PrecheckMismatch for buggy/ParamAuthor", w)
 	}
-	if !strings.Contains(w.Message, "--author") {
-		t.Fatalf("warning message = %q; want mention of --author", w.Message)
+	var mmErr source.RequiredParamMismatchError
+	if !errors.As(w.Err, &mmErr) {
+		t.Fatalf("warning Err = %v; want RequiredParamMismatchError", w.Err)
 	}
 	if ok.fetchCalls != 1 {
 		t.Fatalf("ok.fetchCalls = %d; want 1 (failover after mismatch)", ok.fetchCalls)
@@ -355,10 +354,6 @@ func TestFetch_Gate2SkipsInconsistentDeclarations(t *testing.T) {
 				if warnings[0].ParamName != tc.bad || warnings[0].Param != 0 {
 					t.Fatalf("warning = %+v; want ParamName=%q, Param=0", warnings[0], tc.bad)
 				}
-				wantMsg := fmt.Sprintf(`warning[precheck-mismatch]: source "buggy" declared invalid --env key %q (source bug)`, tc.bad)
-				if warnings[0].Message != wantMsg {
-					t.Fatalf("message = %q; want %q", warnings[0].Message, wantMsg)
-				}
 			})
 		}
 	}
@@ -436,7 +431,7 @@ func TestFetch_StrictAbortCarriesGate2Warnings(t *testing.T) {
 	if !errors.As(err, &reqErr) {
 		t.Fatalf("err = %v; want RequiredParamError from req", err)
 	}
-	if reqErr.Source != "req" || reqErr.Flag != "--author" {
+	if reqErr.Source != "req" || reqErr.Param != source.ParamAuthor {
 		t.Fatalf("reqErr = %+v; want author-required for req", reqErr)
 	}
 	if len(warnings) != 1 || warnings[0].Kind != PrecheckMismatch || warnings[0].Source != "buggy" {

@@ -3,7 +3,6 @@ package fetch
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/PloyBox/get-lyrics/internal/source"
@@ -139,8 +138,8 @@ func TestFetch_DeclaredButEmptyFieldWarns(t *testing.T) {
 	if len(warnings) != 1 || warnings[0].Kind != ResultMismatch {
 		t.Fatalf("warnings = %+v; want one ResultMismatch warning", warnings)
 	}
-	if !strings.Contains(warnings[0].Message, `declares field "Lyrics" but left it empty`) {
-		t.Fatalf("warning message = %q; want declared-but-empty note", warnings[0].Message)
+	if warnings[0].Field != source.FieldLyrics || !warnings[0].Declared {
+		t.Fatalf("warning = %+v; want Field=Lyrics, Declared=true", warnings[0])
 	}
 }
 
@@ -172,7 +171,7 @@ func TestFetch_DeclaredButEmptySubSourceWarns(t *testing.T) {
 	if len(warnings) != 1 || warnings[0].Kind != ResultMismatch {
 		t.Fatalf("warnings = %+v; want one ResultMismatch warning", warnings)
 	}
-	if !strings.Contains(warnings[0].Message, `declares field "SubSource" but left it empty`) {
-		t.Fatalf("warning message = %q; want declared-but-empty note", warnings[0].Message)
+	if warnings[0].Field != source.FieldSubSource || !warnings[0].Declared {
+		t.Fatalf("warning = %+v; want Field=SubSource, Declared=true", warnings[0])
 	}
 }

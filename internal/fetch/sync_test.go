@@ -3,7 +3,6 @@ package fetch
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/PloyBox/get-lyrics/internal/source"
@@ -205,8 +204,8 @@ func TestFetch_PlainRequestOnSyncedOnlySourceNoResult(t *testing.T) {
 	if len(warnings) != 1 || warnings[0].Kind != Downgraded || warnings[0].Source != "synconly" {
 		t.Fatalf("warnings = %+v; want one Downgraded warning for synconly", warnings)
 	}
-	if !strings.Contains(warnings[0].Message, "returned only synced lyrics") {
-		t.Fatalf("warning message = %q; want symmetric downgrade note", warnings[0].Message)
+	if warnings[0].Want != SyncNone {
+		t.Fatalf("warning = %+v; want Want=SyncNone (only synced lyrics returned)", warnings[0])
 	}
 }
 

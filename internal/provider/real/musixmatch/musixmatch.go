@@ -98,7 +98,6 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		return source.Result{}, source.RequiredParamMismatchError{
 			Source:    a.Name(),
 			ParamName: apiKeyParam,
-			Flag:      "--env " + apiKeyParam,
 		}
 	}
 

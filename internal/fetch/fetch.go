@@ -15,7 +15,6 @@ package fetch
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/PloyBox/get-lyrics/internal/source"
 )
@@ -91,21 +90,19 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 			if ferr != nil {
 				var mm source.RequiredParamMismatchError
 				if errors.As(ferr, &mm) {
-					// Reuse mm.Flag directly: for a custom key Param is
-					// 0 and flagForParam would render an empty spelling.
 					warnings = append(warnings, Warning{
 						Kind:      PrecheckMismatch,
 						Source:    name,
 						Param:     mm.Param,
 						ParamName: mm.ParamName,
-						Message:   fmt.Sprintf(`warning[precheck-mismatch]: source "%s" requires %s but precheck did not enforce it (source bug); trying next source`, name, mm.Flag),
+						Err:       ferr,
 					})
 					continue
 				}
 				warnings = append(warnings, Warning{
-					Kind:    FetchFailed,
-					Source:  name,
-					Message: fmt.Sprintf(`warning[fetch]: source "%s" failed: %v; trying next source`, name, ferr),
+					Kind:   FetchFailed,
+					Source: name,
+					Err:    ferr,
 				})
 				continue
 			}
@@ -120,16 +117,13 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 				// Nothing matched the requested level: store every
 				// produced track for later iterations and warn on the
 				// downgrade. storable only holds tracks whose Level
-				// differs from want, so want picks the message.
+				// differs from want, so Want records the requested
+				// direction.
 				cache = append(cache, storable...)
-				msg := "returned no synced lyrics"
-				if want == SyncNone {
-					msg = "returned only synced lyrics"
-				}
 				warnings = append(warnings, Warning{
-					Kind:    Downgraded,
-					Source:  name,
-					Message: fmt.Sprintf(`warning[downgraded]: source "%s" %s`, name, msg),
+					Kind:   Downgraded,
+					Source: name,
+					Want:   want,
 				})
 			}
 		}
