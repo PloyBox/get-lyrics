@@ -111,6 +111,7 @@ get-lyrics --help
 | `--author` | `-a` | Artist / author filter |
 | `--album` | `-A` | Album filter |
 | `--iswc` | `-i` | ISWC identifier |
+| `--duration` | `-d` | Track duration filter (seconds or mm:ss) |
 | `--output` | `-o` | Write lyrics to file (default: stdout; refuses to overwrite an existing file) |
 | `--overwrite` | `-O` | Overwrite an existing `--output` file |
 | `--sync-level` | `-S` | Comma-separated sync levels (default: `line,none`; `line` enables LRC). User-given order is the priority |
@@ -153,14 +154,17 @@ Rules:
 
 ## Built-in Sources
 
-Legend: `Y` = supported, `N` = not supported, `F` = required (must be given).
+Legend: `Y` = supported, `N` = not supported, `F` = required (must be given). Sync level lists the supported levels in the form `line,none`.
 
-| Source | Author | Album | ISWC | Sync level | Notes |
-|--------|--------|-------|------|-----------|-------|
-| `lrclib` | Y | Y | N | Y | Searches [lrclib.net](https://lrclib.net); uses `/api/get` when artist is given, `/api/search` otherwise |
-| `lyricsovh` | F | N | N | N | Uses [api.lyrics.ovh](https://api.lyrics.ovh); plain text only |
-| `lrccx` | Y | Y | N | Y | Searches [lrc.cx](https://lrc.cx) via its legacy `/jsonapi` endpoint; the response is always LRC-flavoured text, stripped of timestamps for plain output |
-| `musixmatch` | Y | N | N | Y* | [Musixmatch](https://developer.musixmatch.com) via `matcher.lyrics.get`/`matcher.subtitle.get` (with `--author`) or `track.search` → `track.lyrics.get`/`track.subtitle.get` (title only). Requires the `MUSIXMATCH_API_KEY` custom parameter. Synced LRC needs the paid Scale plan; on cheaper plans a `--sync-level` request falls back to plain lyrics with a `warning[downgraded]` |
+| Source | Author | Album | ISWC | Duration | Sync level | Notes |
+|--------|--------|-------|------|----------|-----------|-------|
+| `lrclib` | Y | Y[^1] | N | Y[^1] | line,none | Searches [lrclib.net](https://lrclib.net); uses `/api/get` when artist is given, `/api/search` otherwise |
+| `lyricsovh` | F | N | N | N | none | Uses [api.lyrics.ovh](https://api.lyrics.ovh); plain text only |
+| `lrccx` | Y | Y | N | N | line,none | Searches [lrc.cx](https://lrc.cx) via its legacy `/jsonapi` endpoint; the response is always LRC-flavoured text, stripped of timestamps for plain output |
+| `musixmatch` | Y | N | N | N | line[^2],none | [Musixmatch](https://developer.musixmatch.com) via `matcher.lyrics.get`/`matcher.subtitle.get` (with `--author`) or `track.search` → `track.lyrics.get`/`track.subtitle.get` (title only). Requires the `MUSIXMATCH_API_KEY` custom parameter |
+
+[^1]: The Album and Duration filters only take effect with `--author`; without an author, each is dropped with an unsupported warning.
+[^2]: Synced LRC (`line`) needs the paid Scale plan; on cheaper plans a `--sync-level line` request falls back to plain lyrics with a `warning[downgraded]`.
 
 `musixmatch` is the only built-in source that declares a custom `--env` parameter: `MUSIXMATCH_API_KEY` (required, fallback to the `MUSIXMATCH_API_KEY` environment variable). Get a free Basic key at <https://developer.musixmatch.com>.
 

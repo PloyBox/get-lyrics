@@ -34,6 +34,11 @@ func TestRenderWarning(t *testing.T) {
 			`warning[unsupported]: source "x" does not support --iswc`,
 		},
 		{
+			"unsupported duration",
+			fetch.Warning{Kind: fetch.UnsupportedParam, Source: "x", Param: source.ParamDuration},
+			`warning[unsupported]: source "x" does not support --duration`,
+		},
+		{
 			"unsupported custom key",
 			fetch.Warning{Kind: fetch.UnsupportedParam, Source: "x", ParamName: "FOO"},
 			`warning[unsupported]: source "x" does not support --env FOO`,

@@ -1,7 +1,7 @@
 // Package source defines the pluggable lyrics-source abstraction.
 //
 // A Source is a named adapter that knows which optional metadata parameters
-// (author, album, ISWC, sync level) it can use to refine a lyrics lookup, and
+// (author, album, ISWC, duration, sync level) it can use to refine a lyrics lookup, and
 // can fetch lyrics for a given Request. Built-in adapters are registered
 // explicitly via RegisterAll in package internal/bootstrap.
 package source
@@ -26,6 +26,7 @@ const (
 	ParamAuthor Param = 1 << iota
 	ParamAlbum
 	ParamISWC
+	ParamDuration
 )
 
 // ParamNamePattern is the legal syntax for custom parameter keys
@@ -100,12 +101,16 @@ const (
 )
 
 // Request is the input to a Source.Fetch call. Song is required;
-// Author/Album/ISWC are optional refinements and may be empty strings.
+// Author/Album/ISWC/Duration are optional refinements and may be empty.
 type Request struct {
 	Song   string // required
 	Author string
 	Album  string
 	ISWC   string
+	// Duration is the track duration in whole seconds; 0 means not
+	// provided. It is an optional matching hint the source may use
+	// (e.g. lrclib /api/get).
+	Duration int
 	// SyncLevel is the lyrics format the request asks for (from
 	// --sync-level). Zero value is SyncNone (plain lyrics).
 	SyncLevel SyncLevel

@@ -82,6 +82,7 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 				Author:    params.Author,
 				Album:     params.Album,
 				ISWC:      params.ISWC,
+				Duration:  params.Duration,
 				SyncLevel: sourceSyncLevel(want),
 				UserAgent: params.UserAgent,
 				Custom:    params.Custom,
@@ -135,7 +136,8 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 // CustomParamsFor returns, in params.Source order, the static
 // CustomParams() declaration of every source that passes validation; the
 // map is keyed by source name. Only params.Source and params.Lenient
-// participate — Song/Author/Album/ISWC/SyncLevels/Custom are ignored.
+// participate — Song/Author/Album/ISWC/Duration/SyncLevels/Custom are
+// ignored.
 //
 // Strict mode: the first problem aborts with UnknownSourceError
 // (unregistered name) or DuplicateSourceError (duplicate entry), the

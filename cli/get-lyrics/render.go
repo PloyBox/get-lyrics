@@ -17,6 +17,8 @@ func flagForParam(p source.Param) string {
 		return "--album"
 	case source.ParamISWC:
 		return "--iswc"
+	case source.ParamDuration:
+		return "--duration"
 	}
 	return ""
 }

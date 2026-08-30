@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/PloyBox/get-lyrics/fetch"
@@ -16,6 +17,7 @@ type parsedFlags struct {
 	author     string
 	album      string
 	iswc       string
+	duration   int // whole seconds; normalized from --duration at parse time
 	output     string
 	syncLevels []fetch.SyncLevel // parsed from --sync-level at parse time
 	userAgent  string
@@ -43,6 +45,9 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	fs.StringVar(&f.album, "A", "", "album filter (short)")
 	fs.StringVar(&f.iswc, "iswc", "", "ISWC identifier")
 	fs.StringVar(&f.iswc, "i", "", "ISWC identifier (short)")
+	var durationRaw string
+	fs.StringVar(&durationRaw, "duration", "", "track duration filter (seconds or mm:ss)")
+	fs.StringVar(&durationRaw, "d", "", "track duration filter (seconds or mm:ss) (short)")
 	fs.StringVar(&f.output, "output", "", "output file path")
 	fs.StringVar(&f.output, "o", "", "output file path (short)")
 	var syncLevel string
@@ -70,6 +75,11 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 		return parsedFlags{}, "", err
 	}
 	f.syncLevels = syncLevels
+	duration, err := parseDuration(durationRaw)
+	if err != nil {
+		return parsedFlags{}, "", err
+	}
+	f.duration = duration
 	env, err := validateEnv(envs)
 	if err != nil {
 		return parsedFlags{}, "", err
@@ -105,6 +115,34 @@ func parseSyncLevels(s string) ([]fetch.SyncLevel, error) {
 	return out, nil
 }
 
+// parseDuration converts a --duration value into whole seconds: a plain
+// positive integer ("225") or mm:ss ("3:45"). Whitespace-only input is
+// treated as not provided (0, mirroring the --author whitespace
+// precedent); any other value is a usage error (exit 2).
+func parseDuration(s string) (int, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, nil
+	}
+	if !strings.Contains(s, ":") {
+		sec, err := strconv.Atoi(s)
+		if err != nil || sec < 1 {
+			return 0, fmt.Errorf("invalid duration value %q (want seconds or mm:ss)", s)
+		}
+		return sec, nil
+	}
+	parts := strings.Split(s, ":")
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("invalid duration value %q (want seconds or mm:ss)", s)
+	}
+	m, errM := strconv.Atoi(parts[0])
+	sec, errS := strconv.Atoi(parts[1])
+	if errM != nil || errS != nil || m < 0 || sec < 0 || sec > 59 || m*60+sec < 1 {
+		return 0, fmt.Errorf("invalid duration value %q (want seconds or mm:ss)", s)
+	}
+	return m*60 + sec, nil
+}
+
 // splitTrimmed splits a comma-separated flag value, trimming whitespace
 // and dropping empty entries.
 func splitTrimmed(s string) []string {
@@ -131,6 +169,7 @@ func parsedFlagsToParams(f parsedFlags, song string) fetch.Params {
 		Author:     f.author,
 		Album:      f.album,
 		ISWC:       f.iswc,
+		Duration:   f.duration,
 		SyncLevels: f.syncLevels,
 		UserAgent:  f.userAgent,
 		Lenient:    f.lenient,

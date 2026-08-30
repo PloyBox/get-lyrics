@@ -37,6 +37,7 @@ get-lyrics/
 - **Flags (long/short):**
   - `--source`/`-s` — comma-separated source names, tried in order (failover). Default `lrclib`. Entries are trimmed; empty ones dropped.
   - `--author`/`-a`, `--album`/`-A`, `--iswc`/`-i` — filters.
+  - `--duration`/`-d` — track duration filter, whole seconds (`225`) or `mm:ss` (`3:45`); normalized to int seconds at parse time, 0 = not provided. Any other value is a usage error (exit 2).
   - `--output`/`-o` — write lyrics to this file instead of stdout. **Refuses to overwrite** an existing file (exit 7) unless `--overwrite`/`-O` is given.
   - `--sync-level`/`-S` — comma-separated `line`/`none` levels; user-given order is the priority (first match wins). Default `line,none`. Any other value is a usage error (exit 2).
   - `--user-agent`/`-u` — HTTP `User-Agent` header sent to sources. Default `get-lyrics/<ver> (+https://github.com/PloyBox/get-lyrics)` (`<ver>` is the version stamped at build time). The built-in sources carry no default of their own — they trust whatever UA they are handed; a non-empty value replaces the CLI default on every upstream request.
@@ -50,7 +51,7 @@ get-lyrics/
 | Code | Meaning |
 |------|---------|
 | 0 | Success (warnings may still go to stderr) |
-| 2 | Usage error (missing song, unknown flag, invalid `--sync-level`, invalid/duplicate `--env` entry) |
+| 2 | Usage error (missing song, unknown flag, invalid `--sync-level`, invalid `--duration`, invalid/duplicate `--env` entry) |
 | 3 | Unknown `--source` name (strict precheck) |
 | 4 | No valid result: all sources skipped/failed, or no format match |
 | 5 | Output failure (file open, truncate, write, or close) |
@@ -64,7 +65,7 @@ Thin CLI layer over a pluggable-source abstraction:
 
 1. **Registration** — `cli/get-lyrics/run.go` runs `bootstrap.RegisterAll(r)` once at package-init time, before `main()`; test builds additionally register `mock-*` sources via `init()` in `cli/get-lyrics/loadmock.go`.
    - `Registry.Register` is **gate 1**: a source's static `CustomParams()` list must contain only legal (`^[A-Z][A-Z0-9_]*$`), distinct keys — a violation returns `ErrInvalidParamName` and panics at startup (adapter init failure is a programmer error).
-2. **Parse** — required positional `<song>` plus flags via `flag.NewFlagSet`; `--sync-level` (`line`/`none` → `[]fetch.SyncLevel`) and `--env` values parsed and validated at parse time (violations are usage errors, exit 2).
+2. **Parse** — required positional `<song>` plus flags via `flag.NewFlagSet`; `--sync-level` (`line`/`none` → `[]fetch.SyncLevel`), `--env` values, and `--duration` (seconds or `mm:ss` → int seconds) parsed and validated at parse time (violations are usage errors, exit 2).
 3. **Env fallback** — before the fetch, `main` calls `svc.CustomParamsFor(params)` (strict: unknown source → exit 3, duplicate → exit 8, reported before the fetch; lenient: problem sources silently skipped) and fills every declared key the user did not pass via `-e` from the process environment (`-e` > env > missing; an empty env var counts as missing). Injected keys behave exactly like user-passed ones.
 4. **Fetch** (`fetch.New(registry).Fetch(ctx, params)`) — two-level loop: outer over `params.SyncLevels` (priority order), inner over sources (failover); a per-call result cache dedupes by source+SyncLevel.
    - **Precheck** — first a request-level check: `SyncUnknown` in `params.SyncLevels` → `InvalidSyncLevelError` (a caller bug; rejected before any per-source validation including gate 2, in BOTH modes — never downgraded to a warning). Then, per source: duplicate source → exit 8, unknown name → exit 3, missing required param (typed first, then `RequiredCustom` in declaration order) → exit 6 (`--lenient` downgrades these to `warning[precheck]` + skip).
@@ -78,7 +79,7 @@ Thin CLI layer over a pluggable-source abstraction:
 
 **Key types (`source/source.go`):**
 
-- `Param` bitmask — `ParamAuthor | ParamAlbum | ParamISWC`.
+- `Param` bitmask — `ParamAuthor | ParamAlbum | ParamISWC | ParamDuration`.
 - `ResultField` bitmask — `FieldLyrics | FieldSyncedLyrics | FieldTitle | FieldArtist | FieldAlbum | FieldISWC | FieldSubSource`.
 - `ParamNamePattern` (`^[A-Z][A-Z0-9_]*$`) + `ValidParamName`.
 - `ParamSpec` — `Name` + `Description`; required-ness is decided per request, never statically.
@@ -108,7 +109,7 @@ Unsupported custom keys produce per-source `warning[unsupported]` in map iterati
 
 ### Built-in sources
 
-- **`lrclib`** — `https://lrclib.net`; `/api/get` when `--author` is given, else `/api/search`. Filters: Author, Album — the album filter only takes effect with `--author` (otherwise it is dropped with an unsupported warning). Synced LRC output when requested; a synced-only hit leaves `Lyrics` unfilled so the fetch layer outputs the synced track. 10s per-request timeout.
+- **`lrclib`** — `https://lrclib.net`; `/api/get` when `--author` is given, else `/api/search`. Filters: Author, Album, Duration — the album and duration filters only take effect with `--author` (otherwise each is dropped with an unsupported warning). Duration (int seconds) is passed as `duration=<secs>` on `/api/get`; 0 means not provided. Synced LRC output when requested; a synced-only hit leaves `Lyrics` unfilled so the fetch layer outputs the synced track. 10s per-request timeout.
 - **`lyricsovh`** — `https://api.lyrics.ovh/v1/{artist}/{title}`. Filter: Author, and **requires** it. Surfaces the API's 404 as not-found. 10s timeout.
 - **`lrccx`** — `https://api.lrc.cx/jsonapi`. Filters: Author, Album (independent of each other). Always LRC-flavoured text: plain lyrics strip `[mm:ss]`/marker tags; synced lyrics only when the text has timestamped lines. 10s timeout.
 - **`musixmatch`** — `https://api.musixmatch.com/ws/1.1`. Requires the custom `--env` key `MUSIXMATCH_API_KEY` (RequiredCustom). Filter: Author. With `--author`: `matcher.lyrics.get` / `matcher.subtitle.get`; title-only: `track.search` → `track.lyrics.get` / `track.subtitle.get` by commontrack id. Subtitle endpoints need the paid Scale plan — on Basic they 402/403, which the adapter treats as "no synced" and falls back to plain (fetch layer warns `downgraded`). Album/ISWC unsupported (no album param; `track_isrc` is ISRC, not ISWC). Instrumental `"...."` and the `*******` usage trailer are stripped. 10s timeout.

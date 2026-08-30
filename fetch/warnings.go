@@ -75,7 +75,7 @@ type Warning struct {
 func detectUnsupported(params Params, src source.Source) []Warning {
 	caps := src.Capabilities(requestFromParams(params))
 	filters := caps.Filters
-	out := make([]Warning, 0, 3)
+	out := make([]Warning, 0, 4)
 
 	if strings.TrimSpace(params.Author) != "" && filters&source.ParamAuthor == 0 {
 		out = append(out, Warning{
@@ -96,6 +96,13 @@ func detectUnsupported(params Params, src source.Source) []Warning {
 			Kind:   UnsupportedParam,
 			Source: src.Name(),
 			Param:  source.ParamISWC,
+		})
+	}
+	if params.Duration > 0 && filters&source.ParamDuration == 0 {
+		out = append(out, Warning{
+			Kind:   UnsupportedParam,
+			Source: src.Name(),
+			Param:  source.ParamDuration,
 		})
 	}
 

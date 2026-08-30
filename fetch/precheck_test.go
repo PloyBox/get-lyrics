@@ -62,6 +62,37 @@ func TestFetch_StrictPrecheckRequiredParamFailsFast(t *testing.T) {
 	}
 }
 
+// TestFetch_StrictPrecheckRequiredDurationFailsFast locks the
+// ParamDuration required semantics: a source requiring duration treats a
+// zero-value (not provided) params.Duration as missing, so the strict
+// precheck aborts with RequiredParamError before any fetch.
+func TestFetch_StrictPrecheckRequiredDurationFailsFast(t *testing.T) {
+	req := &fakeSrc{
+		name: "reqdur",
+		caps: source.Capabilities{Required: source.ParamDuration},
+		fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
+			return source.Result{Lyrics: "R"}, nil
+		},
+	}
+	r := newRegistry(t, req)
+	svc := New(r)
+
+	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Source: []string{"reqdur"}})
+	var reqErr RequiredParamError
+	if !errors.As(err, &reqErr) {
+		t.Fatalf("err = %v; want RequiredParamError", err)
+	}
+	if reqErr.Source != "reqdur" || reqErr.Param != source.ParamDuration {
+		t.Fatalf("reqErr = %+v; want duration-required for reqdur", reqErr)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %+v; want none on strict precheck failure", warnings)
+	}
+	if req.fetchCalls != 0 {
+		t.Fatalf("req.fetchCalls = %d; want 0 (fail-fast before any fetch)", req.fetchCalls)
+	}
+}
+
 func TestFetch_RequiredParamMismatchFailsOverWithWarning(t *testing.T) {
 	buggy := &fakeSrc{
 		name: "buggy",

@@ -266,6 +266,48 @@ func TestRun_WhitespaceAuthorNotTreatedAsProvided(t *testing.T) {
 	}
 }
 
+// TestRun_DurationUnsupportedWarnsOnMockSuccess: mock-success only
+// declares ParamAuthor, so a --duration filter trips one
+// warning[unsupported] while the fetch itself still succeeds.
+func TestRun_DurationUnsupportedWarnsOnMockSuccess(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"--source", "mock-success",
+			"--author", "TEST_AUTHOR",
+			"--duration", "3:45",
+			"TEST_SONG",
+		},
+		&stdout, &stderr,
+	)
+	if code != exitOK {
+		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "lyrics") {
+		t.Fatalf("stdout missing lyrics: %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "warning[unsupported]") {
+		t.Fatalf("stderr missing unsupported warning tag: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "--duration") {
+		t.Fatalf("stderr missing --duration spelling: %q", stderr.String())
+	}
+}
+
+// TestRun_WhitespaceDurationNotTreatedAsProvided: whitespace-only
+// --duration is treated as not provided and produces no warnings
+// (mirroring the --author whitespace precedent).
+func TestRun_WhitespaceDurationNotTreatedAsProvided(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-nosupport", "--duration", " ", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
+	}
+	if strings.Contains(stderr.String(), "does not support --duration") {
+		t.Fatalf("stderr should not report whitespace duration as unsupported: %q", stderr.String())
+	}
+}
+
 // TestRun_HelpRendersSourceParameters: --help renders the per-source
 // static declarations in a "Source parameters:" section.
 func TestRun_HelpRendersSourceParameters(t *testing.T) {

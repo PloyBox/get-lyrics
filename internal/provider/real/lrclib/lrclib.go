@@ -6,7 +6,7 @@
 // non-empty:
 //
 //	GET /api/search?q=<song>            when only Song is set
-//	GET /api/get?track_name=...&artist_name=...
+//	GET /api/get?track_name=...&artist_name=...&album_name=...&duration=<secs>
 //	                                    when Song + Author are set
 //
 // Both endpoints return a single track (or first hit) with plainLyrics
@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,14 +50,14 @@ func New() *Adapter { return &Adapter{} }
 // Name returns the stable CLI identifier.
 func (a *Adapter) Name() string { return "lrclib" }
 
-// Capabilities reports which filters are honored for req. The album
-// filter only takes effect on the /api/get path (author present); a
-// search-only request drops it, so the fetch layer can warn the user
-// that --album is being ignored.
+// Capabilities reports which filters are honored for req. The album and
+// duration filters only take effect on the /api/get path (author
+// present); a search-only request drops them, so the fetch layer can
+// warn the user that --album/--duration are being ignored.
 func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
-	c := source.Capabilities{Filters: source.ParamAuthor | source.ParamAlbum}
+	c := source.Capabilities{Filters: source.ParamAuthor | source.ParamAlbum | source.ParamDuration}
 	if strings.TrimSpace(req.Author) == "" {
-		c.Filters &^= source.ParamAlbum
+		c.Filters &^= source.ParamAlbum | source.ParamDuration
 	}
 	return c
 }
@@ -179,7 +180,8 @@ func (a *Adapter) client() *http.Client {
 
 // buildQuery picks the query encoding that matches the chosen endpoint:
 //   - /api/search uses freeform q=
-//   - /api/get uses structured track_name + artist_name (+ album_name)
+//   - /api/get uses structured track_name + artist_name (+ album_name,
+//   - duration when provided)
 func buildQuery(req source.Request) string {
 	q := url.Values{}
 	if strings.TrimSpace(req.Author) == "" {
@@ -190,6 +192,9 @@ func buildQuery(req source.Request) string {
 	q.Set("artist_name", strings.TrimSpace(req.Author))
 	if a := strings.TrimSpace(req.Album); a != "" {
 		q.Set("album_name", a)
+	}
+	if req.Duration > 0 {
+		q.Set("duration", strconv.Itoa(req.Duration))
 	}
 	return q.Encode()
 }

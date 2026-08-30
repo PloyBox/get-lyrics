@@ -122,11 +122,11 @@ func validateCustomDecl(src source.Source, caps source.Capabilities) string {
 
 // checkRequired compares the non-empty optional fields in params against
 // caps and reports the first missing requirement: typed Required bits
-// first (author, album, iswc), then RequiredCustom names in declaration
-// order. missingParam is the first missing typed bit (0 when a custom
-// key is missing); missingCustom is the first missing custom key name
-// (empty when a typed bit is missing). The bool is true when anything is
-// missing.
+// first (author, album, iswc, duration), then RequiredCustom names in
+// declaration order. missingParam is the first missing typed bit (0 when
+// a custom key is missing); missingCustom is the first missing custom
+// key name (empty when a typed bit is missing). The bool is true when
+// anything is missing.
 func checkRequired(caps source.Capabilities, params Params) (missingParam source.Param, missingCustom string, need bool) {
 	if caps.Required&source.ParamAuthor != 0 && strings.TrimSpace(params.Author) == "" {
 		return source.ParamAuthor, "", true
@@ -136,6 +136,9 @@ func checkRequired(caps source.Capabilities, params Params) (missingParam source
 	}
 	if caps.Required&source.ParamISWC != 0 && strings.TrimSpace(params.ISWC) == "" {
 		return source.ParamISWC, "", true
+	}
+	if caps.Required&source.ParamDuration != 0 && params.Duration <= 0 {
+		return source.ParamDuration, "", true
 	}
 	for _, name := range caps.RequiredCustom {
 		if v, ok := params.Custom[name]; !ok || strings.TrimSpace(v) == "" {

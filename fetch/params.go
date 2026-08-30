@@ -20,6 +20,7 @@ type Params struct {
 	Author     string
 	Album      string
 	ISWC       string
+	Duration   int // whole seconds; 0 means not provided
 	SyncLevels []SyncLevel
 	Lenient    bool
 	// UserAgent is the HTTP User-Agent header to send on upstream
@@ -56,11 +57,12 @@ const (
 // detectUnsupported.
 func requestFromParams(params Params) source.Request {
 	return source.Request{
-		Song:   params.Song,
-		Author: params.Author,
-		Album:  params.Album,
-		ISWC:   params.ISWC,
-		Custom: params.Custom,
+		Song:     params.Song,
+		Author:   params.Author,
+		Album:    params.Album,
+		ISWC:     params.ISWC,
+		Duration: params.Duration,
+		Custom:   params.Custom,
 	}
 }
 

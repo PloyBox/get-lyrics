@@ -86,6 +86,9 @@ func TestParam_BitmaskComposition(t *testing.T) {
 	if combined&ParamISWC != 0 {
 		t.Fatalf("combined should not include ISWC")
 	}
+	if combined&ParamDuration != 0 {
+		t.Fatalf("combined should not include Duration")
+	}
 }
 
 func TestValidParamName(t *testing.T) {
