@@ -20,11 +20,12 @@ func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 
 func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
 
-// Fetch honors --sync-level in principle but never returns SyncedLyrics,
-// exercising the CLI's plain-output fallback warning.
+// Fetch honors --sync-level in principle but never returns synced
+// lyrics, exercising the CLI's plain-output fallback warning.
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	return source.Result{
 		Lyrics: "[mock-nosync] lyrics for: " + req.Song + "\n",
+		Level:  source.SyncNone,
 		Filled: source.FieldLyrics,
 	}, nil
 }

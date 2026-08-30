@@ -12,6 +12,7 @@ import (
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/require"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/success"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/synconly"
+	"github.com/PloyBox/get-lyrics/internal/provider/mock/word"
 	"github.com/PloyBox/get-lyrics/source"
 )
 
@@ -28,6 +29,7 @@ func RegisterAllMock(r *source.Registry) error {
 		synconly.New(),
 		mismatch.New(),
 		custom.New(),
+		word.New(),
 	}
 	for _, a := range adapters {
 		if err := r.Register(a); err != nil {

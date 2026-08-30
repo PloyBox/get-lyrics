@@ -26,7 +26,7 @@ func printUsage(w io.Writer, reg *source.Registry, decls map[string][]source.Par
 	fmt.Fprintln(&b, "  --duration <secs>, -d <secs>  Track duration (seconds or mm:ss)")
 	fmt.Fprintln(&b, "  --output <file>,  -o <file>  Write lyrics to file (default: stdout; refuses to overwrite an existing file)")
 	fmt.Fprintln(&b, "  --overwrite, -O               Overwrite an existing --output file")
-	fmt.Fprintln(&b, "  --sync-level <levels>, -S <levels> Sync levels (default: line,none)")
+	fmt.Fprintln(&b, "  --sync-level <levels>, -S <levels> Sync levels: line, word or none (default: line,none)")
 	fmt.Fprintf(&b, "  --user-agent <ua>, -u <ua>    User-Agent header for HTTP requests (default: %s)\n", defaultUserAgent())
 	fmt.Fprintln(&b, "  --env <key=value>, -e <key=value> Custom source parameter (repeatable; key must match ^[A-Z][A-Z0-9_]*$)")
 	fmt.Fprintln(&b, "  --lenient, -l               Skip invalid sources instead of failing")

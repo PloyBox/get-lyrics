@@ -19,7 +19,9 @@
 // for the track and fetches lyrics/subtitles by commontrack id. Subtitle
 // endpoints require the paid Scale plan; on cheaper plans they return
 // 402/403, which the adapter treats as "no synced lyrics" and falls back
-// to the plain track (the fetch layer reports the downgrade).
+// to the plain track (the fetch layer reports the downgrade). A synced
+// request returns exactly one lyrics track — the subtitle when it is
+// available, else the plain lyrics.
 package musixmatch
 
 import (
@@ -128,17 +130,21 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	case strings.TrimSpace(req.Author) != "":
 		if req.SyncLevel == source.SyncLine {
 			if sub, err := a.fetchMatcherSubtitle(ctx, apiKey, ua, req); err == nil {
-				res.SyncedLyrics = sub
-				res.Filled |= source.FieldSyncedLyrics
+				res.Lyrics = sub
+				res.Level = source.SyncLine
+				res.Filled |= source.FieldLyrics
 			}
 		}
-		lyrics, err := a.fetchMatcherLyrics(ctx, apiKey, ua, req)
-		if err != nil && !errors.Is(err, errNotFound) {
-			return source.Result{}, err
-		}
-		if lyrics != "" {
-			res.Lyrics = lyrics
-			res.Filled |= source.FieldLyrics
+		if res.Filled&source.FieldLyrics == 0 {
+			lyrics, err := a.fetchMatcherLyrics(ctx, apiKey, ua, req)
+			if err != nil && !errors.Is(err, errNotFound) {
+				return source.Result{}, err
+			}
+			if lyrics != "" {
+				res.Lyrics = lyrics
+				res.Level = source.SyncNone
+				res.Filled |= source.FieldLyrics
+			}
 		}
 	default:
 		track, err := a.searchTrack(ctx, apiKey, ua, req.Song)
@@ -151,7 +157,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		}
 	}
 
-	if res.Filled&(source.FieldLyrics|source.FieldSyncedLyrics) == 0 {
+	if res.Filled&source.FieldLyrics == 0 {
 		return source.Result{}, fmt.Errorf("musixmatch: no usable lyrics for %q", req.Song)
 	}
 	return res, nil
@@ -159,7 +165,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 
 // fetchByTrack fills the result with the resolved track's metadata and,
 // by commontrack id, its subtitle (when a synced track is requested)
-// and plain lyrics. Shared by the ISRC (track.get) and title-search
+// or plain lyrics. Shared by the ISRC (track.get) and title-search
 // (track.search) resolution paths.
 func (a *Adapter) fetchByTrack(ctx context.Context, apiKey, ua string, req source.Request, track musixmatchTrack) (source.Result, error) {
 	var res source.Result
@@ -178,17 +184,19 @@ func (a *Adapter) fetchByTrack(ctx context.Context, apiKey, ua string, req sourc
 
 	if req.SyncLevel == source.SyncLine && track.CommontrackID != 0 {
 		if sub, err := a.fetchTrackSubtitle(ctx, apiKey, ua, track.CommontrackID); err == nil {
-			res.SyncedLyrics = sub
-			res.Filled |= source.FieldSyncedLyrics
+			res.Lyrics = sub
+			res.Level = source.SyncLine
+			res.Filled |= source.FieldLyrics
 		}
 	}
-	if track.CommontrackID != 0 {
+	if res.Filled&source.FieldLyrics == 0 && track.CommontrackID != 0 {
 		lyrics, err := a.fetchTrackLyrics(ctx, apiKey, ua, track.CommontrackID)
 		if err != nil && !errors.Is(err, errNotFound) {
 			return source.Result{}, err
 		}
 		if lyrics != "" {
 			res.Lyrics = lyrics
+			res.Level = source.SyncNone
 			res.Filled |= source.FieldLyrics
 		}
 	}

@@ -114,7 +114,7 @@ get-lyrics --help
 | `--duration` | `-d` | Track duration filter (seconds or mm:ss) |
 | `--output` | `-o` | Write lyrics to file (default: stdout; refuses to overwrite an existing file) |
 | `--overwrite` | `-O` | Overwrite an existing `--output` file |
-| `--sync-level` | `-S` | Comma-separated sync levels (default: `line,none`; `line` enables LRC). User-given order is the priority |
+| `--sync-level` | `-S` | Comma-separated sync levels (default: `line,none`; `line` enables LRC, `word` syllable-level TTML). User-given order is the priority |
 | `--user-agent` | `-u` | HTTP `User-Agent` header sent to sources (default: `get-lyrics/<ver> (+https://github.com/PloyBox/get-lyrics)`) |
 | `--env` | `-e` | Custom source parameter `key=value` (repeatable; key must match `^[A-Z][A-Z0-9_]*$`) |
 | `--lenient` | `-l` | Skip invalid sources instead of failing fast (precheck only) |
@@ -154,7 +154,7 @@ Rules:
 
 ## Built-in Sources
 
-Legend: `Y` = supported, `N` = not supported, `F` = required (must be given). Sync level lists the supported levels in the form `line,none`.
+Legend: `Y` = supported, `N` = not supported, `F` = required (must be given). Sync level lists the supported levels in the form `line,word,none`.
 
 | Source | Author | Album | ISRC | Duration | Sync level | Notes |
 |--------|--------|-------|------|----------|-----------|-------|
@@ -162,16 +162,18 @@ Legend: `Y` = supported, `N` = not supported, `F` = required (must be given). Sy
 | `lyricsovh` | F | N | N | N | none | Uses [api.lyrics.ovh](https://api.lyrics.ovh); plain text only |
 | `lrccx` | Y | Y | N | N | line,none | Searches [lrc.cx](https://lrc.cx) via its legacy `/jsonapi` endpoint; the response is always LRC-flavoured text, stripped of timestamps for plain output |
 | `musixmatch` | Y[^2] | N | Y | N | line[^3],none | [Musixmatch](https://developer.musixmatch.com) via `track.get` (with `--isrc`), `matcher.lyrics.get`/`matcher.subtitle.get` (with `--author`) or `track.search` → `track.lyrics.get`/`track.subtitle.get` (title only). Requires the `MUSIXMATCH_API_KEY` custom parameter |
+| `betterlyrics` | F | Y | N | Y | word,line,none | [Better Lyrics API](https://lyrics-api.boidu.dev) via `/ttml/getLyrics` (word-level TTML) or `/kugou/getLyrics` (line-level LRC). Cache-first: uncached songs may 401/429[^4] |
 
 [^1]: The Album and Duration filters only take effect with `--author`; without an author, each is dropped with an unsupported warning.
 [^2]: The Author filter does not apply together with `--isrc`; the ISRC alone resolves the track and `--author` is dropped with an unsupported warning.
 [^3]: Synced LRC (`line`) needs the paid Scale plan; on cheaper plans a `--sync-level line` request falls back to plain lyrics with a `warning[downgraded]`.
+[^4]: The API issues no API keys right now: cached songs need none, but a cache miss can return 401 (key required) or 429 (rate limited). Such songs surface as `warning[fetch]` and fall through to the next source.
 
 `musixmatch` is the only built-in source that declares a custom `--env` parameter: `MUSIXMATCH_API_KEY` (required, fallback to the `MUSIXMATCH_API_KEY` environment variable). Get a free Basic key at <https://developer.musixmatch.com>.
 
 ## Add a New Source
 
-Backends are pluggable via the `source.Source` interface. Use an existing adapter as a template, such as `internal/provider/real/lrclib/` — it covers the full surface (filters, required params, plain + synced output):
+Backends are pluggable via the `source.Source` interface. Use an existing adapter as a template, such as `internal/provider/real/lrclib/` — it covers the full surface (filters, required params, single-track output at every sync level):
 
 1. Create `internal/provider/real/<name>/` implementing `source.Source` (`Name` / `Capabilities` / `Fetch` / `CustomParams`), modeled on the template.
 2. Modify it to fit your needs — endpoint, filters, required params, output behavior.

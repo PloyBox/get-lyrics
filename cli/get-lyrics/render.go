@@ -40,8 +40,15 @@ func renderWarning(w fetch.Warning) string {
 	case fetch.UnsupportedParam:
 		return fmt.Sprintf(`warning[unsupported]: source "%s" does not support %s`, w.Source, flagFor(w.Param, w.ParamName))
 	case fetch.Downgraded:
-		msg := "returned no synced lyrics"
-		if w.Want == fetch.SyncNone {
+		// Exhaustive over the three requestable levels: each names the
+		// direction the source failed to satisfy.
+		var msg string
+		switch w.Want {
+		case fetch.SyncLine:
+			msg = "returned no synced lyrics"
+		case fetch.SyncWord:
+			msg = "returned no word-synced lyrics"
+		case fetch.SyncNone:
 			msg = "returned only synced lyrics"
 		}
 		return fmt.Sprintf(`warning[downgraded]: source "%s" %s`, w.Source, msg)

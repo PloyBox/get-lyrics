@@ -16,12 +16,12 @@ get-lyrics/
 ├── cli/
 │   └── get-lyrics/             # command package (package main): run.go entrypoint, flags/env/usage/output, loadmock.go (test tag), tests
 ├── source/                     # Source interface, Request/Result, Param/ResultField bitmasks, ParamSpec, Registry
-├── fetch/                      # Fetch(ctx, params): precheck (incl. gate 2), failover, synced-vs-plain resolution, CustomParamsFor
+├── fetch/                      # Fetch(ctx, params): precheck (incl. gate 2), failover, sync-level resolution, CustomParamsFor
 ├── bootstrap/                  # bootstrap.go: registers real sources; bootstrap_mock.go (test tag): mocks
 └── internal/
     └── provider/               # concrete adapters implementing source.Source
-        ├── mock/               # mock-* test-only adapters (success/require/nosupport/fail/lrc/nosync/mismatch/custom)
-        └── real/               # lrclib, lyricsovh, lrccx, musixmatch adapters
+        ├── mock/               # mock-* test-only adapters (success/require/nosupport/fail/lrc/nosync/synconly/mismatch/custom/word)
+        └── real/               # lrclib, lyricsovh, lrccx, musixmatch, betterlyrics adapters
 ```
 
 ## Build & Test
@@ -39,7 +39,7 @@ get-lyrics/
   - `--author`/`-a`, `--album`/`-A`, `--isrc`/`-i` — filters.
   - `--duration`/`-d` — track duration filter, whole seconds (`225`) or `mm:ss` (`3:45`); normalized to int seconds at parse time, 0 = not provided. Any other value is a usage error (exit 2).
   - `--output`/`-o` — write lyrics to this file instead of stdout. **Refuses to overwrite** an existing file (exit 7) unless `--overwrite`/`-O` is given.
-  - `--sync-level`/`-S` — comma-separated `line`/`none` levels; user-given order is the priority (first match wins). Default `line,none`. Any other value is a usage error (exit 2).
+  - `--sync-level`/`-S` — comma-separated `line`/`word`/`none` levels; user-given order is the priority (first match wins). Default `line,none`. Any other value is a usage error (exit 2).
   - `--user-agent`/`-u` — HTTP `User-Agent` header sent to sources. Default `get-lyrics/<ver> (+https://github.com/PloyBox/get-lyrics)` (`<ver>` is the version stamped at build time). The built-in sources carry no default of their own — they trust whatever UA they are handed; a non-empty value replaces the CLI default on every upstream request.
   - `--env`/`-e` — repeatable custom source parameter `key=value` (open-ended; keys are source-declared). Key must match `^[A-Z][A-Z0-9_]*$`; value non-empty after trimming; duplicate keys rejected — any violation is a usage error (exit 2).
   - `--lenient`/`-l` — skip invalid sources with `warning[precheck]` instead of failing fast.
@@ -65,7 +65,7 @@ Thin CLI layer over a pluggable-source abstraction:
 
 1. **Registration** — `cli/get-lyrics/run.go` runs `bootstrap.RegisterAll(r)` once at package-init time, before `main()`; test builds additionally register `mock-*` sources via `init()` in `cli/get-lyrics/loadmock.go`.
    - `Registry.Register` is **gate 1**: a source's static `CustomParams()` list must contain only legal (`^[A-Z][A-Z0-9_]*$`), distinct keys — a violation returns `ErrInvalidParamName` and panics at startup (adapter init failure is a programmer error).
-2. **Parse** — required positional `<song>` plus flags via `flag.NewFlagSet`; `--sync-level` (`line`/`none` → `[]fetch.SyncLevel`), `--env` values, and `--duration` (seconds or `mm:ss` → int seconds) parsed and validated at parse time (violations are usage errors, exit 2).
+2. **Parse** — required positional `<song>` plus flags via `flag.NewFlagSet`; `--sync-level` (`line`/`word`/`none` → `[]fetch.SyncLevel`), `--env` values, and `--duration` (seconds or `mm:ss` → int seconds) parsed and validated at parse time (violations are usage errors, exit 2).
 3. **Env fallback** — before the fetch, `main` calls `svc.CustomParamsFor(params)` (strict: unknown source → exit 3, duplicate → exit 8, reported before the fetch; lenient: problem sources silently skipped) and fills every declared key the user did not pass via `-e` from the process environment (`-e` > env > missing; an empty env var counts as missing). Injected keys behave exactly like user-passed ones.
 4. **Fetch** (`fetch.New(registry).Fetch(ctx, params)`) — two-level loop: outer over `params.SyncLevels` (priority order), inner over sources (failover); a per-call result cache dedupes by source+SyncLevel.
    - **Precheck** — first a request-level check: `SyncUnknown` in `params.SyncLevels` → `InvalidSyncLevelError` (a caller bug; rejected before any per-source validation including gate 2, in BOTH modes — never downgraded to a warning). Then, per source: duplicate source → exit 8, unknown name → exit 3, missing required param (typed first, then `RequiredCustom` in declaration order) → exit 6 (`--lenient` downgrades these to `warning[precheck]` + skip).
@@ -73,19 +73,19 @@ Thin CLI layer over a pluggable-source abstraction:
    - **Abort warnings** — strict precheck errors return the warnings accumulated before the abort, so `main` can print them before the error.
    - **Adapter errors** — `warning[fetch]`, next source (a fetch-time `RequiredParamMismatchError` → `warning[precheck-mismatch]` carrying the error as `Err`, next source).
    - **Result trust policy** — a result whose `Filled` mask disagrees with its contents (declared-but-empty or filled-but-undeclared) → `warning[result]`, result still used as-is (trust policy).
-   - **Downgrade** — symmetric in both directions: a synced request yielding plain lyrics → `warning[downgraded]` ("returned no synced lyrics"); a plain request yielding only synced lyrics → the same warning ("returned only synced lyrics"). In both cases the unmatched result stays cached and can satisfy a later iteration (`none` after `line`, or `line` after `none`).
+   - **Downgrade** — symmetric across the three levels: a line/word request yielding plain lyrics → `warning[downgraded]` ("returned no synced lyrics" / "returned no word-synced lyrics"); a plain request yielding only synced lyrics → the same warning ("returned only synced lyrics"). In all cases the unmatched result stays cached and can satisfy a later iteration (`none` after `line`/`word`, or `line` after `none`).
 5. **Output** — opened before the fetch (`O_CREATE|O_EXCL` for new files, `O_WRONLY` without `O_TRUNC` otherwise); on any failure a freshly created file is removed (guarded by a same-inode check). Truncate+Seek happen only after a successful fetch, so existing files keep their content on every failure path (exit 3/4/6/7/8).
 6. **Warnings** — structured data produced by the fetch layer; the CLI (`cli/get-lyrics/render.go`) renders every byte of display text, including the `[kind]` tag. Warnings never change the exit code. Every error path in `main` prints the rendered warnings before the `error[...]` line.
 
 **Key types (`source/source.go`):**
 
 - `Param` bitmask — `ParamAuthor | ParamAlbum | ParamISRC | ParamDuration`.
-- `ResultField` bitmask — `FieldLyrics | FieldSyncedLyrics | FieldTitle | FieldArtist | FieldAlbum | FieldISRC | FieldSubSource`.
+- `ResultField` bitmask — `FieldLyrics | FieldTitle | FieldArtist | FieldAlbum | FieldISRC | FieldSubSource`.
 - `ParamNamePattern` (`^[A-Z][A-Z0-9_]*$`) + `ValidParamName`.
 - `ParamSpec` — `Name` + `Description`; required-ness is decided per request, never statically.
 - `Capabilities` — `Filters` + `Required` typed bitmasks + `Custom []ParamSpec` + `RequiredCustom []string` for this request.
 - `Request` — now carries `Custom map[string]string`.
-- `Result` — its `Filled` mask declares which fields the adapter actually populated (unset fields are treated as empty by the fetch layer); its `SubSource` field + `FieldSubSource` bit are for aggregate sub-source identification — standalone adapters leave both empty.
+- `Result` — its `Filled` mask declares which fields the adapter actually populated (unset fields are treated as empty by the fetch layer); `Lyrics` is the single lyrics payload — plain, LRC or TTML — with `Level` (`SyncNone`/`SyncLine`/`SyncWord`) declaring which; its `SubSource` field + `FieldSubSource` bit are for aggregate sub-source identification — standalone adapters leave both empty.
 - `Source` interface — `Name`/`Capabilities`/`CustomParams`/`Fetch`; `CustomParams()` returns the static, request-independent list for `--help` rendering and env fallback.
 - `Registry` — concurrency-safe name→source map; gate 1 validation in `Register`.
 - `ErrInvalidParamName` — gate 1, carries source + key, `Duplicate` flag.
@@ -96,7 +96,7 @@ Adapters declare required typed params via `Capabilities(req).Required` and requ
 **Key types (`fetch/fetch.go`):**
 
 - `Params` — now carries `Custom map[string]string`.
-- `Result` — `Source` = adapter name, `SubSource` = aggregate sub-source, `Level` = SyncLevel of the lyrics (`SyncUnknown`/`SyncNone`/`SyncLine`).
+- `Result` — `Source` = adapter name, `SubSource` = aggregate sub-source, `Level` = SyncLevel of the lyrics (`SyncUnknown`/`SyncNone`/`SyncLine`/`SyncWord`).
 - `Warning` — structured data only (the CLI renders all display text): kinds `UnsupportedParam`/`Downgraded`/`PreCheck`/`PrecheckMismatch`/`FetchFailed`/`ResultMismatch`; `ParamName` for custom keys — `Param` stays 0 for them; plus `Want` (Downgraded direction), `Field`+`Declared` (ResultMismatch), `Err` (underlying cause).
 - `NoResultError` — exit 4.
 - `InvalidSyncLevelError` — precheck rejects `SyncUnknown` in `Params.SyncLevels` (a caller bug; request-level check before per-source validation, not downgraded by `--lenient`).
@@ -109,10 +109,11 @@ Unsupported custom keys produce per-source `warning[unsupported]` in map iterati
 
 ### Built-in sources
 
-- **`lrclib`** — `https://lrclib.net`; `/api/get` when `--author` is given, else `/api/search`. Filters: Author, Album, Duration — the album and duration filters only take effect with `--author` (otherwise each is dropped with an unsupported warning). Duration (int seconds) is passed as `duration=<secs>` on `/api/get`; 0 means not provided. Synced LRC output when requested; a synced-only hit leaves `Lyrics` unfilled so the fetch layer outputs the synced track. 10s per-request timeout.
+- **`lrclib`** — `https://lrclib.net`; `/api/get` when `--author` is given, else `/api/search`. Filters: Author, Album, Duration — the album and duration filters only take effect with `--author` (otherwise each is dropped with an unsupported warning). Duration (int seconds) is passed as `duration=<secs>` on `/api/get`; 0 means not provided. A synced request returns the LRC track when the hit carries one, else the plain track (fetch layer warns `downgraded`). 10s per-request timeout.
 - **`lyricsovh`** — `https://api.lyrics.ovh/v1/{artist}/{title}`. Filter: Author, and **requires** it. Surfaces the API's 404 as not-found. 10s timeout.
-- **`lrccx`** — `https://api.lrc.cx/jsonapi`. Filters: Author, Album (independent of each other). Always LRC-flavoured text: plain lyrics strip `[mm:ss]`/marker tags; synced lyrics only when the text has timestamped lines. 10s timeout.
+- **`lrccx`** — `https://api.lrc.cx/jsonapi`. Filters: Author, Album (independent of each other). Always LRC-flavoured text: a synced request keeps the raw text only when it has timestamped lines, otherwise — and for plain requests — it is stripped of `[mm:ss]`/marker tags. 10s timeout.
 - **`musixmatch`** — `https://api.musixmatch.com/ws/1.1`. Requires the custom `--env` key `MUSIXMATCH_API_KEY` (RequiredCustom). Filters: ISRC, Author — with `--isrc`: `track.get` → `track.lyrics.get` / `track.subtitle.get` by commontrack id (author dropped with `warning[unsupported]`: `track.get` takes no artist); with `--author`: `matcher.lyrics.get` / `matcher.subtitle.get`; title-only: `track.search` → `track.lyrics.get` / `track.subtitle.get` by commontrack id. Subtitle endpoints need the paid Scale plan — on Basic they 402/403, which the adapter treats as "no synced" and falls back to plain (fetch layer warns `downgraded`). Album/Duration unsupported (no album/duration parameter). Instrumental `"...."` and the `*******` usage trailer are stripped. 10s timeout.
+- **`betterlyrics`** — `https://lyrics-api.boidu.dev`. Filter: Author (**requires** it), plus Album, Duration. Word requests hit `/ttml/getLyrics` and return the raw TTML document verbatim (`Level = SyncWord`); line/plain requests hit `/kugou/getLyrics` — a line request keeps timestamped lines (`SyncLine`), otherwise the text is stripped to plain (`SyncNone`). No custom params (the API issues no keys); 401/429 on uncached songs surface as adapter errors and fail over. 10s timeout.
 
 Adding a built-in source: create `internal/provider/real/<name>/`, then add an import and `r.Register(<name>.New())` in `bootstrap/bootstrap.go`. No CLI-layer changes required.
 
@@ -126,14 +127,15 @@ Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (neve
 - `mock-fail` — exit 4.
 - `mock-lrc` — synced path.
 - `mock-nosync` — downgrade path.
-- `mock-synconly` — synced-only path (never fills plain `Lyrics`).
+- `mock-synconly` — synced-only path (never fills plain `Lyrics`, always `Level = SyncLine`).
 - `mock-mismatch` — precheck-vs-requirement mismatch path.
 - `mock-custom` — custom `--env` params: `LANG` always recognized+required, `COUNTRY` conditional on `LANG`.
+- `mock-word` — word-level path: TTML lyrics on a `word` request, plain otherwise.
 
 ## Testing
 
 - Tests live alongside code as `*_test.go`; the `cli/get-lyrics` `*_test.go` files drive `Run(argv, stdout, stderr)` with buffers and assert exit code, stdout, and stderr independently.
-- **Real sources are NOT covered by automated tests** — `lrclib`/`lyricsovh`/`lrccx`/`musixmatch` are exercised manually against their live endpoints. Only the mocks and the CLI/fetch layers are under test.
+- **Real sources are NOT covered by automated tests** — `lrclib`/`lyricsovh`/`lrccx`/`musixmatch`/`betterlyrics` are exercised manually against their live endpoints. Only the mocks and the CLI/fetch layers are under test.
 - CI (`.github/workflows/simple_ci_cd.yml`) is **release-only** — on `v*` tag pushes it:
   - runs `go test -tags test` + `go vet -tags test`;
   - cross-compiles for `linux/amd64`, `linux/arm64`, `darwin/arm64`, `windows/amd64`, `windows/arm64` (`CGO_ENABLED=0`, `-trimpath`, version ldflag);
@@ -157,6 +159,7 @@ Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (neve
   - return the static custom-parameter list from `CustomParams()` — legal `^[A-Z][A-Z0-9_]*$`, distinct keys; sources without custom params return nil;
   - respect `ctx`;
   - set `Result.Filled` to declare exactly which result fields were populated (the fetch layer reads only declared fields and warns on mismatches);
+  - produce exactly one lyrics track per `Fetch` and declare `Result.Level` to match the payload the upstream actually returned (`SyncNone`/`SyncLine`/`SyncWord`) — the fetch layer matches results to the request by it;
   - fill `Result` metadata (Title/Artist/Album/ISRC) only from fields the upstream response actually returned — never echo `Request` values back; a field the server did not return stays unset with its `Filled` bit clear;
   - leave `source.Result.SubSource` empty with the `FieldSubSource` bit unset (aggregate sub-source only);
   - never panic on missing `Song`.

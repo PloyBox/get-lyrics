@@ -8,12 +8,13 @@ import (
 
 // Params bundles all CLI inputs the fetch layer needs. Source is the
 // ordered list of source names to try (failover order). SyncLevels is
-// the ordered list of requested sync levels (SyncLine → synced,
-// SyncNone → plain) — the CLI parses the --sync-level level names into
-// it; the first match wins. SyncUnknown is not a legal request value;
-// precheck rejects it with InvalidSyncLevelError. Lenient controls the
-// precheck stage only: when false, the first precheck problem aborts; when true,
-// problem sources are skipped with a PreCheck warning.
+// the ordered list of requested sync levels (SyncLine → LRC-synced,
+// SyncWord → word-synced, SyncNone → plain) — the CLI parses the
+// --sync-level level names into it; the first match wins. SyncUnknown
+// is not a legal request value; precheck rejects it with
+// InvalidSyncLevelError. Lenient controls the precheck stage only: when
+// false, the first precheck problem aborts; when true, problem sources
+// are skipped with a PreCheck warning.
 type Params struct {
 	Song       string
 	Source     []string
@@ -39,13 +40,15 @@ type Params struct {
 type SyncLevel uint8
 
 const (
-	// SyncUnknown: unknown / no valid lyrics content (neither lyrics
-	// track was populated).
+	// SyncUnknown: unknown / no valid lyrics content (the result
+	// carries no populated lyrics track).
 	SyncUnknown SyncLevel = iota
 	// SyncNone: plain (non-timestamped) lyrics.
 	SyncNone
 	// SyncLine: synced (LRC timestamped) lyrics.
 	SyncLine
+	// SyncWord: word-level (TTML timeline) lyrics.
+	SyncWord
 )
 
 // requestFromParams projects the CLI params onto a source.Request for
@@ -75,6 +78,8 @@ func sourceSyncLevel(want SyncLevel) source.SyncLevel {
 		return source.SyncNone
 	case SyncLine:
 		return source.SyncLine
+	case SyncWord:
+		return source.SyncWord
 	}
 	panic(fmt.Sprintf("fetch: invalid sync level %d (precheck must reject SyncUnknown)", want))
 }

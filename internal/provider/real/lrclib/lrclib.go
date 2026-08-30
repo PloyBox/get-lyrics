@@ -10,8 +10,10 @@
 //	                                    when Song + Author are set
 //
 // Both endpoints return a single track (or first hit) with plainLyrics
-// and syncedLyrics (LRC) fields. Synced output is produced when
-// Request.SyncLevel is SyncLine.
+// and syncedLyrics (LRC) fields. A synced request (Request.SyncLevel is
+// SyncLine) returns the LRC track when the hit carries one; any other
+// request returns the plain track — exactly one lyrics track per Fetch,
+// with Result.Level declaring which.
 package lrclib
 
 import (
@@ -65,7 +67,7 @@ func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
 
 // Fetch calls lrclib /api/search, picks the best candidate, and
-// populates plain/synced lyrics accordingly.
+// populates the lyrics track matching the requested sync level.
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	if strings.TrimSpace(req.Song) == "" {
 		return source.Result{}, errors.New("lrclib: song title is required")
@@ -139,7 +141,6 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		Title:  hit.TrackName,
 		Artist: hit.ArtistName,
 		Album:  hit.AlbumName,
-		Lyrics: hit.PlainLyrics,
 	}
 	if strings.TrimSpace(res.Title) != "" {
 		res.Filled |= source.FieldTitle
@@ -150,14 +151,19 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	if strings.TrimSpace(res.Album) != "" {
 		res.Filled |= source.FieldAlbum
 	}
-	if strings.TrimSpace(res.Lyrics) != "" {
+	// A synced request takes the LRC track when available; otherwise
+	// the plain track. The adapter produces exactly one lyrics track
+	// per Fetch, so the request level decides which one.
+	if req.SyncLevel == source.SyncLine && strings.TrimSpace(hit.SyncedLyrics) != "" {
+		res.Lyrics = hit.SyncedLyrics
+		res.Level = source.SyncLine
+		res.Filled |= source.FieldLyrics
+	} else if strings.TrimSpace(hit.PlainLyrics) != "" {
+		res.Lyrics = hit.PlainLyrics
+		res.Level = source.SyncNone
 		res.Filled |= source.FieldLyrics
 	}
-	if req.SyncLevel == source.SyncLine && strings.TrimSpace(hit.SyncedLyrics) != "" {
-		res.SyncedLyrics = hit.SyncedLyrics
-		res.Filled |= source.FieldSyncedLyrics
-	}
-	if res.Filled&(source.FieldLyrics|source.FieldSyncedLyrics) == 0 {
+	if res.Filled&source.FieldLyrics == 0 {
 		return source.Result{}, fmt.Errorf("lrclib: no usable lyrics for %q", req.Song)
 	}
 	return res, nil

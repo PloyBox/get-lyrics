@@ -49,6 +49,11 @@ func TestRenderWarning(t *testing.T) {
 			`warning[downgraded]: source "x" returned no synced lyrics`,
 		},
 		{
+			"downgraded no word-synced",
+			fetch.Warning{Kind: fetch.Downgraded, Source: "x", Want: fetch.SyncWord},
+			`warning[downgraded]: source "x" returned no word-synced lyrics`,
+		},
+		{
 			"downgraded only synced",
 			fetch.Warning{Kind: fetch.Downgraded, Source: "x", Want: fetch.SyncNone},
 			`warning[downgraded]: source "x" returned only synced lyrics`,

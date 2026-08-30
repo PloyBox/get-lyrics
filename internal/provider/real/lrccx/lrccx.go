@@ -12,12 +12,13 @@
 // named "lrc" (not "lyrics" as the legacy docs claim) and may be null
 // for instrumental/missing entries.
 //
-// Because the API only ever returns LRC-flavoured text, synced output
-// is honored: plain Lyrics are produced by stripping [mm:ss] timestamps
-// and section tags ([Verse], [!text], ...), while SyncedLyrics carries
-// the raw response text — but only when it actually contains timestamped
-// lines. Unsynced [!text] entries therefore fall back to plain lyrics,
-// matching the mock-nosync semantics at the CLI layer.
+// Because the API only ever returns LRC-flavoured text, a synced
+// request returns the raw response text — but only when it actually
+// contains timestamped lines; otherwise (and for plain requests) the
+// text is stripped of [mm:ss] timestamps and section tags ([Verse],
+// [!text], ...) to produce plain lyrics. Unsynced [!text] entries
+// therefore fall back to plain lyrics, matching the mock-nosync
+// semantics at the CLI layer.
 package lrccx
 
 import (
@@ -77,7 +78,8 @@ func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
 
 // Fetch queries lrc.cx /jsonapi, picks the best-ranked hit with usable
-// lyrics, and populates plain/synced tracks from the LRC text.
+// lyrics, and populates the lyrics track matching the requested sync
+// level from the LRC text.
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	if strings.TrimSpace(req.Song) == "" {
 		return source.Result{}, errors.New("lrccx: song title is required")
@@ -138,7 +140,6 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	res := source.Result{
 		Title:  hit.Title,
 		Artist: hit.Artist,
-		Lyrics: stripLRC(raw),
 	}
 	if strings.TrimSpace(res.Title) != "" {
 		res.Filled |= source.FieldTitle
@@ -146,14 +147,20 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	if strings.TrimSpace(res.Artist) != "" {
 		res.Filled |= source.FieldArtist
 	}
-	if strings.TrimSpace(res.Lyrics) != "" {
+	// A synced request returns the raw LRC text only when it actually
+	// contains timestamped lines; otherwise — and for plain requests —
+	// the text is stripped of timestamps and section tags. Exactly one
+	// lyrics track per Fetch.
+	if req.SyncLevel == source.SyncLine && hasTimestampLines(raw) {
+		res.Lyrics = raw
+		res.Level = source.SyncLine
+		res.Filled |= source.FieldLyrics
+	} else if plain := stripLRC(raw); plain != "" {
+		res.Lyrics = plain
+		res.Level = source.SyncNone
 		res.Filled |= source.FieldLyrics
 	}
-	if req.SyncLevel == source.SyncLine && hasTimestampLines(raw) {
-		res.SyncedLyrics = raw
-		res.Filled |= source.FieldSyncedLyrics
-	}
-	if res.Filled&(source.FieldLyrics|source.FieldSyncedLyrics) == 0 {
+	if res.Filled&source.FieldLyrics == 0 {
 		return source.Result{}, fmt.Errorf("lrccx: no usable lyrics for %q", req.Song)
 	}
 	return res, nil

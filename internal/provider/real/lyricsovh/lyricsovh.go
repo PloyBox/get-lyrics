@@ -115,6 +115,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 
 	return source.Result{
 		Lyrics: out.Lyrics,
+		Level:  source.SyncNone,
 		Filled: source.FieldLyrics,
 	}, nil
 }

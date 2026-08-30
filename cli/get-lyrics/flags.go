@@ -51,8 +51,8 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	fs.StringVar(&f.output, "output", "", "output file path")
 	fs.StringVar(&f.output, "o", "", "output file path (short)")
 	var syncLevel string
-	fs.StringVar(&syncLevel, "sync-level", "line,none", "synced (line) or plain (none) lyrics")
-	fs.StringVar(&syncLevel, "S", "line,none", "synced (line) or plain (none) lyrics (short)")
+	fs.StringVar(&syncLevel, "sync-level", "line,none", "synced (line/word) or plain (none) lyrics")
+	fs.StringVar(&syncLevel, "S", "line,none", "synced (line/word) or plain (none) lyrics (short)")
 	fs.StringVar(&f.userAgent, "user-agent", defaultUserAgent(), "User-Agent header for HTTP requests")
 	fs.StringVar(&f.userAgent, "u", defaultUserAgent(), "User-Agent header for HTTP requests (short)")
 	fs.BoolVar(&f.lenient, "lenient", false, "skip invalid sources instead of failing")
@@ -94,8 +94,9 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 
 // parseSyncLevels converts a comma-separated --sync-level value into
 // the ordered SyncLevels the fetch layer consumes: "line" → SyncLine,
-// "none" → SyncNone. Whitespace around entries is trimmed and empty
-// entries are dropped; any other value is a usage error (exit 2).
+// "word" → SyncWord, "none" → SyncNone. Whitespace around entries is
+// trimmed and empty entries are dropped; any other value is a usage
+// error (exit 2).
 func parseSyncLevels(s string) ([]fetch.SyncLevel, error) {
 	parts := strings.Split(s, ",")
 	out := make([]fetch.SyncLevel, 0, len(parts))
@@ -106,10 +107,12 @@ func parseSyncLevels(s string) ([]fetch.SyncLevel, error) {
 			continue
 		case "line":
 			out = append(out, fetch.SyncLine)
+		case "word":
+			out = append(out, fetch.SyncWord)
 		case "none":
 			out = append(out, fetch.SyncNone)
 		default:
-			return nil, fmt.Errorf("invalid sync level value %q (want \"line\" or \"none\")", p)
+			return nil, fmt.Errorf("invalid sync level value %q (want \"line\", \"word\" or \"none\")", p)
 		}
 	}
 	return out, nil

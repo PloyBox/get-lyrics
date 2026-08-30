@@ -44,7 +44,8 @@ type Warning struct {
 	Param     source.Param // typed parameter involved; 0 for a custom key or no parameter
 	ParamName string       // custom parameter key involved; empty for typed parameters
 	// Want is the sync level requested by the iteration that produced a
-	// Downgraded warning: SyncLine means the source returned no synced
+	// Downgraded warning: SyncLine means the source returned no
+	// LRC-synced lyrics, SyncWord means it returned no word-synced
 	// lyrics, SyncNone means it returned only synced lyrics. Zero for
 	// every other kind.
 	Want SyncLevel
@@ -134,7 +135,6 @@ type resultFieldSpec struct {
 
 var resultFieldSpecs = []resultFieldSpec{
 	{source.FieldLyrics, func(r source.Result) string { return r.Lyrics }},
-	{source.FieldSyncedLyrics, func(r source.Result) string { return r.SyncedLyrics }},
 	{source.FieldTitle, func(r source.Result) string { return r.Title }},
 	{source.FieldArtist, func(r source.Result) string { return r.Artist }},
 	{source.FieldAlbum, func(r source.Result) string { return r.Album }},

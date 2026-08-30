@@ -13,16 +13,18 @@ func TestFetch_AllParamsSupportedEmitsNoWarnings(t *testing.T) {
 		name: "full",
 		caps: source.Capabilities{Filters: source.ParamAuthor | source.ParamAlbum | source.ParamISRC},
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
-			res := source.Result{
-				Lyrics: "x",
+			text := "x"
+			level := source.SyncNone
+			if r.SyncLevel == source.SyncLine {
+				text = "[00:00.00] x"
+				level = source.SyncLine
+			}
+			return source.Result{
+				Lyrics: text,
+				Level:  level,
 				Title:  r.Song,
 				Filled: source.FieldLyrics | source.FieldTitle,
-			}
-			if r.SyncLevel == source.SyncLine {
-				res.SyncedLyrics = "[00:00.00] x"
-				res.Filled |= source.FieldSyncedLyrics
-			}
-			return res, nil
+			}, nil
 		},
 	}
 	r := newRegistry(t, full)
@@ -76,13 +78,13 @@ func TestFetch_ResultUsesOnlyDeclaredFields(t *testing.T) {
 		name: "sloppy",
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
 			return source.Result{
-				Lyrics:       "L",
-				SyncedLyrics: "[00:00.00] ghost synced",
-				Title:        r.Song,
-				Artist:       "ghost artist",
-				Album:        "ghost album",
-				SubSource:    "ghost sub",
-				Filled:       source.FieldLyrics | source.FieldTitle,
+				Lyrics:    "L",
+				Level:     source.SyncNone,
+				Title:     r.Song,
+				Artist:    "ghost artist",
+				Album:     "ghost album",
+				SubSource: "ghost sub",
+				Filled:    source.FieldLyrics | source.FieldTitle,
 			}, nil
 		},
 	}
@@ -99,8 +101,8 @@ func TestFetch_ResultUsesOnlyDeclaredFields(t *testing.T) {
 	if res.Artist != "" || res.Album != "" || res.SubSource != "" {
 		t.Fatalf("res = %+v; undeclared fields must not be read", res)
 	}
-	if len(warnings) != 4 {
-		t.Fatalf("warnings = %+v; want 4 ResultMismatch warnings", warnings)
+	if len(warnings) != 3 {
+		t.Fatalf("warnings = %+v; want 3 ResultMismatch warnings", warnings)
 	}
 	for _, w := range warnings {
 		if w.Kind != ResultMismatch {

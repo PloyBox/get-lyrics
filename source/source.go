@@ -19,7 +19,7 @@ import (
 // filter when refining a lookup. Implemented as a bitmask so capability
 // sets can be a single uint. Output format (plain vs synced) is NOT
 // declared statically: it is a runtime property of the fetched lyrics,
-// detected by the fetch layer.
+// reported per result by the adapter via Result.Level.
 type Param uint
 
 const (
@@ -98,6 +98,8 @@ const (
 	SyncNone SyncLevel = iota
 	// SyncLine: synced (LRC timestamped) lyrics.
 	SyncLine
+	// SyncWord: word-level (TTML timeline) lyrics.
+	SyncWord
 )
 
 // Request is the input to a Source.Fetch call. Song is required;
@@ -132,10 +134,10 @@ type Request struct {
 type ResultField uint
 
 const (
-	// FieldLyrics marks Result.Lyrics as populated (plain text).
+	// FieldLyrics marks Result.Lyrics as populated. It is the single
+	// lyrics field; Result.Level declares the format of the payload
+	// (plain, LRC, or TTML).
 	FieldLyrics ResultField = 1 << iota
-	// FieldSyncedLyrics marks Result.SyncedLyrics as populated (LRC text).
-	FieldSyncedLyrics
 	// FieldTitle marks Result.Title as populated.
 	FieldTitle
 	// FieldArtist marks Result.Artist as populated.
@@ -151,15 +153,13 @@ const (
 )
 
 // String returns the name of the first set bit in f (e.g. "Lyrics",
-// "SyncedLyrics") — the CLI renders it into result-mismatch warnings.
+// "Title") — the CLI renders it into result-mismatch warnings.
 // f is a single-bit mask by contract: the result is undefined for a
 // zero value or a multi-bit combination.
 func (f ResultField) String() string {
 	switch {
 	case f&FieldLyrics != 0:
 		return "Lyrics"
-	case f&FieldSyncedLyrics != 0:
-		return "SyncedLyrics"
 	case f&FieldTitle != 0:
 		return "Title"
 	case f&FieldArtist != 0:
@@ -177,24 +177,24 @@ func (f ResultField) String() string {
 // Result carries the fetched lyrics together with the metadata that
 // identifies the matched song. Filled declares which fields below are
 // populated: fields without their bit set must be treated as empty,
-// regardless of their string contents. A source may set both FieldLyrics
-// and FieldSyncedLyrics at once (both tracks filled); the fetch layer
-// picks the one matching the requested output format.
+// regardless of their string contents. A source produces exactly one
+// lyrics track per Fetch — plain, LRC, or TTML — and declares which
+// one it is via Level.
 type Result struct {
 	// Filled declares which of the fields below the source actually
 	// populated. It is the single source of truth for the fetch layer:
 	// unset fields are not read, and a set bit with an empty value is a
 	// source implementation problem.
 	Filled ResultField
-	// Lyrics is the plain-text track, free of timestamps and safe to
-	// cat directly. Populated (FieldLyrics) for plain output; a
-	// synced-only hit may leave it unfilled, in which case the fetch
-	// layer selects SyncedLyrics as the output.
+	// Lyrics is the single lyrics payload: plain text, LRC, or TTML —
+	// whichever format Level declares. Populated (FieldLyrics) whenever
+	// usable lyrics were returned.
 	Lyrics string
-	// SyncedLyrics is the LRC-style ([mm:ss.xx] lines) track.
-	// Populated (FieldSyncedLyrics) only when Request.SyncLevel is
-	// SyncLine and the source had synced lyrics.
-	SyncedLyrics string
+	// Level declares the sync level of Lyrics: SyncNone (plain text),
+	// SyncLine (LRC timestamped lines) or SyncWord (word-level TTML
+	// timeline). The fetch layer matches results against the requested
+	// level via this field, so it must describe the actual content.
+	Level SyncLevel
 	// Title, Artist, Album and ISRC carry only metadata the upstream
 	// response itself returned — never values echoed back from the
 	// Request. A field the server did not return stays unset, with its

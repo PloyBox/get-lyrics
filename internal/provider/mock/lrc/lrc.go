@@ -23,14 +23,16 @@ func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
 
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
-	res := source.Result{
-		Lyrics: "[mock-lrc] lyrics for: " + req.Song + "\n",
-		Filled: source.FieldLyrics,
-	}
+	lyrics := "[mock-lrc] lyrics for: " + req.Song + "\n"
+	level := source.SyncNone
 	if req.SyncLevel == source.SyncLine {
-		res.SyncedLyrics = "[00:00.00] [mock-lrc] first line for: " + req.Song + "\n" +
+		lyrics = "[00:00.00] [mock-lrc] first line for: " + req.Song + "\n" +
 			"[00:05.00] [mock-lrc] second line for: " + req.Song + "\n"
-		res.Filled |= source.FieldSyncedLyrics
+		level = source.SyncLine
 	}
-	return res, nil
+	return source.Result{
+		Lyrics: lyrics,
+		Level:  level,
+		Filled: source.FieldLyrics,
+	}, nil
 }

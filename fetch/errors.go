@@ -15,9 +15,9 @@ func (NoResultError) Error() string { return "no source returned a valid result"
 
 // InvalidSyncLevelError is returned by precheck when Params.SyncLevels
 // contains SyncUnknown, which classifies results but is not a
-// requestable level — callers must request only SyncNone/SyncLine.
-// It is a caller bug (the CLI rejects such values at parse time), so
-// it aborts in BOTH strict and lenient mode.
+// requestable level — callers must request only SyncNone/SyncLine/
+// SyncWord. It is a caller bug (the CLI rejects such values at parse
+// time), so it aborts in BOTH strict and lenient mode.
 type InvalidSyncLevelError struct{}
 
 func (InvalidSyncLevelError) Error() string {
