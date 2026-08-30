@@ -2,7 +2,7 @@
 //
 // Usage: get-lyrics --source <name> [--author <name>] [--album <name>]
 //
-//	[--iswc <code>] [--duration <secs>] [--output <file>]
+//	[--isrc <code>] [--duration <secs>] [--output <file>]
 //	[--user-agent <ua>] [--sync-level <levels>] <song>
 //
 // Use --help or -h for the same summary plus the list of registered sources.

@@ -16,7 +16,7 @@ type parsedFlags struct {
 	source     string
 	author     string
 	album      string
-	iswc       string
+	isrc       string
 	duration   int // whole seconds; normalized from --duration at parse time
 	output     string
 	syncLevels []fetch.SyncLevel // parsed from --sync-level at parse time
@@ -43,8 +43,8 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	fs.StringVar(&f.author, "a", "", "author/artist filter (short)")
 	fs.StringVar(&f.album, "album", "", "album filter")
 	fs.StringVar(&f.album, "A", "", "album filter (short)")
-	fs.StringVar(&f.iswc, "iswc", "", "ISWC identifier")
-	fs.StringVar(&f.iswc, "i", "", "ISWC identifier (short)")
+	fs.StringVar(&f.isrc, "isrc", "", "ISRC identifier")
+	fs.StringVar(&f.isrc, "i", "", "ISRC identifier (short)")
 	var durationRaw string
 	fs.StringVar(&durationRaw, "duration", "", "track duration filter (seconds or mm:ss)")
 	fs.StringVar(&durationRaw, "d", "", "track duration filter (seconds or mm:ss) (short)")
@@ -168,7 +168,7 @@ func parsedFlagsToParams(f parsedFlags, song string) fetch.Params {
 		Source:     splitTrimmed(f.source),
 		Author:     f.author,
 		Album:      f.album,
-		ISWC:       f.iswc,
+		ISRC:       f.isrc,
 		Duration:   f.duration,
 		SyncLevels: f.syncLevels,
 		UserAgent:  f.userAgent,

@@ -23,7 +23,7 @@ func TestFetch_AllParamsUnsupportedEmitsFourWarnings(t *testing.T) {
 	r := newRegistry(t, stub)
 	svc := New(r)
 
-	params := Params{Song: "Song", Author: "A", Album: "B", ISWC: "I", Duration: 5, SyncLevels: []SyncLevel{SyncNone}, Source: []string{"stub"}}
+	params := Params{Song: "Song", Author: "A", Album: "B", ISRC: "I", Duration: 5, SyncLevels: []SyncLevel{SyncNone}, Source: []string{"stub"}}
 	res, warnings, err := svc.Fetch(context.Background(), params)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -31,7 +31,7 @@ func TestFetch_AllParamsUnsupportedEmitsFourWarnings(t *testing.T) {
 	if res.Lyrics != "L" {
 		t.Fatalf("res.Lyrics = %q; want %q", res.Lyrics, "L")
 	}
-	wantParams := []source.Param{source.ParamAuthor, source.ParamAlbum, source.ParamISWC, source.ParamDuration}
+	wantParams := []source.Param{source.ParamAuthor, source.ParamAlbum, source.ParamISRC, source.ParamDuration}
 	gotParams := make([]source.Param, len(warnings))
 	for i, w := range warnings {
 		gotParams[i] = w.Param
@@ -57,17 +57,17 @@ func TestDetectUnsupported_EmptyRequestYieldsNoWarnings(t *testing.T) {
 }
 
 func TestDetectUnsupported_ParamOrder(t *testing.T) {
-	// Lock in stable warning ordering: author, album, iswc, duration.
+	// Lock in stable warning ordering: author, album, isrc, duration.
 	// The sync level is intentionally absent — it is covered by the
 	// Downgraded warning instead.
 	stub := &fakeSrc{name: "stub", caps: source.Capabilities{}, fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
 		return source.Result{}, nil
 	}}
 	got := detectUnsupported(
-		Params{Song: "S", Author: "A", Album: "B", ISWC: "I", Duration: 5, SyncLevels: []SyncLevel{SyncLine}},
+		Params{Song: "S", Author: "A", Album: "B", ISRC: "I", Duration: 5, SyncLevels: []SyncLevel{SyncLine}},
 		stub,
 	)
-	want := []source.Param{source.ParamAuthor, source.ParamAlbum, source.ParamISWC, source.ParamDuration}
+	want := []source.Param{source.ParamAuthor, source.ParamAlbum, source.ParamISRC, source.ParamDuration}
 	gotParams := make([]source.Param, len(got))
 	for i, w := range got {
 		gotParams[i] = w.Param
@@ -85,7 +85,7 @@ func TestDetectUnsupported_WhitespaceOnlyParamsIgnored(t *testing.T) {
 			return source.Result{}, nil
 		},
 	}
-	got := detectUnsupported(Params{Song: "S", Author: " ", Album: "\t", ISWC: "  "}, stub)
+	got := detectUnsupported(Params{Song: "S", Author: " ", Album: "\t", ISRC: "  "}, stub)
 	if len(got) != 0 {
 		t.Fatalf("got %+v; want none for whitespace-only params", got)
 	}

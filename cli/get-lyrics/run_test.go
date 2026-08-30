@@ -147,7 +147,7 @@ func TestRun_JoinsMultiplePositionalArgsAsSong(t *testing.T) {
 
 // TestRun_WritesUnsupportedParamWarningsToStderr exercises the
 // "source does not support parameter" branch via mock-success: mock-success
-// advertises only ParamAuthor, so passing --iswc (and --album) trips one
+// advertises only ParamAuthor, so passing --isrc (and --album) trips one
 // warning each. --author is included so the fetch itself succeeds.
 func TestRun_WritesUnsupportedParamWarningsToStderr(t *testing.T) {
 	var stdout, stderr bytes.Buffer
@@ -156,7 +156,7 @@ func TestRun_WritesUnsupportedParamWarningsToStderr(t *testing.T) {
 			"--source", "mock-success",
 			"--author", "TEST_AUTHOR",
 			"--album", "TEST_ALBUM",
-			"--iswc", "TEST_ISWC",
+			"--isrc", "TEST_ISRC",
 			"TEST_SONG",
 		},
 		&stdout, &stderr,
@@ -167,7 +167,7 @@ func TestRun_WritesUnsupportedParamWarningsToStderr(t *testing.T) {
 	if !strings.Contains(stdout.String(), "lyrics") {
 		t.Fatalf("stdout missing lyrics: %q", stdout.String())
 	}
-	for _, flag := range []string{"--album", "--iswc"} {
+	for _, flag := range []string{"--album", "--isrc"} {
 		if !strings.Contains(stderr.String(), flag) {
 			t.Fatalf("stderr missing warning for %s: %q", flag, stderr.String())
 		}

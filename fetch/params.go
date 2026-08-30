@@ -19,7 +19,7 @@ type Params struct {
 	Source     []string
 	Author     string
 	Album      string
-	ISWC       string
+	ISRC       string
 	Duration   int // whole seconds; 0 means not provided
 	SyncLevels []SyncLevel
 	Lenient    bool
@@ -60,7 +60,7 @@ func requestFromParams(params Params) source.Request {
 		Song:     params.Song,
 		Author:   params.Author,
 		Album:    params.Album,
-		ISWC:     params.ISWC,
+		ISRC:     params.ISRC,
 		Duration: params.Duration,
 		Custom:   params.Custom,
 	}

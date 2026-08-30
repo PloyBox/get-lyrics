@@ -83,8 +83,8 @@ func TestParam_BitmaskComposition(t *testing.T) {
 	if combined&ParamAlbum == 0 {
 		t.Fatalf("combined missing Album bit")
 	}
-	if combined&ParamISWC != 0 {
-		t.Fatalf("combined should not include ISWC")
+	if combined&ParamISRC != 0 {
+		t.Fatalf("combined should not include ISRC")
 	}
 	if combined&ParamDuration != 0 {
 		t.Fatalf("combined should not include Duration")

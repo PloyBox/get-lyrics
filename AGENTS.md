@@ -36,7 +36,7 @@ get-lyrics/
 - **Positional (required):** `<song>` — multiple positionals are joined with spaces.
 - **Flags (long/short):**
   - `--source`/`-s` — comma-separated source names, tried in order (failover). Default `lrclib`. Entries are trimmed; empty ones dropped.
-  - `--author`/`-a`, `--album`/`-A`, `--iswc`/`-i` — filters.
+  - `--author`/`-a`, `--album`/`-A`, `--isrc`/`-i` — filters.
   - `--duration`/`-d` — track duration filter, whole seconds (`225`) or `mm:ss` (`3:45`); normalized to int seconds at parse time, 0 = not provided. Any other value is a usage error (exit 2).
   - `--output`/`-o` — write lyrics to this file instead of stdout. **Refuses to overwrite** an existing file (exit 7) unless `--overwrite`/`-O` is given.
   - `--sync-level`/`-S` — comma-separated `line`/`none` levels; user-given order is the priority (first match wins). Default `line,none`. Any other value is a usage error (exit 2).
@@ -79,8 +79,8 @@ Thin CLI layer over a pluggable-source abstraction:
 
 **Key types (`source/source.go`):**
 
-- `Param` bitmask — `ParamAuthor | ParamAlbum | ParamISWC | ParamDuration`.
-- `ResultField` bitmask — `FieldLyrics | FieldSyncedLyrics | FieldTitle | FieldArtist | FieldAlbum | FieldISWC | FieldSubSource`.
+- `Param` bitmask — `ParamAuthor | ParamAlbum | ParamISRC | ParamDuration`.
+- `ResultField` bitmask — `FieldLyrics | FieldSyncedLyrics | FieldTitle | FieldArtist | FieldAlbum | FieldISRC | FieldSubSource`.
 - `ParamNamePattern` (`^[A-Z][A-Z0-9_]*$`) + `ValidParamName`.
 - `ParamSpec` — `Name` + `Description`; required-ness is decided per request, never statically.
 - `Capabilities` — `Filters` + `Required` typed bitmasks + `Custom []ParamSpec` + `RequiredCustom []string` for this request.
@@ -112,7 +112,7 @@ Unsupported custom keys produce per-source `warning[unsupported]` in map iterati
 - **`lrclib`** — `https://lrclib.net`; `/api/get` when `--author` is given, else `/api/search`. Filters: Author, Album, Duration — the album and duration filters only take effect with `--author` (otherwise each is dropped with an unsupported warning). Duration (int seconds) is passed as `duration=<secs>` on `/api/get`; 0 means not provided. Synced LRC output when requested; a synced-only hit leaves `Lyrics` unfilled so the fetch layer outputs the synced track. 10s per-request timeout.
 - **`lyricsovh`** — `https://api.lyrics.ovh/v1/{artist}/{title}`. Filter: Author, and **requires** it. Surfaces the API's 404 as not-found. 10s timeout.
 - **`lrccx`** — `https://api.lrc.cx/jsonapi`. Filters: Author, Album (independent of each other). Always LRC-flavoured text: plain lyrics strip `[mm:ss]`/marker tags; synced lyrics only when the text has timestamped lines. 10s timeout.
-- **`musixmatch`** — `https://api.musixmatch.com/ws/1.1`. Requires the custom `--env` key `MUSIXMATCH_API_KEY` (RequiredCustom). Filter: Author. With `--author`: `matcher.lyrics.get` / `matcher.subtitle.get`; title-only: `track.search` → `track.lyrics.get` / `track.subtitle.get` by commontrack id. Subtitle endpoints need the paid Scale plan — on Basic they 402/403, which the adapter treats as "no synced" and falls back to plain (fetch layer warns `downgraded`). Album/ISWC unsupported (no album param; `track_isrc` is ISRC, not ISWC). Instrumental `"...."` and the `*******` usage trailer are stripped. 10s timeout.
+- **`musixmatch`** — `https://api.musixmatch.com/ws/1.1`. Requires the custom `--env` key `MUSIXMATCH_API_KEY` (RequiredCustom). Filters: ISRC, Author — with `--isrc`: `track.get` → `track.lyrics.get` / `track.subtitle.get` by commontrack id (author dropped with `warning[unsupported]`: `track.get` takes no artist); with `--author`: `matcher.lyrics.get` / `matcher.subtitle.get`; title-only: `track.search` → `track.lyrics.get` / `track.subtitle.get` by commontrack id. Subtitle endpoints need the paid Scale plan — on Basic they 402/403, which the adapter treats as "no synced" and falls back to plain (fetch layer warns `downgraded`). Album/Duration unsupported (no album/duration parameter). Instrumental `"...."` and the `*******` usage trailer are stripped. 10s timeout.
 
 Adding a built-in source: create `internal/provider/real/<name>/`, then add an import and `r.Register(<name>.New())` in `bootstrap/bootstrap.go`. No CLI-layer changes required.
 
@@ -157,7 +157,7 @@ Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (neve
   - return the static custom-parameter list from `CustomParams()` — legal `^[A-Z][A-Z0-9_]*$`, distinct keys; sources without custom params return nil;
   - respect `ctx`;
   - set `Result.Filled` to declare exactly which result fields were populated (the fetch layer reads only declared fields and warns on mismatches);
-  - fill `Result` metadata (Title/Artist/Album/ISWC) only from fields the upstream response actually returned — never echo `Request` values back; a field the server did not return stays unset with its `Filled` bit clear;
+  - fill `Result` metadata (Title/Artist/Album/ISRC) only from fields the upstream response actually returned — never echo `Request` values back; a field the server did not return stays unset with its `Filled` bit clear;
   - leave `source.Result.SubSource` empty with the `FieldSubSource` bit unset (aggregate sub-source only);
   - never panic on missing `Song`.
 - **Commits:** conventional prefixes (`feat:`, `chore:`); base branch is `main`.

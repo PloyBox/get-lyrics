@@ -15,14 +15,14 @@ import (
 func printUsage(w io.Writer, reg *source.Registry, decls map[string][]source.ParamSpec) {
 	var b bytes.Buffer
 	fmt.Fprintln(&b, "Usage: get-lyrics [--source <names>] [--author <name>] [--album <name>]")
-	fmt.Fprintln(&b, "                   [--iswc <code>] [--duration <secs>] [--output <file>]")
+	fmt.Fprintln(&b, "                   [--isrc <code>] [--duration <secs>] [--output <file>]")
 	fmt.Fprintln(&b, "                   [--user-agent <ua>] [--sync-level <levels>] <song>")
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "Options:")
 	fmt.Fprintln(&b, "  --source <names>, -s <names> Lyrics source names (default: lrclib)")
 	fmt.Fprintln(&b, "  --author <name>,  -a <name>  Author / artist filter")
 	fmt.Fprintln(&b, "  --album <name>,   -A <name>  Album filter")
-	fmt.Fprintln(&b, "  --iswc <code>,    -i <code>  ISWC identifier")
+	fmt.Fprintln(&b, "  --isrc <code>,    -i <code>  ISRC identifier")
 	fmt.Fprintln(&b, "  --duration <secs>, -d <secs>  Track duration (seconds or mm:ss)")
 	fmt.Fprintln(&b, "  --output <file>,  -o <file>  Write lyrics to file (default: stdout; refuses to overwrite an existing file)")
 	fmt.Fprintln(&b, "  --overwrite, -O               Overwrite an existing --output file")

@@ -4,15 +4,19 @@
 //
 // Every request carries the API key as the apikey query parameter, taken
 // from the required custom --env key MUSIXMATCH_API_KEY. The lookup path
-// depends on which Request fields are non-empty:
+// is chosen by the first matching Request shape:
 //
+//	track.get → track.lyrics.get / track.subtitle.get
+//	                                            when ISRC is set
 //	matcher.lyrics.get / matcher.subtitle.get   when Song + Author are set
 //	track.search → track.lyrics.get / track.subtitle.get
 //	                                            when only Song is set
 //
-// The matcher endpoints are fuzzy lookups keyed by title + artist; with
-// no artist the API cannot match, so a title-only request searches for
-// the track and fetches lyrics/subtitles by commontrack id. Subtitle
+// An ISRC identifies the track precisely, so it wins over the author:
+// track.get is keyed by the ISRC alone and takes no artist. The matcher
+// endpoints are fuzzy lookups keyed by title + artist; with no artist
+// (and no ISRC) the API cannot match, so a title-only request searches
+// for the track and fetches lyrics/subtitles by commontrack id. Subtitle
 // endpoints require the paid Scale plan; on cheaper plans they return
 // 402/403, which the adapter treats as "no synced lyrics" and falls back
 // to the plain track (the fetch layer reports the downgrade).
@@ -67,14 +71,19 @@ func New() *Adapter { return &Adapter{} }
 // Name returns the stable CLI identifier.
 func (a *Adapter) Name() string { return "musixmatch" }
 
-// Capabilities reports the filters this adapter uses: author refines the
-// lookup. Album is not supported — neither the matcher nor the search
-// endpoints take an album parameter — and ISWC is not supported either:
-// Musixmatch identifies recordings by ISRC (track_isrc), a different
-// standard than the CLI's ISWC.
+// Capabilities reports the filters this adapter honors for req. The
+// ISRC filter takes precedence: track.get resolves the track by ISRC
+// alone and takes no artist, so with an ISRC set the author filter is
+// dropped (the fetch layer warns the user it is ignored). Without an
+// ISRC, author refines the lookup. Album is not supported — neither the
+// matcher nor the search endpoints take an album parameter.
 func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
+	filters := source.ParamAuthor
+	if strings.TrimSpace(req.ISRC) != "" {
+		filters = source.ParamISRC
+	}
 	return source.Capabilities{
-		Filters:        source.ParamAuthor,
+		Filters:        filters,
 		Custom:         []source.ParamSpec{{Name: apiKeyParam, Description: "Musixmatch API key (https://developer.musixmatch.com)"}},
 		RequiredCustom: []string{apiKeyParam},
 	}
@@ -84,11 +93,13 @@ func (a *Adapter) CustomParams() []source.ParamSpec {
 	return []source.ParamSpec{{Name: apiKeyParam, Description: "Musixmatch API key (https://developer.musixmatch.com)"}}
 }
 
-// Fetch looks up lyrics by title + artist (matcher endpoints) or, when
-// no artist is given, by searching for the track and fetching by
-// commontrack id. A synced request tries the subtitle endpoint first and
-// silently degrades to the plain track when subtitles are unavailable
-// (not found, or 402/403 from a plan without subtitle access).
+// Fetch resolves the track by ISRC (track.get) when set, by title +
+// artist (matcher endpoints) when an author is given, or by searching
+// for the title (track.search) otherwise; the resolved paths then fetch
+// lyrics/subtitles by commontrack id. A synced request tries the
+// subtitle endpoint first and silently degrades to the plain track when
+// subtitles are unavailable (not found, or 402/403 from a plan without
+// subtitle access).
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	if strings.TrimSpace(req.Song) == "" {
 		return source.Result{}, errors.New("musixmatch: song title is required")
@@ -104,7 +115,17 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	var res source.Result
 	ua := req.UserAgent
 
-	if strings.TrimSpace(req.Author) != "" {
+	switch {
+	case strings.TrimSpace(req.ISRC) != "":
+		track, err := a.getTrackByISRC(ctx, apiKey, ua, strings.TrimSpace(req.ISRC))
+		if err != nil && !errors.Is(err, errNotFound) {
+			return source.Result{}, err
+		}
+		res, err = a.fetchByTrack(ctx, apiKey, ua, req, track)
+		if err != nil {
+			return source.Result{}, err
+		}
+	case strings.TrimSpace(req.Author) != "":
 		if req.SyncLevel == source.SyncLine {
 			if sub, err := a.fetchMatcherSubtitle(ctx, apiKey, ua, req); err == nil {
 				res.SyncedLyrics = sub
@@ -119,44 +140,57 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 			res.Lyrics = lyrics
 			res.Filled |= source.FieldLyrics
 		}
-	} else {
+	default:
 		track, err := a.searchTrack(ctx, apiKey, ua, req.Song)
 		if err != nil && !errors.Is(err, errNotFound) {
 			return source.Result{}, err
 		}
-		res.Title = track.TrackName
-		res.Artist = track.ArtistName
-		res.Album = track.AlbumName
-		if strings.TrimSpace(res.Title) != "" {
-			res.Filled |= source.FieldTitle
-		}
-		if strings.TrimSpace(res.Artist) != "" {
-			res.Filled |= source.FieldArtist
-		}
-		if strings.TrimSpace(res.Album) != "" {
-			res.Filled |= source.FieldAlbum
-		}
-
-		if req.SyncLevel == source.SyncLine && track.CommontrackID != 0 {
-			if sub, err := a.fetchTrackSubtitle(ctx, apiKey, ua, track.CommontrackID); err == nil {
-				res.SyncedLyrics = sub
-				res.Filled |= source.FieldSyncedLyrics
-			}
-		}
-		if track.CommontrackID != 0 {
-			lyrics, err := a.fetchTrackLyrics(ctx, apiKey, ua, track.CommontrackID)
-			if err != nil && !errors.Is(err, errNotFound) {
-				return source.Result{}, err
-			}
-			if lyrics != "" {
-				res.Lyrics = lyrics
-				res.Filled |= source.FieldLyrics
-			}
+		res, err = a.fetchByTrack(ctx, apiKey, ua, req, track)
+		if err != nil {
+			return source.Result{}, err
 		}
 	}
 
 	if res.Filled&(source.FieldLyrics|source.FieldSyncedLyrics) == 0 {
 		return source.Result{}, fmt.Errorf("musixmatch: no usable lyrics for %q", req.Song)
+	}
+	return res, nil
+}
+
+// fetchByTrack fills the result with the resolved track's metadata and,
+// by commontrack id, its subtitle (when a synced track is requested)
+// and plain lyrics. Shared by the ISRC (track.get) and title-search
+// (track.search) resolution paths.
+func (a *Adapter) fetchByTrack(ctx context.Context, apiKey, ua string, req source.Request, track musixmatchTrack) (source.Result, error) {
+	var res source.Result
+	res.Title = track.TrackName
+	res.Artist = track.ArtistName
+	res.Album = track.AlbumName
+	if strings.TrimSpace(res.Title) != "" {
+		res.Filled |= source.FieldTitle
+	}
+	if strings.TrimSpace(res.Artist) != "" {
+		res.Filled |= source.FieldArtist
+	}
+	if strings.TrimSpace(res.Album) != "" {
+		res.Filled |= source.FieldAlbum
+	}
+
+	if req.SyncLevel == source.SyncLine && track.CommontrackID != 0 {
+		if sub, err := a.fetchTrackSubtitle(ctx, apiKey, ua, track.CommontrackID); err == nil {
+			res.SyncedLyrics = sub
+			res.Filled |= source.FieldSyncedLyrics
+		}
+	}
+	if track.CommontrackID != 0 {
+		lyrics, err := a.fetchTrackLyrics(ctx, apiKey, ua, track.CommontrackID)
+		if err != nil && !errors.Is(err, errNotFound) {
+			return source.Result{}, err
+		}
+		if lyrics != "" {
+			res.Lyrics = lyrics
+			res.Filled |= source.FieldLyrics
+		}
 	}
 	return res, nil
 }
@@ -184,6 +218,21 @@ func (a *Adapter) fetchMatcherSubtitle(ctx context.Context, apiKey, ua string, r
 		return "", err
 	}
 	return strings.TrimSpace(out.Subtitle.SubtitleBody), nil
+}
+
+// getTrackByISRC returns the track identified by isrc via track.get;
+// an empty commontrack id in the response means no match (errNotFound).
+func (a *Adapter) getTrackByISRC(ctx context.Context, apiKey, ua, isrc string) (musixmatchTrack, error) {
+	q := url.Values{}
+	q.Set("track_isrc", isrc)
+	var out trackResponse
+	if err := a.do(ctx, apiKey, ua, "track.get", q, &out); err != nil {
+		return musixmatchTrack{}, err
+	}
+	if out.Track.CommontrackID == 0 {
+		return musixmatchTrack{}, errNotFound
+	}
+	return out.Track, nil
 }
 
 // searchTrack finds the first search hit that carries lyrics, ranked by
@@ -359,6 +408,11 @@ type subtitleResponse struct {
 	Subtitle struct {
 		SubtitleBody string `json:"subtitle_body"`
 	} `json:"subtitle"`
+}
+
+// trackResponse mirrors the body of track.get.
+type trackResponse struct {
+	Track musixmatchTrack `json:"track"`
 }
 
 // searchResponse mirrors the body of track.search.

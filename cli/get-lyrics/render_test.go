@@ -29,9 +29,9 @@ func TestRenderWarning(t *testing.T) {
 			`warning[unsupported]: source "x" does not support --album`,
 		},
 		{
-			"unsupported iswc",
-			fetch.Warning{Kind: fetch.UnsupportedParam, Source: "x", Param: source.ParamISWC},
-			`warning[unsupported]: source "x" does not support --iswc`,
+			"unsupported isrc",
+			fetch.Warning{Kind: fetch.UnsupportedParam, Source: "x", Param: source.ParamISRC},
+			`warning[unsupported]: source "x" does not support --isrc`,
 		},
 		{
 			"unsupported duration",

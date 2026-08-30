@@ -91,11 +91,11 @@ func detectUnsupported(params Params, src source.Source) []Warning {
 			Param:  source.ParamAlbum,
 		})
 	}
-	if strings.TrimSpace(params.ISWC) != "" && filters&source.ParamISWC == 0 {
+	if strings.TrimSpace(params.ISRC) != "" && filters&source.ParamISRC == 0 {
 		out = append(out, Warning{
 			Kind:   UnsupportedParam,
 			Source: src.Name(),
-			Param:  source.ParamISWC,
+			Param:  source.ParamISRC,
 		})
 	}
 	if params.Duration > 0 && filters&source.ParamDuration == 0 {
@@ -138,7 +138,7 @@ var resultFieldSpecs = []resultFieldSpec{
 	{source.FieldTitle, func(r source.Result) string { return r.Title }},
 	{source.FieldArtist, func(r source.Result) string { return r.Artist }},
 	{source.FieldAlbum, func(r source.Result) string { return r.Album }},
-	{source.FieldISWC, func(r source.Result) string { return r.ISWC }},
+	{source.FieldISRC, func(r source.Result) string { return r.ISRC }},
 	{source.FieldSubSource, func(r source.Result) string { return r.SubSource }},
 }
 

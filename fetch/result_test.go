@@ -11,7 +11,7 @@ import (
 func TestFetch_AllParamsSupportedEmitsNoWarnings(t *testing.T) {
 	full := &fakeSrc{
 		name: "full",
-		caps: source.Capabilities{Filters: source.ParamAuthor | source.ParamAlbum | source.ParamISWC},
+		caps: source.Capabilities{Filters: source.ParamAuthor | source.ParamAlbum | source.ParamISRC},
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
 			res := source.Result{
 				Lyrics: "x",
@@ -28,7 +28,7 @@ func TestFetch_AllParamsSupportedEmitsNoWarnings(t *testing.T) {
 	r := newRegistry(t, full)
 	svc := New(r)
 
-	params := Params{Song: "S", Author: "A", Album: "B", ISWC: "I", SyncLevels: []SyncLevel{SyncLine}, Source: []string{"full"}}
+	params := Params{Song: "S", Author: "A", Album: "B", ISRC: "I", SyncLevels: []SyncLevel{SyncLine}, Source: []string{"full"}}
 	res, warnings, err := svc.Fetch(context.Background(), params)
 	if err != nil {
 		t.Fatalf("err: %v", err)

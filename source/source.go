@@ -1,7 +1,7 @@
 // Package source defines the pluggable lyrics-source abstraction.
 //
 // A Source is a named adapter that knows which optional metadata parameters
-// (author, album, ISWC, duration, sync level) it can use to refine a lyrics lookup, and
+// (author, album, ISRC, duration, sync level) it can use to refine a lyrics lookup, and
 // can fetch lyrics for a given Request. Built-in adapters are registered
 // explicitly via RegisterAll in package internal/bootstrap.
 package source
@@ -25,7 +25,7 @@ type Param uint
 const (
 	ParamAuthor Param = 1 << iota
 	ParamAlbum
-	ParamISWC
+	ParamISRC
 	ParamDuration
 )
 
@@ -101,12 +101,12 @@ const (
 )
 
 // Request is the input to a Source.Fetch call. Song is required;
-// Author/Album/ISWC/Duration are optional refinements and may be empty.
+// Author/Album/ISRC/Duration are optional refinements and may be empty.
 type Request struct {
 	Song   string // required
 	Author string
 	Album  string
-	ISWC   string
+	ISRC   string
 	// Duration is the track duration in whole seconds; 0 means not
 	// provided. It is an optional matching hint the source may use
 	// (e.g. lrclib /api/get).
@@ -142,8 +142,8 @@ const (
 	FieldArtist
 	// FieldAlbum marks Result.Album as populated.
 	FieldAlbum
-	// FieldISWC marks Result.ISWC as populated.
-	FieldISWC
+	// FieldISRC marks Result.ISRC as populated.
+	FieldISRC
 	// FieldSubSource marks Result.SubSource as populated. Only
 	// aggregate adapters set it; standalone adapters leave both the
 	// field and the bit unset.
@@ -166,8 +166,8 @@ func (f ResultField) String() string {
 		return "Artist"
 	case f&FieldAlbum != 0:
 		return "Album"
-	case f&FieldISWC != 0:
-		return "ISWC"
+	case f&FieldISRC != 0:
+		return "ISRC"
 	case f&FieldSubSource != 0:
 		return "SubSource"
 	}
@@ -195,14 +195,14 @@ type Result struct {
 	// Populated (FieldSyncedLyrics) only when Request.SyncLevel is
 	// SyncLine and the source had synced lyrics.
 	SyncedLyrics string
-	// Title, Artist, Album and ISWC carry only metadata the upstream
+	// Title, Artist, Album and ISRC carry only metadata the upstream
 	// response itself returned — never values echoed back from the
 	// Request. A field the server did not return stays unset, with its
 	// Filled bit clear.
 	Title  string
 	Artist string
 	Album  string
-	ISWC   string
+	ISRC   string
 	// SubSource identifies the sub-source that produced this result in
 	// aggregate adapters. Like every other result field it is only read
 	// when declared: standalone adapters leave it empty with the

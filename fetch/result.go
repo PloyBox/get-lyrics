@@ -19,7 +19,7 @@ type Result struct {
 	Title     string
 	Artist    string
 	Album     string
-	ISWC      string
+	ISRC      string
 	Source    string // adapter that produced the result
 	SubSource string // sub-source for aggregate adapters, copied only when the adapter declared FieldSubSource; empty otherwise
 	Level     SyncLevel
@@ -55,8 +55,8 @@ func filtResult(srcName string, sr source.Result, want SyncLevel) (match *Result
 		if sr.Filled&source.FieldAlbum != 0 {
 			r.Album = sr.Album
 		}
-		if sr.Filled&source.FieldISWC != 0 {
-			r.ISWC = sr.ISWC
+		if sr.Filled&source.FieldISRC != 0 {
+			r.ISRC = sr.ISRC
 		}
 		if sr.Filled&source.FieldSubSource != 0 {
 			r.SubSource = sr.SubSource
