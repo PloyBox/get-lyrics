@@ -35,8 +35,6 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	lyrics := "[mock-mismatch] lyrics for: " + req.Song + "\n"
 	return source.Result{
 		Lyrics: lyrics,
-		Title:  req.Song,
-		Artist: req.Author,
-		Filled: source.FieldLyrics | source.FieldTitle | source.FieldArtist,
+		Filled: source.FieldLyrics,
 	}, nil
 }

@@ -101,13 +101,10 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		}
 	}
 
-	res := source.Result{Title: req.Song, Filled: source.FieldTitle}
+	var res source.Result
 	ua := req.UserAgent
 
 	if strings.TrimSpace(req.Author) != "" {
-		res.Artist = req.Author
-		res.Filled |= source.FieldArtist
-
 		if req.SyncLevel == source.SyncLine {
 			if sub, err := a.fetchMatcherSubtitle(ctx, apiKey, ua, req); err == nil {
 				res.SyncedLyrics = sub
@@ -127,10 +124,12 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		if err != nil && !errors.Is(err, errNotFound) {
 			return source.Result{}, err
 		}
-		res.Title = firstNonEmpty(track.TrackName, req.Song)
+		res.Title = track.TrackName
 		res.Artist = track.ArtistName
 		res.Album = track.AlbumName
-		res.Filled = source.FieldTitle
+		if strings.TrimSpace(res.Title) != "" {
+			res.Filled |= source.FieldTitle
+		}
 		if strings.TrimSpace(res.Artist) != "" {
 			res.Filled |= source.FieldArtist
 		}
@@ -325,14 +324,6 @@ func cleanLyrics(s string) string {
 		return ""
 	}
 	return s
-}
-
-// firstNonEmpty returns a if non-empty, otherwise b.
-func firstNonEmpty(a, b string) string {
-	if strings.TrimSpace(a) != "" {
-		return a
-	}
-	return b
 }
 
 // truncate keeps an upstream error body bounded when emitted in a CLI

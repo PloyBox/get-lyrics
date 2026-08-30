@@ -195,10 +195,14 @@ type Result struct {
 	// Populated (FieldSyncedLyrics) only when Request.SyncLevel is
 	// SyncLine and the source had synced lyrics.
 	SyncedLyrics string
-	Title        string
-	Artist       string
-	Album        string
-	ISWC         string
+	// Title, Artist, Album and ISWC carry only metadata the upstream
+	// response itself returned — never values echoed back from the
+	// Request. A field the server did not return stays unset, with its
+	// Filled bit clear.
+	Title  string
+	Artist string
+	Album  string
+	ISWC   string
 	// SubSource identifies the sub-source that produced this result in
 	// aggregate adapters. Like every other result field it is only read
 	// when declared: standalone adapters leave it empty with the

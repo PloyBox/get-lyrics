@@ -136,10 +136,12 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		raw = *hit.LRC
 	}
 	res := source.Result{
-		Title:  firstNonEmpty(hit.Title, req.Song),
-		Artist: firstNonEmpty(hit.Artist, req.Author),
+		Title:  hit.Title,
+		Artist: hit.Artist,
 		Lyrics: stripLRC(raw),
-		Filled: source.FieldTitle, // Title always falls back to req.Song
+	}
+	if strings.TrimSpace(res.Title) != "" {
+		res.Filled |= source.FieldTitle
 	}
 	if strings.TrimSpace(res.Artist) != "" {
 		res.Filled |= source.FieldArtist
@@ -208,14 +210,6 @@ func stripLRC(s string) string {
 // line request on them falls back to plain lyrics.
 func hasTimestampLines(s string) bool {
 	return timestampTag.MatchString(s)
-}
-
-// firstNonEmpty returns a if non-empty, otherwise b.
-func firstNonEmpty(a, b string) string {
-	if strings.TrimSpace(a) != "" {
-		return a
-	}
-	return b
 }
 
 // truncate keeps an upstream error body bounded when emitted in a CLI

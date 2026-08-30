@@ -24,7 +24,6 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	lyrics := "[mock-nosupport] lyrics for: " + req.Song + "\n"
 	return source.Result{
 		Lyrics: lyrics,
-		Title:  req.Song,
-		Filled: source.FieldLyrics | source.FieldTitle,
+		Filled: source.FieldLyrics,
 	}, nil
 }

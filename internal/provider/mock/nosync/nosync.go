@@ -25,7 +25,6 @@ func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	return source.Result{
 		Lyrics: "[mock-nosync] lyrics for: " + req.Song + "\n",
-		Title:  req.Song,
-		Filled: source.FieldLyrics | source.FieldTitle,
+		Filled: source.FieldLyrics,
 	}, nil
 }

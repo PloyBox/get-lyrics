@@ -157,6 +157,7 @@ Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (neve
   - return the static custom-parameter list from `CustomParams()` — legal `^[A-Z][A-Z0-9_]*$`, distinct keys; sources without custom params return nil;
   - respect `ctx`;
   - set `Result.Filled` to declare exactly which result fields were populated (the fetch layer reads only declared fields and warns on mismatches);
+  - fill `Result` metadata (Title/Artist/Album/ISWC) only from fields the upstream response actually returned — never echo `Request` values back; a field the server did not return stays unset with its `Filled` bit clear;
   - leave `source.Result.SubSource` empty with the `FieldSubSource` bit unset (aggregate sub-source only);
   - never panic on missing `Song`.
 - **Commits:** conventional prefixes (`feat:`, `chore:`); base branch is `main`.

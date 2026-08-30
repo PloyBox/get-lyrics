@@ -136,11 +136,13 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	hit := hits[best]
 
 	res := source.Result{
-		Title:  firstNonEmpty(hit.TrackName, req.Song),
-		Artist: firstNonEmpty(hit.ArtistName, req.Author),
+		Title:  hit.TrackName,
+		Artist: hit.ArtistName,
 		Album:  hit.AlbumName,
 		Lyrics: hit.PlainLyrics,
-		Filled: source.FieldTitle, // Title always falls back to req.Song
+	}
+	if strings.TrimSpace(res.Title) != "" {
+		res.Filled |= source.FieldTitle
 	}
 	if strings.TrimSpace(res.Artist) != "" {
 		res.Filled |= source.FieldArtist
@@ -197,14 +199,6 @@ func buildQuery(req source.Request) string {
 		q.Set("duration", strconv.Itoa(req.Duration))
 	}
 	return q.Encode()
-}
-
-// firstNonEmpty returns a if non-empty, otherwise b.
-func firstNonEmpty(a, b string) string {
-	if strings.TrimSpace(a) != "" {
-		return a
-	}
-	return b
 }
 
 // truncate keeps an upstream error body bounded when emitted in a CLI

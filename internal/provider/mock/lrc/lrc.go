@@ -25,8 +25,7 @@ func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	res := source.Result{
 		Lyrics: "[mock-lrc] lyrics for: " + req.Song + "\n",
-		Title:  req.Song,
-		Filled: source.FieldLyrics | source.FieldTitle,
+		Filled: source.FieldLyrics,
 	}
 	if req.SyncLevel == source.SyncLine {
 		res.SyncedLyrics = "[00:00.00] [mock-lrc] first line for: " + req.Song + "\n" +
