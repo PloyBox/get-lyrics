@@ -2,14 +2,19 @@
 // Better Lyrics API (https://lyrics-api.boidu.dev). It self-registers
 // nothing; registration happens explicitly in internal/bootstrap.RegisterAll.
 //
-// The provider-specific endpoints are mapped by the requested sync level:
+// betterlyrics is an aggregate adapter: it fronts two distinct upstream
+// endpoints and reports which one served the result via Result.SubSource
+// (along with FieldSubSource). The endpoint is selected by the requested
+// sync level:
 //
 //	GET /ttml/getLyrics?s=<song>&a=<author>...   word-level request (SyncWord)
 //	                                            → TTML document, preserved verbatim
+//	                                            SubSource: "ttml"
 //	GET /kugou/getLyrics?s=<song>&a=<author>...  line/plain request (SyncLine/SyncNone)
 //	                                            → LRC-style "lyrics" text; a line request
 //	                                            keeps timestamped lines, otherwise the
 //	                                            text is stripped to plain
+//	                                            SubSource: "kugou"
 //
 // A word-level request returns the raw TTML string unchanged (whitespace
 // between spans is significant) with Level SyncWord; line/plain requests
@@ -47,6 +52,15 @@ const ttmlPath = "/ttml/getLyrics"
 
 // kugouPath serves line-level LRC lyrics.
 const kugouPath = "/kugou/getLyrics"
+
+// subSourceTTML / subSourceKugou are the Result.SubSource identifiers
+// reported alongside FieldSubSource so consumers can tell which
+// endpoint served the result. They mirror the URL path suffix
+// (ttml/kugou) to keep the provenance self-describing.
+const (
+	subSourceTTML  = "ttml"
+	subSourceKugou = "kugou"
+)
 
 // timestampTag matches one LRC time tag, e.g. [00:19.239] or [1:00.1].
 var timestampTag = regexp.MustCompile(`\[\d{1,2}:\d{1,2}(\.\d{1,3})?\]`)
@@ -92,8 +106,10 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	}
 
 	path := kugouPath
+	sub := subSourceKugou
 	if req.SyncLevel == source.SyncWord {
 		path = ttmlPath
+		sub = subSourceTTML
 	}
 
 	httpReq, err := http.NewRequestWithContext(
@@ -147,9 +163,10 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		// spaces live in bare text nodes, so the raw string is kept
 		// exactly as the server returned it.
 		return source.Result{
-			Lyrics: doc,
-			Level:  source.SyncWord,
-			Filled: source.FieldLyrics,
+			Lyrics:    doc,
+			Level:     source.SyncWord,
+			SubSource: sub,
+			Filled:    source.FieldLyrics | source.FieldSubSource,
 		}, nil
 	}
 
@@ -170,7 +187,8 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		res.Lyrics = stripLRC(out.Lyrics)
 		res.Level = source.SyncNone
 	}
-	res.Filled = source.FieldLyrics
+	res.SubSource = sub
+	res.Filled = source.FieldLyrics | source.FieldSubSource
 	return res, nil
 }
 

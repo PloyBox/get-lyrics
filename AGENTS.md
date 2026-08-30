@@ -109,11 +109,44 @@ Unsupported custom keys produce per-source `warning[unsupported]` in map iterati
 
 ### Built-in sources
 
-- **`lrclib`** — `https://lrclib.net`; `/api/get` when `--author` is given, else `/api/search`. Filters: Author, Album, Duration — the album and duration filters only take effect with `--author` (otherwise each is dropped with an unsupported warning). Duration (int seconds) is passed as `duration=<secs>` on `/api/get`; 0 means not provided. A synced request returns the LRC track when the hit carries one, else the plain track (fetch layer warns `downgraded`). 10s per-request timeout.
-- **`lyricsovh`** — `https://api.lyrics.ovh/v1/{artist}/{title}`. Filter: Author, and **requires** it. Surfaces the API's 404 as not-found. 10s timeout.
-- **`lrccx`** — `https://api.lrc.cx/jsonapi`. Filters: Author, Album (independent of each other). Always LRC-flavoured text: a synced request keeps the raw text only when it has timestamped lines, otherwise — and for plain requests — it is stripped of `[mm:ss]`/marker tags. 10s timeout.
-- **`musixmatch`** — `https://api.musixmatch.com/ws/1.1`. Requires the custom `--env` key `MUSIXMATCH_API_KEY` (RequiredCustom). Filters: ISRC, Author — with `--isrc`: `track.get` → `track.lyrics.get` / `track.subtitle.get` by commontrack id (author dropped with `warning[unsupported]`: `track.get` takes no artist); with `--author`: `matcher.lyrics.get` / `matcher.subtitle.get`; title-only: `track.search` → `track.lyrics.get` / `track.subtitle.get` by commontrack id. Subtitle endpoints need the paid Scale plan — on Basic they 402/403, which the adapter treats as "no synced" and falls back to plain (fetch layer warns `downgraded`). Album/Duration unsupported (no album/duration parameter). Instrumental `"...."` and the `*******` usage trailer are stripped. 10s timeout.
-- **`betterlyrics`** — `https://lyrics-api.boidu.dev`. Filter: Author (**requires** it), plus Album, Duration. Word requests hit `/ttml/getLyrics` and return the raw TTML document verbatim (`Level = SyncWord`); line/plain requests hit `/kugou/getLyrics` — a line request keeps timestamped lines (`SyncLine`), otherwise the text is stripped to plain (`SyncNone`). No custom params (the API issues no keys); 401/429 on uncached songs surface as adapter errors and fail over. 10s timeout.
+- **`lrclib`** — `https://lrclib.net`
+  - Endpoints:
+    - `/api/get` when `--author` is given.
+    - `/api/search` otherwise.
+  - Filters: Author, Album, Duration — the album and duration filters only take effect with `--author` (otherwise each is dropped with an unsupported warning).
+  - Duration (int seconds) is passed as `duration=<secs>` on `/api/get`; 0 means not provided.
+  - A synced request returns the LRC track when the hit carries one, else the plain track (fetch layer warns `downgraded`).
+  - 10s per-request timeout.
+- **`lyricsovh`** — `https://api.lyrics.ovh/v1/{artist}/{title}`
+  - Filter: Author, and **requires** it.
+  - Surfaces the API's 404 as not-found.
+  - 10s timeout.
+- **`lrccx`** — `https://api.lrc.cx/jsonapi`
+  - Filters: Author, Album (independent of each other).
+  - Always LRC-flavoured text:
+    - Synced request: keeps the raw text only when it has timestamped lines.
+    - Otherwise — and for plain requests — it is stripped of `[mm:ss]`/marker tags.
+  - 10s timeout.
+- **`musixmatch`** — `https://api.musixmatch.com/ws/1.1`
+  - Requires the custom `--env` key `MUSIXMATCH_API_KEY` (RequiredCustom).
+  - Filters: ISRC, Author.
+  - Endpoints per filter combination:
+    - `--isrc`: `track.get` → `track.lyrics.get` / `track.subtitle.get` by commontrack id (author dropped with `warning[unsupported]`: `track.get` takes no artist).
+    - `--author`: `matcher.lyrics.get` / `matcher.subtitle.get`.
+    - Title-only: `track.search` → `track.lyrics.get` / `track.subtitle.get` by commontrack id.
+  - Subtitle endpoints need the paid Scale plan — on Basic they 402/403, which the adapter treats as "no synced" and falls back to plain (fetch layer warns `downgraded`).
+  - Album/Duration unsupported (no album/duration parameter).
+  - Instrumental `"...."` and the `*******` usage trailer are stripped.
+  - 10s timeout.
+- **`betterlyrics`** — `https://lyrics-api.boidu.dev`
+  - Aggregate adapter: fronts two distinct upstreams and reports the served one via `Result.SubSource` with `FieldSubSource` set.
+  - Filter: Author (**requires** it); Album and Duration are also honored.
+  - Endpoint per sync level:
+    - `word` → `/ttml/getLyrics`: returns the raw TTML document verbatim (`Level = SyncWord`, `SubSource = "ttml"`).
+    - `line`/`none` → `/kugou/getLyrics`: line request keeps timestamped lines (`SyncLine`), otherwise the text is stripped to plain (`SyncNone`); both with `SubSource = "kugou"`.
+  - No custom params (the API issues no keys).
+  - 401/429 on uncached songs surface as adapter errors and fail over.
+  - 10s timeout.
 
 Adding a built-in source: create `internal/provider/real/<name>/`, then add an import and `r.Register(<name>.New())` in `bootstrap/bootstrap.go`. No CLI-layer changes required.
 
@@ -161,7 +194,7 @@ Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (neve
   - set `Result.Filled` to declare exactly which result fields were populated (the fetch layer reads only declared fields and warns on mismatches);
   - produce exactly one lyrics track per `Fetch` and declare `Result.Level` to match the payload the upstream actually returned (`SyncNone`/`SyncLine`/`SyncWord`) — the fetch layer matches results to the request by it;
   - fill `Result` metadata (Title/Artist/Album/ISRC) only from fields the upstream response actually returned — never echo `Request` values back; a field the server did not return stays unset with its `Filled` bit clear;
-  - leave `source.Result.SubSource` empty with the `FieldSubSource` bit unset (aggregate sub-source only);
+  - leave `source.Result.SubSource` empty with the `FieldSubSource` bit unset for standalone adapters; aggregate adapters (fronting multiple upstreams behind one CLI source name, like `betterlyrics`) set both — `SubSource` is the sub-source identifier (e.g. `"ttml"` / `"kugou"`) and `FieldSubSource` is the population bit;
   - never panic on missing `Song`.
 - **Commits:** conventional prefixes (`feat:`, `chore:`); base branch is `main`.
 
