@@ -10,6 +10,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -218,7 +219,21 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 			}
 		}
 	}
-	if _, werr := io.WriteString(out, res.Lyrics); werr != nil {
+	if parsed.json {
+		data, merr := json.Marshal(struct {
+			FormatVersion int `json:"formatVersion"`
+			fetch.Result
+		}{FormatVersion: 1, Result: res})
+		if merr != nil {
+			fmt.Fprintln(stderr, "error[output]:", merr)
+			return exitOutputFailed
+		}
+		data = append(data, '\n')
+		if _, werr := out.Write(data); werr != nil {
+			fmt.Fprintln(stderr, "error[output]:", werr)
+			return exitOutputFailed
+		}
+	} else if _, werr := io.WriteString(out, res.Lyrics); werr != nil {
 		fmt.Fprintln(stderr, "error[output]:", werr)
 		return exitOutputFailed
 	}

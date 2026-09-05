@@ -19,6 +19,7 @@ type parsedFlags struct {
 	isrc       string
 	duration   int // whole seconds; normalized from --duration at parse time
 	output     string
+	json       bool
 	syncLevels []fetch.SyncLevel // parsed from --sync-level at parse time
 	userAgent  string
 	lenient    bool
@@ -50,6 +51,8 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	fs.StringVar(&durationRaw, "d", "", "track duration filter (seconds or mm:ss) (short)")
 	fs.StringVar(&f.output, "output", "", "output file path")
 	fs.StringVar(&f.output, "o", "", "output file path (short)")
+	fs.BoolVar(&f.json, "json", false, "write complete result as JSON")
+	fs.BoolVar(&f.json, "j", false, "write complete result as JSON (short)")
 	var syncLevel string
 	fs.StringVar(&syncLevel, "sync-level", "line,none", "synced (line/word) or plain (none) lyrics")
 	fs.StringVar(&syncLevel, "S", "line,none", "synced (line/word) or plain (none) lyrics (short)")

@@ -16,7 +16,7 @@ func printUsage(w io.Writer, reg *source.Registry, decls map[string][]source.Par
 	var b bytes.Buffer
 	fmt.Fprintln(&b, "Usage: get-lyrics [--source <names>] [--author <name>] [--album <name>]")
 	fmt.Fprintln(&b, "                   [--isrc <code>] [--duration <secs>] [--output <file>]")
-	fmt.Fprintln(&b, "                   [--user-agent <ua>] [--sync-level <levels>] <song>")
+	fmt.Fprintln(&b, "                   [--user-agent <ua>] [--sync-level <levels>] [--json] <song>")
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "Options:")
 	fmt.Fprintln(&b, "  --source <names>, -s <names> Lyrics source names (default: lrclib)")
@@ -26,6 +26,7 @@ func printUsage(w io.Writer, reg *source.Registry, decls map[string][]source.Par
 	fmt.Fprintln(&b, "  --duration <secs>, -d <secs>  Track duration (seconds or mm:ss)")
 	fmt.Fprintln(&b, "  --output <file>,  -o <file>  Write lyrics to file (default: stdout; refuses to overwrite an existing file)")
 	fmt.Fprintln(&b, "  --overwrite, -O               Overwrite an existing --output file")
+	fmt.Fprintln(&b, "  --json, -j                    Write complete fetch result as JSON (default: plain lyrics)")
 	fmt.Fprintln(&b, "  --sync-level <levels>, -S <levels> Sync levels: line, word or none (default: line,none)")
 	fmt.Fprintf(&b, "  --user-agent <ua>, -u <ua>    User-Agent header for HTTP requests (default: %s)\n", defaultUserAgent())
 	fmt.Fprintln(&b, "  --env <key=value>, -e <key=value> Custom source parameter (repeatable; key must match ^[A-Z][A-Z0-9_]*$)")

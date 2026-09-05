@@ -114,6 +114,7 @@ get-lyrics --help
 | `--duration` | `-d` | Track duration filter (seconds or mm:ss) |
 | `--output` | `-o` | Write lyrics to file (default: stdout; refuses to overwrite an existing file) |
 | `--overwrite` | `-O` | Overwrite an existing `--output` file |
+| `--json` | `-j` | Write the complete fetch result as JSON, including empty-string fields; `formatVersion` is fixed at `1` |
 | `--sync-level` | `-S` | Comma-separated sync levels (default: `line,none`; `line` enables LRC, `word` syllable-level TTML). User-given order is the priority |
 | `--user-agent` | `-u` | HTTP `User-Agent` header sent to sources (default: `get-lyrics/<ver> (+https://github.com/PloyBox/get-lyrics)`) |
 | `--env` | `-e` | Custom source parameter `key=value` (repeatable; key must match `^[A-Z][A-Z0-9_]*$`) |

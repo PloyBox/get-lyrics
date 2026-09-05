@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"strings"
@@ -99,6 +100,48 @@ func TestRun_WritesLyricsToStdoutByDefault(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "warning[downgraded]") {
 		t.Fatalf("stderr missing downgrade warning: %q", stderr.String())
+	}
+}
+
+// TestRun_JSONIncludesEmptyResultFields locks complete fetch.Result JSON output:
+// empty metadata fields remain present instead of being omitted.
+func TestRun_JSONIncludesEmptyResultFields(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-success", "--author", "TEST_AUTHOR", "--json", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
+	}
+	var got map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("JSON output invalid: %v (%q)", err, stdout.String())
+	}
+	if got["formatVersion"] != float64(1) {
+		t.Fatalf("JSON formatVersion = %v; want 1", got["formatVersion"])
+	}
+	for _, key := range []string{"Lyrics", "Title", "Artist", "Album", "ISRC", "Source", "SubSource", "Level"} {
+		if _, ok := got[key]; !ok {
+			t.Fatalf("JSON missing %q: %q", key, stdout.String())
+		}
+	}
+	for _, key := range []string{"Title", "Artist", "Album", "ISRC", "SubSource"} {
+		if got[key] != "" {
+			t.Fatalf("JSON %q = %v; want empty string", key, got[key])
+		}
+	}
+	if got["Source"] != "mock-success" || got["Level"] != float64(1) {
+		t.Fatalf("JSON result metadata = %#v", got)
+	}
+}
+
+// TestRun_JSONShortFlagWritesCompleteResult locks -j as an alias for --json.
+func TestRun_JSONShortFlagWritesCompleteResult(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"--source", "mock-success", "--author", "TEST_AUTHOR", "-j", "TEST_SONG"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"Lyrics"`) || !strings.Contains(stdout.String(), `"SubSource":""`) {
+		t.Fatalf("stdout missing complete JSON result: %q", stdout.String())
 	}
 }
 
