@@ -1,16 +1,5 @@
-// Package lyricsovh is a real Source implementation backed by the public
-// lyrics.ovh API (api.lyrics.ovh). It self-registers nothing; registration
-// happens explicitly in internal/bootstrap.RegisterAll.
-//
-// The API exposes a single endpoint keyed by artist and title:
-//
-//	GET https://api.lyrics.ovh/v1/{artist}/{title}
-//
-// which returns {"lyrics": "..."} on success, or 404 with
-// {"error": "No lyrics found"} when no match exists. Because the path
-// requires an artist, this adapter requires --author: a fetch without
-// it cannot form a valid request, so the fetch layer enforces the
-// requirement during precheck (exit code 6).
+// Package lyricsovh implements source.Source against the public
+// lyrics.ovh API. See docs/refs/providers/lyricsovh.md.
 package lyricsovh
 
 import (
@@ -27,42 +16,34 @@ import (
 	"github.com/PloyBox/get-lyrics/source"
 )
 
-// requestTimeout caps each upstream call so a stalled request does not
-// stall the CLI.
+// requestTimeout caps each upstream call.
 const requestTimeout = 10 * time.Second
 
-// defaultEndpoint is the public lyrics.ovh base path; artist and title
-// are appended (URL-escaped) to form the full request URL.
+// defaultEndpoint is the public lyrics.ovh base path; artist and title are
+// appended (URL-escaped) to form the request URL.
 const defaultEndpoint = "https://api.lyrics.ovh/v1/"
 
 // Adapter implements source.Source against api.lyrics.ovh.
 type Adapter struct {
-	// Endpoint overrides the base URL. Tests point it at an httptest
-	// server; production leaves it as the zero value.
+	// Endpoint overrides the base URL; tests point it at an httptest server.
 	Endpoint string
 
 	// HTTPClient is reused across calls. nil → http.DefaultClient.
 	HTTPClient *http.Client
 }
 
-// New returns a fresh Adapter pointed at the public lyrics.ovh endpoint.
 func New() *Adapter { return &Adapter{} }
 
-// Name returns the stable CLI identifier.
 func (a *Adapter) Name() string { return "lyricsovh" }
 
-// Capabilities requires --author: the API has no title-only search,
-// so a fetch without an artist cannot form a valid request. The fetch
-// layer enforces this during precheck (exit code 6).
+// Capabilities requires --author: the API has no title-only search, so a
+// fetch without an artist cannot form a valid request.
 func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 	return source.Capabilities{Filters: source.ParamAuthor, Required: source.ParamAuthor}
 }
 
 func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
 
-// Fetch looks up lyrics via api.lyrics.ovh/v1/{artist}/{title}. The
-// author is guaranteed non-empty by the precheck; the adapter no longer
-// validates it itself.
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	if strings.TrimSpace(req.Song) == "" {
 		return source.Result{}, errors.New("lyricsovh: song title is required")
@@ -89,8 +70,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		return source.Result{}, fmt.Errorf("lyricsovh: read body: %w", err)
 	}
 
-	// 404 is the API's "no match" signal; surface it as a not-found
-	// error rather than a generic HTTP-status failure.
+	// 404 is the API's "no match" signal.
 	if resp.StatusCode == http.StatusNotFound {
 		return source.Result{}, fmt.Errorf("lyricsovh: no lyrics found for %q by %q", req.Song, req.Author)
 	}
@@ -134,8 +114,7 @@ func (a *Adapter) client() *http.Client {
 	return &http.Client{Timeout: requestTimeout}
 }
 
-// truncate keeps an upstream error body bounded when emitted in a CLI
-// message.
+// truncate keeps an upstream error body bounded in CLI messages.
 func truncate(b []byte, n int) string {
 	if len(b) <= n {
 		return string(b)

@@ -1,24 +1,5 @@
-// Package lrccx is a real Source implementation backed by the legacy
-// lrc.cx lyrics API (https://api.lrc.cx/jsonapi). It self-registers
-// nothing; registration happens explicitly in internal/bootstrap.RegisterAll.
-//
-// The adapter issues a single GET against /jsonapi with freeform
-// title/artist/album query parameters and picks the best-ranked hit:
-//
-//	GET https://api.lrc.cx/jsonapi?title=<song>&artist=<author>&album=<album>
-//
-// The response is a score-descending JSON array whose entries carry
-// title, artist, and an "lrc" field (the LRC text). Note the field is
-// named "lrc" (not "lyrics" as the legacy docs claim) and may be null
-// for instrumental/missing entries.
-//
-// Because the API only ever returns LRC-flavoured text, a synced
-// request returns the raw response text — but only when it actually
-// contains timestamped lines; otherwise (and for plain requests) the
-// text is stripped of [mm:ss] timestamps and section tags ([Verse],
-// [!text], ...) to produce plain lyrics. Unsynced [!text] entries
-// therefore fall back to plain lyrics, matching the mock-nosync
-// semantics at the CLI layer.
+// Package lrccx implements source.Source against the legacy lrc.cx lyrics
+// API. See docs/refs/providers/lrccx.md.
 package lrccx
 
 import (
@@ -36,50 +17,40 @@ import (
 	"github.com/PloyBox/get-lyrics/source"
 )
 
-// requestTimeout caps each upstream call so a stalled request does not
-// stall the CLI.
+// requestTimeout caps each upstream call.
 const requestTimeout = 10 * time.Second
 
-// defaultEndpoint is the public lrc.cx base path; "/jsonapi" is
-// appended to form the full request URL.
+// defaultEndpoint is the public lrc.cx base path; "/jsonapi" is appended.
 const defaultEndpoint = "https://api.lrc.cx"
 
 // timestampTag matches one LRC time tag, e.g. [00:19.239] or [1:00.1].
 var timestampTag = regexp.MustCompile(`\[\d{1,2}:\d{1,2}(\.\d{1,3})?\]`)
 
-// metaTag matches any remaining bracketed tag after timestamp
-// stripping: section markers ([Verse], [Chorus]) and markers such as
-// [!text] that distinguish unsynced lyrics.
+// metaTag matches any remaining bracketed tag: section markers ([Verse],
+// [Chorus]) and markers such as [!text] that distinguish unsynced lyrics.
 var metaTag = regexp.MustCompile(`\[[^\[\]]*\]`)
 
 // Adapter implements source.Source against the lrc.cx /jsonapi endpoint.
 type Adapter struct {
-	// Endpoint overrides the base URL. Tests point it at an httptest
-	// server; production leaves it as the zero value (the public lrc.cx
-	// endpoint). Self-hosted LrcApi instances can set it too.
+	// Endpoint overrides the base URL; tests point it at an httptest
+	// server, and self-hosted LrcApi instances can set it too.
 	Endpoint string
 
 	// HTTPClient is reused across calls. nil → http.DefaultClient.
 	HTTPClient *http.Client
 }
 
-// New returns a fresh Adapter pointed at the public lrc.cx endpoint.
 func New() *Adapter { return &Adapter{} }
 
-// Name returns the stable CLI identifier.
 func (a *Adapter) Name() string { return "lrccx" }
 
-// Capabilities reports the filters this adapter uses: author and album
-// both refine the /jsonapi lookup, independently of each other.
+// Capabilities honors author and album, independently of each other.
 func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 	return source.Capabilities{Filters: source.ParamAuthor | source.ParamAlbum}
 }
 
 func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
 
-// Fetch queries lrc.cx /jsonapi, picks the best-ranked hit with usable
-// lyrics, and populates the lyrics track matching the requested sync
-// level from the LRC text.
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	if strings.TrimSpace(req.Song) == "" {
 		return source.Result{}, errors.New("lrccx: song title is required")
@@ -117,10 +88,9 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		return source.Result{}, fmt.Errorf("lrccx: no lyrics found for %q", req.Song)
 	}
 
-	// The response is already ranked by score descending; take the
-	// first hit whose "lrc" field is present and non-empty. When every
-	// hit lacks lyrics, fall back to the top entry so the caller sees a
-	// deterministic "no usable lyrics" error rather than an index panic.
+	// The response is ranked by score descending; take the first hit whose
+	// "lrc" field is present and non-empty, else the top entry so the
+	// caller sees a deterministic error rather than an index panic.
 	best := -1
 	for i := range hits {
 		if hits[i].LRC != nil && strings.TrimSpace(*hits[i].LRC) != "" {
@@ -148,9 +118,8 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		res.Filled |= source.FieldArtist
 	}
 	// A synced request returns the raw LRC text only when it actually
-	// contains timestamped lines; otherwise — and for plain requests —
-	// the text is stripped of timestamps and section tags. Exactly one
-	// lyrics track per Fetch.
+	// carries timestamped lines; otherwise — and for plain requests — the
+	// text is stripped to plain lyrics. Exactly one track per Fetch.
 	if req.SyncLevel == source.SyncLine && hasTimestampLines(raw) {
 		res.Lyrics = raw
 		res.Level = source.SyncLine
@@ -180,10 +149,9 @@ func (a *Adapter) client() *http.Client {
 	return &http.Client{Timeout: requestTimeout}
 }
 
-// buildQuery encodes the non-empty optional Request fields as lrc.cx
-// query parameters. The album value "[Unknown Album]" is treated as
-// empty per the API docs. The "path" parameter is intentionally never
-// sent — the CLI has no notion of a local music file.
+// buildQuery encodes the non-empty optional fields as lrc.cx query
+// parameters; the album value "[Unknown Album]" is treated as empty. The
+// "path" parameter is intentionally never sent.
 func buildQuery(req source.Request) string {
 	q := url.Values{}
 	q.Set("title", strings.TrimSpace(req.Song))
@@ -196,9 +164,8 @@ func buildQuery(req source.Request) string {
 	return q.Encode()
 }
 
-// stripLRC removes timestamp tags and bracketed section/marker tags
-// line by line, dropping lines that carry no lyrics text at all. The
-// result is the plain, timestamp-free track.
+// stripLRC removes timestamp and bracketed marker tags line by line,
+// dropping lines that carry no lyrics text.
 func stripLRC(s string) string {
 	lines := strings.Split(s, "\n")
 	out := make([]string, 0, len(lines))
@@ -212,15 +179,12 @@ func stripLRC(s string) string {
 	return strings.Join(out, "\n")
 }
 
-// hasTimestampLines reports whether any line carries a [mm:ss] time
-// tag. Unsynced entries (marked [!text]) contain none, so a --sync-level
-// line request on them falls back to plain lyrics.
+// hasTimestampLines reports whether any line carries a [mm:ss] time tag.
 func hasTimestampLines(s string) bool {
 	return timestampTag.MatchString(s)
 }
 
-// truncate keeps an upstream error body bounded when emitted in a CLI
-// message.
+// truncate keeps an upstream error body bounded in CLI messages.
 func truncate(b []byte, n int) string {
 	if len(b) <= n {
 		return string(b)
@@ -228,10 +192,9 @@ func truncate(b []byte, n int) string {
 	return string(b[:n]) + "…"
 }
 
-// lrccxHit mirrors the fields of lrc.cx's /jsonapi JSON that this
-// adapter consumes. LRC is a pointer so a literal "lrc": null (which
-// the API returns for instrumental entries) decodes to nil instead of
-// an empty-string hit that would shadow real lyrics.
+// lrccxHit mirrors the fields of lrc.cx's /jsonapi JSON that this adapter
+// consumes. LRC is a pointer so a literal "lrc": null decodes to nil
+// instead of an empty-string hit.
 type lrccxHit struct {
 	ID     string  `json:"id"`
 	Title  string  `json:"title"`

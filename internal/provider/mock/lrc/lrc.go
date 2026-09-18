@@ -14,8 +14,6 @@ func New() *Adapter { return &Adapter{} }
 
 func (a *Adapter) Name() string { return "mock-lrc" }
 
-// Capabilities lists no filters: this mock's only concern is the synced
-// output path, which is a runtime property of the returned result.
 func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 	return source.Capabilities{}
 }

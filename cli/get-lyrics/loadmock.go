@@ -1,8 +1,8 @@
 //go:build test
 
-// Test-only wiring: registers the mock/test-only sources so that
-// binaries built with `-tags test` (and the test suite itself) can
-// exercise them. Production builds exclude this file.
+// Test-only wiring: registers the mock/test-only sources so binaries
+// built with `-tags test` (and the test suite) can exercise them.
+// Production builds exclude this file.
 package main
 
 import (

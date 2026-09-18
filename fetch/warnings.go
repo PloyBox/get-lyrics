@@ -10,69 +10,38 @@ import (
 type WarningKind int
 
 const (
-	// UnsupportedParam: a user-supplied optional parameter the source
-	// does not honor; emitted alongside a successful result.
-	UnsupportedParam WarningKind = iota
-	// Downgraded: the requested sync level got no match — synced
-	// was requested but only plain lyrics returned, or plain was
-	// requested but only synced lyrics returned. The unmatched result
-	// stays cached and can satisfy a later iteration.
-	Downgraded
-	// PreCheck: --lenient mode skipped a source during precheck
-	// (unknown name, missing required parameter, or duplicate).
-	PreCheck
-	// PrecheckMismatch: a source raised RequiredParamMismatchError from
-	// Fetch — its capability declaration disagrees with what Fetch
-	// actually needs. Flags a source implementation bug.
-	PrecheckMismatch
-	// FetchFailed: the adapter returned an error; fetch moved on to the
-	// next source.
-	FetchFailed
-	// ResultMismatch: the adapter's Filled mask disagrees with the
-	// actual field contents (a declared field left empty, or a filled
-	// field not declared). The result is still used as-is (trust
-	// policy); the warning flags a source implementation problem.
-	ResultMismatch
+	UnsupportedParam WarningKind = iota // supplied parameter the source does not honor
+	Downgraded                          // requested level unmatched; Want names the direction
+	PreCheck                            // --lenient skipped a source during precheck
+	PrecheckMismatch                    // a source's declaration disagrees with its Fetch
+	FetchFailed                         // adapter error; fetch moved on to the next source
+	ResultMismatch                      // Filled mask disagrees with the field contents
 )
 
-// Warning describes one issue observed while resolving lyrics. It
-// carries structured data only — the CLI renders all display text,
-// including the [kind] tag, from these fields.
+// Warning describes one issue observed while resolving lyrics. It carries
+// structured data only — the CLI renders all display text, including the
+// [kind] tag.
 type Warning struct {
-	Kind      WarningKind  // which stage produced the warning
-	Source    string       // name of the source the warning refers to
-	Param     source.Param // typed parameter involved; 0 for a custom key or no parameter
-	ParamName string       // custom parameter key involved; empty for typed parameters
-	// Want is the sync level requested by the iteration that produced a
-	// Downgraded warning: SyncLine means the source returned no
-	// LRC-synced lyrics, SyncWord means it returned no word-synced
-	// lyrics, SyncNone means it returned only synced lyrics. Zero for
-	// every other kind.
+	Kind      WarningKind
+	Source    string
+	Param     source.Param // typed parameter; 0 for a custom key or none
+	ParamName string       // custom parameter key; empty for typed parameters
+	// Want is the level requested by the iteration that produced a
+	// Downgraded warning; zero for every other kind.
 	Want SyncLevel
-	// Field is the result field a ResultMismatch warning refers to.
+	// Field is the result field a ResultMismatch refers to.
 	Field source.ResultField
-	// Declared reports, for a ResultMismatch warning, whether the source
-	// declared Field via its Filled mask but left it empty (true), or
-	// filled it without declaring it (false).
+	// Declared reports, for a ResultMismatch, whether the source declared
+	// Field but left it empty (true) or filled it without declaring it.
 	Declared bool
-	// Err is the underlying cause when one exists: the adapter error for
-	// FetchFailed, the registry error for a not-found PreCheck, the
-	// RequiredParamMismatchError for a fetch-time PrecheckMismatch; nil
-	// otherwise.
+	// Err is the underlying cause when one exists; nil otherwise.
 	Err error
 }
 
-// detectUnsupported compares the non-empty optional fields in params
-// against the adapter's filters for this request and returns one
-// UnsupportedParam warning per mismatch. The sync level is deliberately
-// excluded: a synced request on a plain-only source is covered by the
-// Downgraded warning.
-//
-// Custom keys run a parallel path: every user-supplied key the adapter
-// does not recognize for this request gets one warning. The map
-// iteration order is unspecified on purpose — multiple unrecognized
-// keys produce warnings in nondeterministic order; tests assert the
-// warning set, never its order.
+// detectUnsupported returns one UnsupportedParam warning per non-empty
+// optional parameter the adapter does not honor for this request. The
+// sync level is excluded (covered by Downgraded). Custom keys iterate in
+// unspecified order, so multiple unrecognized keys warn nondeterministically.
 func detectUnsupported(params Params, src source.Source) []Warning {
 	caps := src.Capabilities(requestFromParams(params))
 	filters := caps.Filters
@@ -126,8 +95,8 @@ func detectUnsupported(params Params, src source.Source) []Warning {
 	return out
 }
 
-// resultFieldSpecs lists every field tracked by the Filled mask, with
-// the accessor used by the mismatch detector.
+// resultFieldSpecs lists every field tracked by the Filled mask, with the
+// accessor used by the mismatch detector.
 type resultFieldSpec struct {
 	bit   source.ResultField
 	value func(source.Result) string
@@ -142,11 +111,9 @@ var resultFieldSpecs = []resultFieldSpec{
 	{source.FieldSubSource, func(r source.Result) string { return r.SubSource }},
 }
 
-// detectResultMismatch compares sr.Filled against the actual field
-// contents and reports one warning per inconsistency: a declared bit
-// with an empty value, or a non-empty value without a declared bit.
-// Either way the result is still used as-is (trust policy) — the
-// warning only flags a source implementation problem.
+// detectResultMismatch reports one warning per Filled-vs-content
+// inconsistency: a declared bit with an empty value, or a non-empty value
+// without a declared bit. The result is still used as-is (trust policy).
 func detectResultMismatch(srcName string, sr source.Result) []Warning {
 	out := make([]Warning, 0, 2)
 	for _, spec := range resultFieldSpecs {

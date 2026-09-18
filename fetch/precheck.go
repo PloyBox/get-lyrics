@@ -6,21 +6,9 @@ import (
 	"github.com/PloyBox/get-lyrics/source"
 )
 
-// precheck walks params.Source in order, filtering out problem sources
-// into *warnings under --lenient or aborting with the first single
-// error in strict mode. The returned slice holds the eligible source
-// names in the user-given order.
-//
-// Before any per-source validation (including gate 2 and the lenient
-// skip logic), a request-level check rejects SyncUnknown in
-// Params.SyncLevels with InvalidSyncLevelError — a caller bug that no
-// source could satisfy, so neither mode downgrades it to a warning.
-//
-// Gate 2 runs before the missing-required check: a source whose
-// request-aware custom declaration is inconsistent (a source bug) is
-// skipped with a precheck-mismatch warning in BOTH strict and lenient
-// mode — never a RequiredParamError, since the offending key cannot be
-// legitimately supplied by the caller.
+// precheck validates params.Source in order, returning the eligible names
+// in user-given order. Under --lenient, problem sources become warnings
+// instead of aborting. Gate 2 runs before the missing-required check.
 func (s *Service) precheck(params Params, warnings *[]Warning) ([]string, error) {
 	for _, want := range params.SyncLevels {
 		if want == SyncUnknown {
@@ -89,12 +77,8 @@ func (s *Service) precheck(params Params, warnings *[]Warning) ([]string, error)
 	return eligible, nil
 }
 
-// validateCustomDecl enforces gate 2 on a source's request-aware custom
-// declaration: every name in caps.Custom must be a legal key
-// (ParamNamePattern) present in the static CustomParams() list, and
-// RequiredCustom must be a duplicate-free subset of caps.Custom's
-// names. It returns the first offending key name, or "" when the
-// declaration is consistent.
+// validateCustomDecl enforces gate 2, returning the first offending key
+// name or "" when the request-aware declaration is consistent.
 func validateCustomDecl(src source.Source, caps source.Capabilities) string {
 	static := make(map[string]bool, len(src.CustomParams()))
 	for _, spec := range src.CustomParams() {
@@ -120,13 +104,8 @@ func validateCustomDecl(src source.Source, caps source.Capabilities) string {
 	return ""
 }
 
-// checkRequired compares the non-empty optional fields in params against
-// caps and reports the first missing requirement: typed Required bits
-// first (author, album, isrc, duration), then RequiredCustom names in
-// declaration order. missingParam is the first missing typed bit (0 when
-// a custom key is missing); missingCustom is the first missing custom
-// key name (empty when a typed bit is missing). The bool is true when
-// anything is missing.
+// checkRequired reports the first missing requirement: typed Required
+// bits first, then RequiredCustom names in declaration order.
 func checkRequired(caps source.Capabilities, params Params) (missingParam source.Param, missingCustom string, need bool) {
 	if caps.Required&source.ParamAuthor != 0 && strings.TrimSpace(params.Author) == "" {
 		return source.ParamAuthor, "", true

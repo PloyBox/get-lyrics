@@ -18,10 +18,12 @@ get-lyrics/
 ├── source/                     # Source interface, Request/Result, Param/ResultField bitmasks, ParamSpec, Registry
 ├── fetch/                      # Fetch(ctx, params): precheck (incl. gate 2), failover, sync-level resolution, CustomParamsFor
 ├── bootstrap/                  # bootstrap.go: registers real sources; bootstrap_mock.go (test tag): mocks
-└── internal/
-    └── provider/               # concrete adapters implementing source.Source
-        ├── mock/               # mock-* test-only adapters (success/require/nosupport/fail/lrc/nosync/synconly/mismatch/custom/word)
-        └── real/               # lrclib, lyricsovh, lrccx, musixmatch, betterlyrics adapters
+├── internal/
+│   └── provider/               # concrete adapters implementing source.Source
+│       ├── mock/               # mock-* test-only adapters (success/require/nosupport/fail/lrc/nosync/synconly/mismatch/custom/word)
+│       └── real/               # lrclib, lyricsovh, lrccx, musixmatch, betterlyrics adapters
+└── docs/
+    └── refs/                   # package-level reference extracted from code comments
 ```
 
 ## Build & Test
@@ -203,4 +205,4 @@ Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (neve
 
 - `README.md` — full usage guide: install, usage examples, exit-code table, built-in sources, how to add a source.
 - `CONTRIBUTING.md` — contribution guidelines (not yet written).
-- `docs/` — additional design or source-integration documentation (not yet written).
+- `docs/refs/` — package-level reference extracted from code comments: `source.md`, `fetch.md`, `cli.md`, `bootstrap.md`, `mocks.md`, and `providers/<name>.md` per real adapter.

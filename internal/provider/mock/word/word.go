@@ -20,8 +20,7 @@ func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 
 func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
 
-// Fetch returns pseudo TTML for a word-level request and plain lyrics
-// otherwise, exercising the SyncWord path end to end.
+// Fetch returns pseudo TTML for a word-level request, plain otherwise.
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	if req.SyncLevel == source.SyncWord {
 		return source.Result{

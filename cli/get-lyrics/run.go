@@ -1,11 +1,5 @@
 // Command get-lyrics fetches song lyrics from a registered source.
-//
-// Usage: get-lyrics --source <name> [--author <name>] [--album <name>]
-//
-//	[--isrc <code>] [--duration <secs>] [--output <file>]
-//	[--user-agent <ua>] [--sync-level <levels>] <song>
-//
-// Use --help or -h for the same summary plus the list of registered sources.
+// See docs/refs/cli.md.
 package main
 
 import (
@@ -26,42 +20,22 @@ import (
 // -ldflags "-X main.version=<tag>"; "dev" is the local-build default.
 var version = "dev"
 
-// defaultUserAgent is the User-Agent the CLI sends on every upstream
-// request unless the caller overrides it with --user-agent. The version
-// is injected automatically (from version, stamped at build time) — it
-// replaces the UA the built-in sources previously hardcoded; the sources
-// now trust whatever they are handed.
 func defaultUserAgent() string {
 	return "get-lyrics/" + version + " (+https://github.com/PloyBox/get-lyrics)"
 }
 
-// registry is populated at package-init time so RegisterAll runs
-// before main() — matches the "init()-style" plan without hidden globals
-// inside adapter packages.
+// registry is populated at package-init time, before main() runs.
 var registry = mustRegisterAll()
 
 func mustRegisterAll() *source.Registry {
 	r := source.NewRegistry()
 	if err := bootstrap.RegisterAll(r); err != nil {
-		// Adapter init failure is a programmer error; bail out before
-		// any CLI handling runs.
+		// Registration failure is a programmer error.
 		panic(fmt.Sprintf("get-lyrics: source registration failed: %v", err))
 	}
 	return r
 }
 
-// Exit codes documented for shell consumers:
-//
-//	0 → success (stderr may still carry warnings)
-//	2 → usage error (missing song, unknown/typo flag, invalid --sync-level value)
-//	3 → unknown source (strict precheck)
-//	4 → no valid result: every source skipped (lenient) or failed, or no
-//	     result matched the requested sync levels
-//	5 → output failure (file open, write, or close)
-//	6 → source-required parameter missing in strict precheck (e.g. the
-//	     caller did not supply --author to a source that requires it)
-//	7 → --output points to an existing file and --overwrite was not given
-//	8 → duplicate --source entry (strict precheck)
 const (
 	exitOK           = 0
 	exitUsage        = 2
@@ -73,8 +47,8 @@ const (
 	exitDuplicateSrc = 8
 )
 
-// Run is the testable core: it takes argv (excluding the program name)
-// and explicit writers for stdout/stderr, returns the exit code.
+// Run is the testable core: argv excludes the program name; stdout and
+// stderr are explicit writers. It returns the exit code.
 func Run(argv []string, stdout, stderr io.Writer) (code int) {
 	parsed, song, err := parseFlags(argv)
 	if err != nil {
@@ -83,8 +57,7 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 		return exitUsage
 	}
 	if parsed.help {
-		// Full declaration for rendering only; no env fallback. Lenient
-		// mode and the sorted registry names make this query infallible.
+		// Declaration for rendering only; no env fallback.
 		decls, _ := fetch.New(registry).CustomParamsFor(fetch.Params{Source: registry.Names(), Lenient: true})
 		printUsage(stdout, registry, decls)
 		return exitOK
@@ -102,9 +75,6 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 	svc := fetch.New(registry)
 	params := parsedFlagsToParams(parsed, song)
 
-	// Static declarations for the requested sources (exit 3/8 in strict
-	// mode, same codes as the fetch precheck but reported first), then
-	// fill any undeclared-by-flag key from the process environment.
 	decls, err := svc.CustomParamsFor(params)
 	if err != nil {
 		var dupErr fetch.DuplicateSourceError
@@ -133,8 +103,8 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 	}
 	defer func() {
 		// Only files this process created via O_EXCL are ever removed;
-		// before removing, compare the path's current inode with the
-		// open fd so a file that replaced ours is never deleted.
+		// compare the path's current inode with the open fd first so a
+		// file that replaced ours is never deleted.
 		same := false
 		if created {
 			if f, ok := out.(*os.File); ok {
@@ -185,8 +155,6 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 	}
 	var noRes fetch.NoResultError
 	if errors.As(err, &noRes) {
-		// Failure path: in-flight warnings still tell the user why each
-		// source was skipped or failed, printed before the error.
 		for _, w := range warnings {
 			fmt.Fprintln(stderr, renderWarning(w))
 		}

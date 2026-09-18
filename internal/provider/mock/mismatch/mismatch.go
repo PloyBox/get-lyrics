@@ -14,11 +14,6 @@ func New() *Adapter { return &Adapter{} }
 
 func (a *Adapter) Name() string { return "mock-mismatch" }
 
-// Capabilities lists --author as a filter but declares nothing
-// required: precheck lets the source through without --author, so the
-// missing parameter only surfaces inside Fetch as a
-// RequiredParamMismatchError — the precheck-vs-requirement mismatch
-// path in isolation.
 func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 	return source.Capabilities{Filters: source.ParamAuthor}
 }

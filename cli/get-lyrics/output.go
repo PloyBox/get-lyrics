@@ -7,7 +7,7 @@ import (
 )
 
 // outputExistsError reports that --output points to an existing file
-// while --overwrite was not given. Run maps it to exit code 7.
+// while --overwrite was not given. Exit code 7.
 type outputExistsError struct{ path string }
 
 func (e outputExistsError) Error() string {
@@ -15,12 +15,11 @@ func (e outputExistsError) Error() string {
 }
 
 // openOutput returns the lyrics sink: stdout when path is empty, an
-// os.File when path is set. A new file is created exclusively
-// (O_CREATE|O_EXCL) and reported via created so the caller can remove
-// it on failure. An existing file is only opened when overwrite is set,
-// and never with O_TRUNC — truncation happens only after a successful
-// fetch, so a failed run leaves existing content intact. The caller
-// must invoke the closer.
+// *os.File otherwise. A new file is created exclusively (O_CREATE|O_EXCL)
+// and reported via created so the caller can remove it on failure; an
+// existing file is opened only with overwrite and never with O_TRUNC, so
+// truncation happens only after a successful fetch. The caller must
+// invoke the closer.
 func openOutput(path string, overwrite bool, fallback io.Writer) (io.Writer, func() error, bool, error) {
 	if path == "" {
 		return fallback, func() error { return nil }, false, nil
@@ -40,8 +39,6 @@ func openOutput(path string, overwrite bool, fallback io.Writer) (io.Writer, fun
 		if !overwrite {
 			return nil, func() error { return nil }, false, outputExistsError{path}
 		}
-		// The file exists; reopen it without O_CREATE and without
-		// O_TRUNC (the caller truncates only after a successful fetch).
 		f, err = os.OpenFile(path, os.O_WRONLY, 0)
 		if err == nil {
 			return f, f.Close, false, nil

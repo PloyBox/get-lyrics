@@ -1,27 +1,5 @@
-// Package musixmatch is a real Source implementation backed by the
-// Musixmatch API (https://api.musixmatch.com). It self-registers
-// nothing; registration happens explicitly in internal/bootstrap.RegisterAll.
-//
-// Every request carries the API key as the apikey query parameter, taken
-// from the required custom --env key MUSIXMATCH_API_KEY. The lookup path
-// is chosen by the first matching Request shape:
-//
-//	track.get → track.lyrics.get / track.subtitle.get
-//	                                            when ISRC is set
-//	matcher.lyrics.get / matcher.subtitle.get   when Song + Author are set
-//	track.search → track.lyrics.get / track.subtitle.get
-//	                                            when only Song is set
-//
-// An ISRC identifies the track precisely, so it wins over the author:
-// track.get is keyed by the ISRC alone and takes no artist. The matcher
-// endpoints are fuzzy lookups keyed by title + artist; with no artist
-// (and no ISRC) the API cannot match, so a title-only request searches
-// for the track and fetches lyrics/subtitles by commontrack id. Subtitle
-// endpoints require the paid Scale plan; on cheaper plans they return
-// 402/403, which the adapter treats as "no synced lyrics" and falls back
-// to the plain track (the fetch layer reports the downgrade). A synced
-// request returns exactly one lyrics track — the subtitle when it is
-// available, else the plain lyrics.
+// Package musixmatch implements source.Source against the Musixmatch API.
+// See docs/refs/providers/musixmatch.md.
 package musixmatch
 
 import (
@@ -39,46 +17,36 @@ import (
 	"github.com/PloyBox/get-lyrics/source"
 )
 
-// requestTimeout caps each upstream call so a stalled request does not
-// stall the CLI.
+// requestTimeout caps each upstream call.
 const requestTimeout = 10 * time.Second
 
-// defaultEndpoint is the Musixmatch REST base path; the method name
-// (e.g. "matcher.lyrics.get") is appended to form the full request URL.
+// defaultEndpoint is the Musixmatch REST base path; the method name (e.g.
+// "matcher.lyrics.get") is appended to form the request URL.
 const defaultEndpoint = "https://api.musixmatch.com/ws/1.1"
 
-// apiKeyParam is the custom --env key carrying the API key. Musixmatch
-// requires it on every request.
+// apiKeyParam is the required custom --env key carrying the API key.
 const apiKeyParam = "MUSIXMATCH_API_KEY"
 
-// errNotFound marks an API-level 404 or an empty result body; callers
-// distinguish it from transport/hard failures so a missing synced track
-// can fall back to plain lyrics.
+// errNotFound marks an API-level 404 or an empty result body, so callers
+// can distinguish it from transport/hard failures and fall back.
 var errNotFound = errors.New("musixmatch: not found")
 
 // Adapter implements source.Source against api.musixmatch.com.
 type Adapter struct {
-	// Endpoint overrides the REST base path. Tests point it at an
-	// httptest server; production leaves it as the zero value (the
-	// public Musixmatch endpoint).
+	// Endpoint overrides the REST base path; tests point it at an httptest
+	// server.
 	Endpoint string
 
 	// HTTPClient is reused across calls. nil → http.DefaultClient.
 	HTTPClient *http.Client
 }
 
-// New returns a fresh Adapter pointed at the public Musixmatch endpoint.
 func New() *Adapter { return &Adapter{} }
 
-// Name returns the stable CLI identifier.
 func (a *Adapter) Name() string { return "musixmatch" }
 
-// Capabilities reports the filters this adapter honors for req. The
-// ISRC filter takes precedence: track.get resolves the track by ISRC
-// alone and takes no artist, so with an ISRC set the author filter is
-// dropped (the fetch layer warns the user it is ignored). Without an
-// ISRC, author refines the lookup. Album is not supported — neither the
-// matcher nor the search endpoints take an album parameter.
+// Capabilities reports the filters honored for req. An ISRC wins over the
+// author (track.get takes no artist); album is not supported.
 func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 	filters := source.ParamAuthor
 	if strings.TrimSpace(req.ISRC) != "" {
@@ -95,13 +63,9 @@ func (a *Adapter) CustomParams() []source.ParamSpec {
 	return []source.ParamSpec{{Name: apiKeyParam, Description: "Musixmatch API key (https://developer.musixmatch.com)"}}
 }
 
-// Fetch resolves the track by ISRC (track.get) when set, by title +
-// artist (matcher endpoints) when an author is given, or by searching
-// for the title (track.search) otherwise; the resolved paths then fetch
-// lyrics/subtitles by commontrack id. A synced request tries the
-// subtitle endpoint first and silently degrades to the plain track when
-// subtitles are unavailable (not found, or 402/403 from a plan without
-// subtitle access).
+// Fetch resolves the track by ISRC when set, by title + artist when an
+// author is given, or by searching the title otherwise; the resolved paths
+// then fetch lyrics/subtitles by commontrack id.
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	if strings.TrimSpace(req.Song) == "" {
 		return source.Result{}, errors.New("musixmatch: song title is required")
@@ -163,10 +127,9 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	return res, nil
 }
 
-// fetchByTrack fills the result with the resolved track's metadata and,
-// by commontrack id, its subtitle (when a synced track is requested)
-// or plain lyrics. Shared by the ISRC (track.get) and title-search
-// (track.search) resolution paths.
+// fetchByTrack fills the result with the resolved track's metadata and, by
+// commontrack id, its subtitle (for a synced request) or plain lyrics.
+// Shared by the ISRC and title-search resolution paths.
 func (a *Adapter) fetchByTrack(ctx context.Context, apiKey, ua string, req source.Request, track musixmatchTrack) (source.Result, error) {
 	var res source.Result
 	res.Title = track.TrackName
@@ -203,8 +166,7 @@ func (a *Adapter) fetchByTrack(ctx context.Context, apiKey, ua string, req sourc
 	return res, nil
 }
 
-// fetchMatcherLyrics returns the plain track via matcher.lyrics.get
-// (fuzzy match by title + artist).
+// fetchMatcherLyrics returns the plain track via matcher.lyrics.get.
 func (a *Adapter) fetchMatcherLyrics(ctx context.Context, apiKey, ua string, req source.Request) (string, error) {
 	q := url.Values{}
 	q.Set("q_track", strings.TrimSpace(req.Song))
@@ -228,8 +190,8 @@ func (a *Adapter) fetchMatcherSubtitle(ctx context.Context, apiKey, ua string, r
 	return strings.TrimSpace(out.Subtitle.SubtitleBody), nil
 }
 
-// getTrackByISRC returns the track identified by isrc via track.get;
-// an empty commontrack id in the response means no match (errNotFound).
+// getTrackByISRC returns the track identified by isrc via track.get; an
+// empty commontrack id in the response means no match (errNotFound).
 func (a *Adapter) getTrackByISRC(ctx context.Context, apiKey, ua, isrc string) (musixmatchTrack, error) {
 	q := url.Values{}
 	q.Set("track_isrc", isrc)
@@ -244,7 +206,7 @@ func (a *Adapter) getTrackByISRC(ctx context.Context, apiKey, ua, isrc string) (
 }
 
 // searchTrack finds the first search hit that carries lyrics, ranked by
-// track rating so the best-known match comes first.
+// track rating.
 func (a *Adapter) searchTrack(ctx context.Context, apiKey, ua, song string) (musixmatchTrack, error) {
 	q := url.Values{}
 	q.Set("q_track", strings.TrimSpace(song))
@@ -285,10 +247,8 @@ func (a *Adapter) fetchTrackSubtitle(ctx context.Context, apiKey, ua string, tra
 	return strings.TrimSpace(out.Subtitle.SubtitleBody), nil
 }
 
-// do issues one GET against method, injecting the API key, and decodes
-// the JSON envelope. The effective status is message.header.status_code
-// when present — Musixmatch returns HTTP 200 with an error code in the
-// body for many failures — falling back to the HTTP status.
+// do issues one GET against method, injecting the API key, and decodes the
+// JSON envelope.
 func (a *Adapter) do(ctx context.Context, apiKey, ua, method string, q url.Values, out any) error {
 	q.Set("apikey", apiKey)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, a.endpoint()+"/"+method+"?"+q.Encode(), nil)
@@ -312,8 +272,9 @@ func (a *Adapter) do(ctx context.Context, apiKey, ua, method string, q url.Value
 }
 
 // decodeResponse maps a Musixmatch response to an error or decodes the
-// body into out. An empty/[]/{} body on success is the API's no-match
-// signal (errNotFound); 401/402/403 get explicit, actionable messages.
+// body into out. The effective status is message.header.status_code when
+// present — Musixmatch returns HTTP 200 with an error code in the body for
+// many failures — falling back to the HTTP status.
 func decodeResponse(body []byte, httpStatus int, out any) error {
 	if strings.TrimSpace(string(body)) == "[]" {
 		return errNotFound
@@ -369,9 +330,8 @@ func (a *Adapter) client() *http.Client {
 	return &http.Client{Timeout: requestTimeout}
 }
 
-// cleanLyrics trims Musixmatch's appended "*******" usage notice (API
-// boilerplate, not lyrics) and treats the instrumental placeholder
-// "...." as empty.
+// cleanLyrics trims Musixmatch's appended "*******" usage notice and
+// treats the instrumental placeholder "...." as empty.
 func cleanLyrics(s string) string {
 	s = strings.TrimSpace(s)
 	if i := strings.Index(s, "\n*******"); i >= 0 {
@@ -383,8 +343,7 @@ func cleanLyrics(s string) string {
 	return s
 }
 
-// truncate keeps an upstream error body bounded when emitted in a CLI
-// message.
+// truncate keeps an upstream error body bounded in CLI messages.
 func truncate(b []byte, n int) string {
 	if len(b) <= n {
 		return string(b)

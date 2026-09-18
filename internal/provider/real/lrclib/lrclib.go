@@ -1,19 +1,5 @@
-// Package lrclib is a real Source implementation backed by the public
-// lrclib.net API. It self-registers nothing; registration happens
-// explicitly in internal/bootstrap.RegisterAll.
-//
-// The adapter picks the endpoint based on which Request fields are
-// non-empty:
-//
-//	GET /api/search?q=<song>            when only Song is set
-//	GET /api/get?track_name=...&artist_name=...&album_name=...&duration=<secs>
-//	                                    when Song + Author are set
-//
-// Both endpoints return a single track (or first hit) with plainLyrics
-// and syncedLyrics (LRC) fields. A synced request (Request.SyncLevel is
-// SyncLine) returns the LRC track when the hit carries one; any other
-// request returns the plain track — exactly one lyrics track per Fetch,
-// with Result.Level declaring which.
+// Package lrclib implements source.Source against the public lrclib.net API.
+// See docs/refs/providers/lrclib.md.
 package lrclib
 
 import (
@@ -31,31 +17,25 @@ import (
 	"github.com/PloyBox/get-lyrics/source"
 )
 
-// requestTimeout caps each upstream call. The value is short on
-// purpose — a stalled request should not stall the CLI.
+// requestTimeout caps each upstream call.
 const requestTimeout = 10 * time.Second
 
 // Adapter implements source.Source against lrclib.net.
 type Adapter struct {
-	// Endpoint is the search URL. Tests override it to point at an
-	// httptest server; production leaves it as the zero value (the
-	// public lrclib endpoint).
+	// Endpoint overrides the API base URL; tests point it at an httptest
+	// server.
 	Endpoint string
 
 	// HTTPClient is reused across calls. nil → http.DefaultClient.
 	HTTPClient *http.Client
 }
 
-// New returns a fresh Adapter pointed at the public lrclib endpoint.
 func New() *Adapter { return &Adapter{} }
 
-// Name returns the stable CLI identifier.
 func (a *Adapter) Name() string { return "lrclib" }
 
-// Capabilities reports which filters are honored for req. The album and
-// duration filters only take effect on the /api/get path (author
-// present); a search-only request drops them, so the fetch layer can
-// warn the user that --album/--duration are being ignored.
+// Capabilities honors author, album and duration — album and duration
+// only on the /api/get path (author present).
 func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 	c := source.Capabilities{Filters: source.ParamAuthor | source.ParamAlbum | source.ParamDuration}
 	if strings.TrimSpace(req.Author) == "" {
@@ -66,8 +46,6 @@ func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 
 func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
 
-// Fetch calls lrclib /api/search, picks the best candidate, and
-// populates the lyrics track matching the requested sync level.
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	if strings.TrimSpace(req.Song) == "" {
 		return source.Result{}, errors.New("lrclib: song title is required")
@@ -99,11 +77,8 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		return source.Result{}, fmt.Errorf("lrclib: HTTP %d: %s", resp.StatusCode, truncate(body, 200))
 	}
 
-	// The response shape is dictated by the endpoint, not by sniffing
-	// the body: /api/get returns a single object, /api/search returns an
-	// array. Branch on the same condition endpoint()/buildQuery() use so
-	// a server that pretty-prints (leading whitespace/newline) cannot
-	// confuse the two.
+	// The response shape is dictated by the endpoint, not by sniffing the
+	// body: /api/get returns an object, /api/search an array.
 	usedGetEndpoint := strings.TrimSpace(req.Author) != ""
 	var hits []lrclibHit
 	if usedGetEndpoint {
@@ -122,9 +97,8 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		return source.Result{}, fmt.Errorf("lrclib: no lyrics found for %q", req.Song)
 	}
 
-	// Prefer the first hit with non-empty plainLyrics. lrclib commonly
-	// returns instrumental/synced-only entries at the front; fall back
-	// to index 0 if nothing fills the plain track.
+	// Prefer the first hit with non-empty plainLyrics; fall back to the
+	// first entry when nothing fills the plain track.
 	best := -1
 	for i := range hits {
 		if strings.TrimSpace(hits[i].PlainLyrics) != "" {
@@ -151,9 +125,8 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	if strings.TrimSpace(res.Album) != "" {
 		res.Filled |= source.FieldAlbum
 	}
-	// A synced request takes the LRC track when available; otherwise
-	// the plain track. The adapter produces exactly one lyrics track
-	// per Fetch, so the request level decides which one.
+	// A synced request takes the LRC track when available; otherwise the
+	// plain track. Exactly one lyrics track per Fetch.
 	if req.SyncLevel == source.SyncLine && strings.TrimSpace(hit.SyncedLyrics) != "" {
 		res.Lyrics = hit.SyncedLyrics
 		res.Level = source.SyncLine
@@ -186,10 +159,9 @@ func (a *Adapter) client() *http.Client {
 	return &http.Client{Timeout: requestTimeout}
 }
 
-// buildQuery picks the query encoding that matches the chosen endpoint:
-//   - /api/search uses freeform q=
-//   - /api/get uses structured track_name + artist_name (+ album_name,
-//   - duration when provided)
+// buildQuery picks the query encoding matching the chosen endpoint:
+// /api/search uses freeform q=, /api/get uses structured track_name +
+// artist_name (+ album_name, duration).
 func buildQuery(req source.Request) string {
 	q := url.Values{}
 	if strings.TrimSpace(req.Author) == "" {
@@ -207,8 +179,7 @@ func buildQuery(req source.Request) string {
 	return q.Encode()
 }
 
-// truncate keeps an upstream error body bounded when emitted in a CLI
-// message.
+// truncate keeps an upstream error body bounded in CLI messages.
 func truncate(b []byte, n int) string {
 	if len(b) <= n {
 		return string(b)
@@ -216,9 +187,7 @@ func truncate(b []byte, n int) string {
 	return string(b[:n]) + "…"
 }
 
-// lrclibHit mirrors the relevant fields of lrclib's /api/search JSON.
-// We intentionally keep this struct private and minimal so a future
-// schema change is a one-file diff.
+// lrclibHit mirrors the fields of lrclib's JSON that this adapter consumes.
 type lrclibHit struct {
 	TrackName    string `json:"trackName"`
 	ArtistName   string `json:"artistName"`

@@ -14,9 +14,7 @@ func New() *Adapter { return &Adapter{} }
 
 func (a *Adapter) Name() string { return "mock-require" }
 
-// Capabilities demands --author while listing no filters: the source
-// requires the field but does not treat it as an optional refinement,
-// exercising the required-param precheck in isolation.
+// Capabilities demands --author while listing no filters.
 func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 	return source.Capabilities{Required: source.ParamAuthor}
 }

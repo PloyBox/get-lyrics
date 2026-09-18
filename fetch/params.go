@@ -6,15 +6,8 @@ import (
 	"github.com/PloyBox/get-lyrics/source"
 )
 
-// Params bundles all CLI inputs the fetch layer needs. Source is the
-// ordered list of source names to try (failover order). SyncLevels is
-// the ordered list of requested sync levels (SyncLine → LRC-synced,
-// SyncWord → word-synced, SyncNone → plain) — the CLI parses the
-// --sync-level level names into it; the first match wins. SyncUnknown
-// is not a legal request value; precheck rejects it with
-// InvalidSyncLevelError. Lenient controls the precheck stage only: when
-// false, the first precheck problem aborts; when true, problem sources
-// are skipped with a PreCheck warning.
+// Params bundles all CLI inputs the fetch layer needs. Source and
+// SyncLevels are priority-ordered; Lenient affects the precheck only.
 type Params struct {
 	Song       string
 	Source     []string
@@ -24,15 +17,8 @@ type Params struct {
 	Duration   int // whole seconds; 0 means not provided
 	SyncLevels []SyncLevel
 	Lenient    bool
-	// UserAgent is the HTTP User-Agent header to send on upstream
-	// requests (from --user-agent). It is passed to every requested
-	// source; empty means the source uses its own default UA.
-	UserAgent string
-	// Custom carries the user-supplied --env keys (plus process-
-	// environment fallbacks injected by the CLI). Keys the caller did
-	// not provide are absent; env-injected keys are treated exactly
-	// like user-provided ones.
-	Custom map[string]string
+	UserAgent  string
+	Custom     map[string]string
 }
 
 // SyncLevel classifies the lyrics content a fetch.Result carries by its
@@ -40,24 +26,16 @@ type Params struct {
 type SyncLevel uint8
 
 const (
-	// SyncUnknown: unknown / no valid lyrics content (the result
-	// carries no populated lyrics track).
-	SyncUnknown SyncLevel = iota
-	// SyncNone: plain (non-timestamped) lyrics.
-	SyncNone
-	// SyncLine: synced (LRC timestamped) lyrics.
-	SyncLine
-	// SyncWord: word-level (TTML timeline) lyrics.
-	SyncWord
+	SyncUnknown SyncLevel = iota // no populated lyrics track
+	SyncNone                     // plain (non-timestamped) lyrics
+	SyncLine                     // synced (LRC timestamped) lyrics
+	SyncWord                     // word-level (TTML timeline) lyrics
 )
 
-// requestFromParams projects the CLI params onto a source.Request for
-// capability queries. SyncLevel is deliberately omitted — zero value is
-// SyncNone (plain), synced output is a runtime property.
-// Custom is projected so capability queries see the user-supplied keys
-// — conditional recognition/requirements (e.g. mock-custom's COUNTRY
-// depending on LANG) would otherwise never hold in precheck and
-// detectUnsupported.
+// requestFromParams projects Params onto a source.Request for capability
+// queries. SyncLevel is omitted: its zero value is SyncNone, since
+// synced output is a runtime property. Custom is projected so
+// conditional declarations hold.
 func requestFromParams(params Params) source.Request {
 	return source.Request{
 		Song:     params.Song,
@@ -69,9 +47,8 @@ func requestFromParams(params Params) source.Request {
 	}
 }
 
-// sourceSyncLevel maps a requested fetch.SyncLevel onto its
-// source.Request counterpart one-to-one. SyncUnknown never reaches
-// this point: precheck rejects it before the fetch loop runs.
+// sourceSyncLevel maps a requested fetch.SyncLevel onto its source
+// counterpart one-to-one.
 func sourceSyncLevel(want SyncLevel) source.SyncLevel {
 	switch want {
 	case SyncNone:

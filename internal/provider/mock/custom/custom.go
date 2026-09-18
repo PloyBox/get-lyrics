@@ -14,10 +14,6 @@ func New() *Adapter { return &Adapter{} }
 
 func (a *Adapter) Name() string { return "mock-custom" }
 
-// CustomParams statically declares LANG and COUNTRY, independent of any
-// request. LANG is always recognized and required; COUNTRY is only
-// recognized (and required) when LANG is present — demonstrating
-// conditional custom parameters.
 func (a *Adapter) CustomParams() []source.ParamSpec {
 	return []source.ParamSpec{
 		{Name: "LANG", Description: "language hint"},
@@ -25,8 +21,8 @@ func (a *Adapter) CustomParams() []source.ParamSpec {
 	}
 }
 
-// Capabilities recognizes LANG unconditionally (and requires it);
-// COUNTRY joins both lists only when LANG was supplied.
+// Capabilities recognizes LANG unconditionally (and requires it); COUNTRY
+// joins both lists only when LANG was supplied.
 func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 	caps := source.Capabilities{
 		Custom:         []source.ParamSpec{{Name: "LANG", Description: "language hint"}},

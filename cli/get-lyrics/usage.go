@@ -8,10 +8,8 @@ import (
 	"github.com/PloyBox/get-lyrics/source"
 )
 
-// printUsage writes the help text. Examples use the long (--) form per
-// the plan; the underlying flag library also accepts short forms.
-// decls, when non-nil, feeds the "Source parameters:" section: a
-// per-source list of the static --env keys and their descriptions.
+// printUsage writes the help text; decls, when non-nil, feeds the
+// "Source parameters:" section.
 func printUsage(w io.Writer, reg *source.Registry, decls map[string][]source.ParamSpec) {
 	var b bytes.Buffer
 	fmt.Fprintln(&b, "Usage: get-lyrics [--source <names>] [--author <name>] [--album <name>]")

@@ -10,14 +10,14 @@ import (
 	"github.com/PloyBox/get-lyrics/fetch"
 )
 
-// parsedFlags holds the parsed CLI inputs. song is kept separate because
-// it is a positional argument, not a flag.
+// parsedFlags holds the parsed CLI inputs; song is kept separate because
+// it is positional.
 type parsedFlags struct {
 	source     string
 	author     string
 	album      string
 	isrc       string
-	duration   int // whole seconds; normalized from --duration at parse time
+	duration   int // whole seconds; normalized at parse time
 	output     string
 	json       bool
 	syncLevels []fetch.SyncLevel // parsed from --sync-level at parse time
@@ -26,13 +26,11 @@ type parsedFlags struct {
 	overwrite  bool
 	help       bool
 	version    bool
-	env        map[string]string // validated --env keys; validated at parse time
+	env        map[string]string // validated at parse time
 }
 
-// parseFlags handles both -x/--x forms using Go flag's default
-// behavior: parsing stops at the first positional argument, so flags
-// must precede it. Unknown flags become a non-nil error which Run maps
-// to exitUsage.
+// parseFlags parses argv; parsing stops at the first positional argument,
+// so flags must precede the song. An unknown flag maps to exitUsage.
 func parseFlags(argv []string) (parsedFlags, string, error) {
 	fs := flag.NewFlagSet("get-lyrics", flag.ContinueOnError)
 	// Silence flag's own usage writer; Run writes its own on error.
@@ -95,11 +93,9 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	return f, strings.Join(positional, " "), nil
 }
 
-// parseSyncLevels converts a comma-separated --sync-level value into
-// the ordered SyncLevels the fetch layer consumes: "line" → SyncLine,
-// "word" → SyncWord, "none" → SyncNone. Whitespace around entries is
-// trimmed and empty entries are dropped; any other value is a usage
-// error (exit 2).
+// parseSyncLevels converts a comma-separated --sync-level value into the
+// ordered SyncLevels the fetch layer consumes; entries are trimmed and
+// empty ones dropped. Any other value is a usage error (exit 2).
 func parseSyncLevels(s string) ([]fetch.SyncLevel, error) {
 	parts := strings.Split(s, ",")
 	out := make([]fetch.SyncLevel, 0, len(parts))
@@ -122,9 +118,8 @@ func parseSyncLevels(s string) ([]fetch.SyncLevel, error) {
 }
 
 // parseDuration converts a --duration value into whole seconds: a plain
-// positive integer ("225") or mm:ss ("3:45"). Whitespace-only input is
-// treated as not provided (0, mirroring the --author whitespace
-// precedent); any other value is a usage error (exit 2).
+// positive integer ("225") or mm:ss ("3:45"). Whitespace-only input means
+// not provided; any other value is a usage error (exit 2).
 func parseDuration(s string) (int, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -163,11 +158,8 @@ func splitTrimmed(s string) []string {
 	return out
 }
 
-// parsedFlagsToParams converts the raw CLI flags and positional song
-// argument into the fetch.Params struct, without applying defaults
-// (those live in parseFlags). Source lists are trimmed and empty
-// entries dropped here; sync levels are already parsed into SyncLevels
-// by parseSyncLevels.
+// parsedFlagsToParams converts the raw flags and positional song into
+// fetch.Params; defaults live in parseFlags.
 func parsedFlagsToParams(f parsedFlags, song string) fetch.Params {
 	return fetch.Params{
 		Song:       song,

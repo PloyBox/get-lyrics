@@ -7,8 +7,7 @@ import (
 	"github.com/PloyBox/get-lyrics/source"
 )
 
-// flagForParam maps a Param bit to the CLI flag spelling used in
-// rendered messages.
+// flagForParam maps a Param bit to its CLI flag spelling.
 func flagForParam(p source.Param) string {
 	switch p {
 	case source.ParamAuthor:
@@ -23,8 +22,8 @@ func flagForParam(p source.Param) string {
 	return ""
 }
 
-// flagFor renders the flag spelling for a parameter reference: a
-// custom key renders as "--env <KEY>", a typed bit via flagForParam.
+// flagFor renders a parameter reference: a custom key as "--env <KEY>",
+// a typed bit via flagForParam.
 func flagFor(p source.Param, custom string) string {
 	if custom != "" {
 		return "--env " + custom
@@ -33,8 +32,7 @@ func flagFor(p source.Param, custom string) string {
 }
 
 // renderWarning renders one fetch.Warning into the exact stderr line,
-// [kind] tag included: the fetch layer supplies structured data only,
-// the CLI owns every byte of display text.
+// [kind] tag included.
 func renderWarning(w fetch.Warning) string {
 	switch w.Kind {
 	case fetch.UnsupportedParam:
@@ -73,13 +71,11 @@ func renderWarning(w fetch.Warning) string {
 		}
 		return fmt.Sprintf(`warning[result]: source "%s" filled field %q without declaring it (source issue)`, w.Source, w.Field.String())
 	}
-	// Unreachable for the WarningKind set above; a safety net so a
-	// future kind never renders as an empty line.
+	// Safety net: a future kind must never render as an empty line.
 	return fmt.Sprintf(`warning[unknown]: source "%s" (kind %d)`, w.Source, int(w.Kind))
 }
 
-// renderRequiredError renders a fetch.RequiredParamError as the body of
-// the error[required] line.
+// renderRequiredError renders the body of the error[required] line.
 func renderRequiredError(e fetch.RequiredParamError) string {
 	return fmt.Sprintf("source %q requires %s", e.Source, flagFor(e.Param, e.ParamName))
 }

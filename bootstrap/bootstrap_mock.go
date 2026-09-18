@@ -17,7 +17,6 @@ import (
 )
 
 // RegisterAllMock registers every mock/test-only adapter into r.
-// Use in place of RegisterAll when running tests that need stub sources.
 func RegisterAllMock(r *source.Registry) error {
 	adapters := []source.Source{
 		success.New(),
