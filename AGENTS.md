@@ -23,7 +23,8 @@ get-lyrics/
 │       ├── mock/               # mock-* test-only adapters (success/require/nosupport/fail/lrc/nosync/synconly/mismatch/custom/word)
 │       └── real/               # lrclib, lyricsovh, lrccx, musixmatch, betterlyrics adapters
 └── docs/
-    └── refs/                   # package-level reference extracted from code comments
+    ├── refs/                   # package-level reference extracted from code comments
+    └── usage/                  # user-facing docs split out of README (usage, exit codes, source parameters, built-in sources, add-a-source)
 ```
 
 ## Build & Test
@@ -203,6 +204,6 @@ Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (neve
 
 ## Pointers
 
-- `README.md` — full usage guide: install, usage examples, exit-code table, built-in sources, how to add a source.
+- `README.md` — install plus a documentation index; usage examples, exit-code table, source parameters, built-in sources, and how to add a source live under `docs/usage/`.
 - `CONTRIBUTING.md` — contribution guidelines (not yet written).
 - `docs/refs/` — package-level reference extracted from code comments: `source.md`, `fetch.md`, `cli.md`, `bootstrap.md`, `mocks.md`, and `providers/<name>.md` per real adapter.
