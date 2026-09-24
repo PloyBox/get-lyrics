@@ -47,6 +47,7 @@ get-lyrics/
   - `--user-agent`/`-u` — HTTP `User-Agent` header sent to sources. Default `get-lyrics/<ver> (+https://github.com/PloyBox/get-lyrics)` (`<ver>` is the version stamped at build time). The built-in sources carry no default of their own — they trust whatever UA they are handed; a non-empty value replaces the CLI default on every upstream request.
   - `--env`/`-e` — repeatable custom source parameter `key=value` (open-ended; keys are source-declared). Key must match `^[A-Z][A-Z0-9_]*$`; value non-empty after trimming; duplicate keys rejected — any violation is a usage error (exit 2).
   - `--lenient`/`-l` — skip invalid sources with `warning[precheck]` instead of failing fast.
+  - `--quiet`/`-q` — suppress all stderr output (warnings and errors); exit codes unchanged.
   - `--help`/`-h`, `--version`/`-v` — exit 0.
 - Go's `flag` package accepts both `--flag` and `-flag`; both work.
 
@@ -79,7 +80,7 @@ Thin CLI layer over a pluggable-source abstraction:
    - **Result trust policy** — a result whose `Filled` mask disagrees with its contents (declared-but-empty or filled-but-undeclared) → `warning[result]`, result still used as-is (trust policy).
    - **Downgrade** — symmetric across the three levels: a line/word request yielding plain lyrics → `warning[downgraded]` ("returned no synced lyrics" / "returned no word-synced lyrics"); a plain request yielding only synced lyrics → the same warning ("returned only synced lyrics"). In all cases the unmatched result stays cached and can satisfy a later iteration (`none` after `line`/`word`, or `line` after `none`).
 5. **Output** — opened before the fetch (`O_CREATE|O_EXCL` for new files, `O_WRONLY` without `O_TRUNC` otherwise); on any failure a freshly created file is removed (guarded by a same-inode check). Truncate+Seek happen only after a successful fetch, so existing files keep their content on every failure path (exit 3/4/6/7/8). `--json` writes the complete `fetch.Result` with all fields, including empty strings, and a `formatVersion` that increments whenever JSON structure or parameter semantics change.
-6. **Warnings** — structured data produced by the fetch layer; the CLI (`cli/get-lyrics/render.go`) renders every byte of display text, including the `[kind]` tag. Warnings never change the exit code. Every error path in `main` prints the rendered warnings before the `error[...]` line.
+6. **Warnings** — structured data produced by the fetch layer; the CLI (`cli/get-lyrics/render.go`) renders every byte of display text, including the `[kind]` tag. Warnings never change the exit code. Every error path in `main` prints the rendered warnings before the `error[...]` line; `--quiet` silences all of it.
 
 **Key types (`source/source.go`):**
 

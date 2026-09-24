@@ -51,6 +51,9 @@ const (
 // stderr are explicit writers. It returns the exit code.
 func Run(argv []string, stdout, stderr io.Writer) (code int) {
 	parsed, song, err := parseFlags(argv)
+	if parsed.quiet {
+		stderr = io.Discard
+	}
 	if err != nil {
 		fmt.Fprintln(stderr, "error[usage]:", err)
 		printUsage(stderr, nil, nil)

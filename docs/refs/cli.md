@@ -3,9 +3,10 @@
 `get-lyrics` fetches song lyrics from a registered source.
 
 ```
-Usage: get-lyrics --source <name> [--author <name>] [--album <name>]
-                    [--isrc <code>] [--duration <secs>] [--output <file>]
-                    [--user-agent <ua>] [--sync-level <levels>] <song>
+Usage: get-lyrics [--source <names>] [--author <name>] [--album <name>]
+                   [--isrc <code>] [--duration <secs>] [--output <file>]
+                   [--user-agent <ua>] [--sync-level <levels>] [--json]
+                   [--quiet] [--version] <song>
 ```
 
 ## Exit codes
@@ -38,7 +39,10 @@ Usage: get-lyrics --source <name> [--author <name>] [--album <name>]
 
 Run flow:
 
-1. Parse flags; on error → `error[usage]` + usage, exit 2.
+1. Parse flags; when `--quiet` is set, stderr is redirected to `io.Discard` before anything
+   is printed, silencing every later line (warnings and errors alike) while exit codes stay
+   meaningful — honored even when parsing itself fails after the flag. On parse error →
+   `error[usage]` + usage, exit 2.
 2. `--help` → full declaration for rendering only, no env fallback (lenient mode and the
    sorted registry names make this query infallible); print usage, exit 0.
 3. `--version` → print `get-lyrics <version>`, exit 0.
@@ -72,7 +76,8 @@ or parameter semantics change.
 - `parseFlags(argv)` handles both `-x`/`--x` forms using Go `flag`'s default behavior:
   parsing stops at the first positional argument, so flags must precede the song. Unknown
   flags become a non-nil error which `Run` maps to `exitUsage`. Flag's own usage writer is
-  silenced (`io.Discard`); `Run` writes its own on error.
+  silenced (`io.Discard`); `Run` writes its own on error. On error the flags parsed so far
+  are still returned, so `Run` honors `--quiet` even when a later parse step fails.
 - `parseSyncLevels`: comma-separated `--sync-level` → ordered `[]fetch.SyncLevel` (`line` →
   `SyncLine`, `word` → `SyncWord`, `none` → `SyncNone`); entries trimmed, empty entries
   dropped; anything else is a usage error (exit 2).

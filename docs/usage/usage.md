@@ -84,6 +84,7 @@ get-lyrics --help
 | `--user-agent` | `-u` | HTTP `User-Agent` header sent to sources (default: `get-lyrics/<ver> (+https://github.com/PloyBox/get-lyrics)`) |
 | `--env` | `-e` | Custom source parameter `key=value` (repeatable; key must match `^[A-Z][A-Z0-9_]*$`) |
 | `--lenient` | `-l` | Skip invalid sources instead of failing fast (precheck only) |
+| `--quiet` | `-q` | Suppress all stderr output (warnings and errors; default: off) |
 | `--help` | `-h` | Show help and exit |
 | `--version` | `-v` | Print version and exit |
 

@@ -23,6 +23,7 @@ type parsedFlags struct {
 	syncLevels []fetch.SyncLevel // parsed from --sync-level at parse time
 	userAgent  string
 	lenient    bool
+	quiet      bool
 	overwrite  bool
 	help       bool
 	version    bool
@@ -58,6 +59,8 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	fs.StringVar(&f.userAgent, "u", defaultUserAgent(), "User-Agent header for HTTP requests (short)")
 	fs.BoolVar(&f.lenient, "lenient", false, "skip invalid sources instead of failing")
 	fs.BoolVar(&f.lenient, "l", false, "skip invalid sources instead of failing (short)")
+	fs.BoolVar(&f.quiet, "quiet", false, "suppress all stderr output")
+	fs.BoolVar(&f.quiet, "q", false, "suppress all stderr output (short)")
 	fs.BoolVar(&f.overwrite, "overwrite", false, "overwrite an existing output file")
 	fs.BoolVar(&f.overwrite, "O", false, "overwrite an existing output file (short)")
 	fs.BoolVar(&f.help, "help", false, "show help")
@@ -69,21 +72,21 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	fs.Var(&envs, "e", "custom source parameter key=value (repeatable, short)")
 
 	if err := fs.Parse(argv); err != nil {
-		return parsedFlags{}, "", err
+		return f, "", err
 	}
 	syncLevels, err := parseSyncLevels(syncLevel)
 	if err != nil {
-		return parsedFlags{}, "", err
+		return f, "", err
 	}
 	f.syncLevels = syncLevels
 	duration, err := parseDuration(durationRaw)
 	if err != nil {
-		return parsedFlags{}, "", err
+		return f, "", err
 	}
 	f.duration = duration
 	env, err := validateEnv(envs)
 	if err != nil {
-		return parsedFlags{}, "", err
+		return f, "", err
 	}
 	f.env = env
 	positional := fs.Args()
