@@ -20,7 +20,7 @@ Prebuilt binaries are attached to each [Release](https://github.com/PloyBox/get-
 go install github.com/PloyBox/get-lyrics/cli/get-lyrics@latest
 ```
 
-Requires Go 1.25.10+.
+Requires Go 1.26+.
 
 ### Option 3: Build from source with a downgraded Go version
 

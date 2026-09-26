@@ -32,7 +32,7 @@ get-lyrics/
 - `go build ./...` — compile
 - `go test -tags test ./...` — test suite (the `test` tag is required: the `cli/get-lyrics` `*_test.go` tests exercise the `mock-*` sources registered by `loadmock.go`, which compiles only under the tag)
 - `go vet -tags test ./...` — static checks (same tag requirement)
-- Prerequisites: Go toolchain (module declares Go 1.25.10); network access for real sources at runtime
+- Prerequisites: Go toolchain (module declares Go 1.26); network access for real sources at runtime
 
 ## CLI Surface
 
