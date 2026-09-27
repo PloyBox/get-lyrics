@@ -14,7 +14,7 @@ Usage: get-lyrics [--source <names>] [--author <name>] [--album <name>]
 | Code | Meaning |
 |------|---------|
 | 0 | success (stderr may still carry warnings) |
-| 2 | usage error (missing song, unknown/typo flag, invalid `--sync-level` value, invalid `--duration`, invalid/duplicate `--env`) |
+| 2 | usage error (missing/multiple positionals, unknown/typo flag, invalid `--sync-level` value, invalid `--duration`, invalid/duplicate `--env`) |
 | 3 | unknown source (strict precheck) |
 | 4 | no valid result: every source skipped (lenient) or failed, or no result matched the requested sync levels |
 | 5 | output failure (file open, write, or close) |
@@ -46,7 +46,7 @@ Run flow:
 2. `--help` → full declaration for rendering only, no env fallback (lenient mode and the
    sorted registry names make this query infallible); print usage, exit 0.
 3. `--version` → print `get-lyrics <version>`, exit 0.
-4. Empty song → `error[usage]: song title is required` + usage, exit 2.
+4. Positional count != 1 → `error[usage]: expected 1 song title, got <n>` + usage, exit 2.
 5. `svc.CustomParamsFor(params)` for the requested sources — strict mode reports exit 3/8
    here (same codes as the fetch precheck, but reported first) — then `mergeEnv` fills every
    key not supplied by flag from the process environment.
@@ -71,8 +71,9 @@ or parameter semantics change.
 
 ## flags.go
 
-- `parsedFlags` holds the parsed inputs; `song` is kept separate because it is a positional
-  argument, not a flag.
+- `parsedFlags` holds the parsed inputs; the positional arguments are kept separate because
+  they are not flags. `parseFlags` returns them raw and `Run` enforces strict arity — exactly
+  one positional (the song title), zero or more than one being a usage error (exit 2).
 - `parseFlags(argv)` handles both `-x`/`--x` forms using Go `flag`'s default behavior:
   parsing stops at the first positional argument, so flags must precede the song. Unknown
   flags become a non-nil error which `Run` maps to `exitUsage`. Flag's own usage writer is

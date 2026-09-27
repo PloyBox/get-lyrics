@@ -31,8 +31,9 @@ type parsedFlags struct {
 }
 
 // parseFlags parses argv; parsing stops at the first positional argument,
-// so flags must precede the song. An unknown flag maps to exitUsage.
-func parseFlags(argv []string) (parsedFlags, string, error) {
+// so flags must precede the song. An unknown flag maps to exitUsage. The
+// positional arguments are returned raw for Run to validate arity.
+func parseFlags(argv []string) (parsedFlags, []string, error) {
 	fs := flag.NewFlagSet("get-lyrics", flag.ContinueOnError)
 	// Silence flag's own usage writer; Run writes its own on error.
 	fs.SetOutput(io.Discard)
@@ -72,28 +73,24 @@ func parseFlags(argv []string) (parsedFlags, string, error) {
 	fs.Var(&envs, "e", "custom source parameter key=value (repeatable, short)")
 
 	if err := fs.Parse(argv); err != nil {
-		return f, "", err
+		return f, nil, err
 	}
 	syncLevels, err := parseSyncLevels(syncLevel)
 	if err != nil {
-		return f, "", err
+		return f, nil, err
 	}
 	f.syncLevels = syncLevels
 	duration, err := parseDuration(durationRaw)
 	if err != nil {
-		return f, "", err
+		return f, nil, err
 	}
 	f.duration = duration
 	env, err := validateEnv(envs)
 	if err != nil {
-		return f, "", err
+		return f, nil, err
 	}
 	f.env = env
-	positional := fs.Args()
-	if len(positional) == 0 {
-		return f, "", nil
-	}
-	return f, strings.Join(positional, " "), nil
+	return f, fs.Args(), nil
 }
 
 // parseSyncLevels converts a comma-separated --sync-level value into the

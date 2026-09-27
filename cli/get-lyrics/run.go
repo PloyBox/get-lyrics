@@ -50,7 +50,7 @@ const (
 // Run is the testable core: argv excludes the program name; stdout and
 // stderr are explicit writers. It returns the exit code.
 func Run(argv []string, stdout, stderr io.Writer) (code int) {
-	parsed, song, err := parseFlags(argv)
+	parsed, positional, err := parseFlags(argv)
 	if parsed.quiet {
 		stderr = io.Discard
 	}
@@ -69,11 +69,12 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 		fmt.Fprintf(stdout, "get-lyrics %s\n", version)
 		return exitOK
 	}
-	if song == "" {
-		fmt.Fprintln(stderr, "error[usage]: song title is required")
+	if len(positional) != 1 {
+		fmt.Fprintf(stderr, "error[usage]: expected 1 song title, got %d\n", len(positional))
 		printUsage(stderr, nil, nil)
 		return exitUsage
 	}
+	song := positional[0]
 
 	svc := fetch.New(registry)
 	params := parsedFlagsToParams(parsed, song)

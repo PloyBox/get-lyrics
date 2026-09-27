@@ -3,7 +3,7 @@
 | Code | Meaning |
 |------|---------|
 | 0 | Success (warnings may be on stderr) |
-| 2 | Usage error (missing song, unknown flag, invalid `--sync-level` value, invalid/duplicate `--env` entry) |
+| 2 | Usage error (missing/multiple positionals, unknown flag, invalid `--sync-level` value, invalid/duplicate `--env` entry) |
 | 3 | Unknown `--source` name |
 | 4 | No valid result (all sources failed/skipped, or nothing matched the requested sync level) |
 | 5 | Output failure (can't create/write file) |

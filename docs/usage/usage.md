@@ -90,6 +90,6 @@ get-lyrics --help
 
 - Both `--flag` and `-flag` forms are accepted.
 - Quotes are optional for values without spaces.
-- Everything after the first positional (flags included) is parsed as the song title.
+- Flags must come before the song title; exactly one positional (the song) is accepted — zero or more is a usage error.
 
 See [Exit Codes](exit-codes.md) for what each failure returns.

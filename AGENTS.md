@@ -36,7 +36,7 @@ get-lyrics/
 
 ## CLI Surface
 
-- **Positional (required):** `<song>` — multiple positionals are joined with spaces.
+- **Positional (required):** `<song>` — exactly one positional; zero or more than one is a usage error (exit 2).
 - **Flags (long/short):**
   - `--source`/`-s` — comma-separated source names, tried in order (failover). Default `lrclib`. Entries are trimmed; empty ones dropped.
   - `--author`/`-a`, `--album`/`-A`, `--isrc`/`-i` — filters.
@@ -56,7 +56,7 @@ get-lyrics/
 | Code | Meaning |
 |------|---------|
 | 0 | Success (warnings may still go to stderr) |
-| 2 | Usage error (missing song, unknown flag, invalid `--sync-level`, invalid `--duration`, invalid/duplicate `--env` entry) |
+| 2 | Usage error (missing/multiple positionals, unknown flag, invalid `--sync-level`, invalid `--duration`, invalid/duplicate `--env` entry) |
 | 3 | Unknown `--source` name (strict precheck) |
 | 4 | No valid result: all sources skipped/failed, or no format match |
 | 5 | Output failure (file open, truncate, write, or close) |
