@@ -115,8 +115,8 @@ func TestRun_JSONIncludesEmptyResultFields(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 		t.Fatalf("JSON output invalid: %v (%q)", err, stdout.String())
 	}
-	if got["formatVersion"] != float64(1) {
-		t.Fatalf("JSON formatVersion = %v; want 1", got["formatVersion"])
+	if got["formatVersion"] != float64(2) {
+		t.Fatalf("JSON formatVersion = %v; want 2", got["formatVersion"])
 	}
 	for _, key := range []string{"Lyrics", "Title", "Artist", "Album", "ISRC", "Source", "SubSource", "Level"} {
 		if _, ok := got[key]; !ok {
@@ -128,7 +128,7 @@ func TestRun_JSONIncludesEmptyResultFields(t *testing.T) {
 			t.Fatalf("JSON %q = %v; want empty string", key, got[key])
 		}
 	}
-	if got["Source"] != "mock-success" || got["Level"] != float64(1) {
+	if got["Source"] != "mock-success" || got["Level"] != "none" {
 		t.Fatalf("JSON result metadata = %#v", got)
 	}
 }
