@@ -116,7 +116,7 @@ func checkRequired(caps source.Capabilities, params Params) (missingParam source
 	if caps.Required&source.ParamISRC != 0 && strings.TrimSpace(params.ISRC) == "" {
 		return source.ParamISRC, "", true
 	}
-	if caps.Required&source.ParamDuration != 0 && params.Duration <= 0 {
+	if caps.Required&source.ParamDuration != 0 && params.Duration == 0 {
 		return source.ParamDuration, "", true
 	}
 	for _, name := range caps.RequiredCustom {

@@ -5,6 +5,7 @@ package fetch
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/PloyBox/get-lyrics/source"
 )
@@ -33,6 +34,9 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 	warnedUnsupported := make(map[string]bool, len(eligible))
 
 	for _, want := range params.SyncLevels {
+		if ctx.Err() != nil {
+			return Result{}, warnings, StoppedError{Cause: ctx.Err()}
+		}
 		for _, name := range eligible {
 			if hit := findCached(cache, name, want); hit != nil {
 				return *hit, warnings, nil
@@ -55,7 +59,12 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 				UserAgent: params.UserAgent,
 				Custom:    params.Custom,
 			}
-			sr, ferr := src.Fetch(ctx, req)
+			sr, ferr := callSource(ctx, params.Timeout, src, req)
+			// The caller's context wins over any adapter error: when it
+			// ended, stop instead of failing over.
+			if ctx.Err() != nil {
+				return Result{}, warnings, StoppedError{Cause: ctx.Err()}
+			}
 			if ferr != nil {
 				var mm source.RequiredParamMismatchError
 				if errors.As(ferr, &mm) {
@@ -96,6 +105,17 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 	}
 
 	return Result{}, warnings, NoResultError{}
+}
+
+// callSource invokes src.Fetch under a per-source deadline. A zero budget
+// means no deadline; the child context never cancels the caller's context.
+func callSource(ctx context.Context, timeout uint, src source.Source, req source.Request) (source.Result, error) {
+	if timeout == 0 {
+		return src.Fetch(ctx, req)
+	}
+	cctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	defer cancel()
+	return src.Fetch(cctx, req)
 }
 
 // CustomParamsFor returns each requested source's static CustomParams()

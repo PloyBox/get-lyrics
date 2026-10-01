@@ -14,13 +14,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/PloyBox/get-lyrics/source"
 )
-
-// requestTimeout caps each upstream call.
-const requestTimeout = 10 * time.Second
 
 // defaultEndpoint is the public Better Lyrics API base path.
 const defaultEndpoint = "https://lyrics-api.boidu.dev"
@@ -172,7 +168,7 @@ func (a *Adapter) client() *http.Client {
 	if a.HTTPClient != nil {
 		return a.HTTPClient
 	}
-	return &http.Client{Timeout: requestTimeout}
+	return &http.Client{}
 }
 
 // buildQuery encodes the request fields as Better Lyrics query parameters:
@@ -186,7 +182,7 @@ func buildQuery(req source.Request) string {
 		q.Set("al", al)
 	}
 	if req.Duration > 0 {
-		q.Set("d", strconv.Itoa(req.Duration))
+		q.Set("d", strconv.FormatUint(uint64(req.Duration), 10))
 	}
 	return q.Encode()
 }

@@ -20,4 +20,4 @@ GET https://api.lrc.cx/jsonapi?title=<song>&artist=<author>&album=<album>
   plain lyrics, matching the `mock-nosync` semantics at the CLI layer.
 - The album value `[Unknown Album]` is treated as empty per the API docs. The `path`
   parameter is intentionally never sent — the CLI has no notion of a local music file.
-- 10s timeout.
+- No timeout of its own — the fetch layer bounds each call via the context.

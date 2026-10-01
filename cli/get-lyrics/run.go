@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"time"
 
 	"github.com/PloyBox/get-lyrics/bootstrap"
 	"github.com/PloyBox/get-lyrics/fetch"
@@ -45,6 +46,7 @@ const (
 	exitRequired     = 6
 	exitFileExists   = 7
 	exitDuplicateSrc = 8
+	exitTimeout      = 9
 )
 
 // Run is the testable core: argv excludes the program name; stdout and
@@ -131,7 +133,16 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 		}
 	}()
 
-	res, warnings, err := svc.Fetch(context.Background(), params)
+	// The whole-fetch budget rides on the context: when it ends, fetch
+	// stops and reports a StoppedError.
+	ctx := context.Background()
+	if parsed.timeoutGlobal > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(parsed.timeoutGlobal)*time.Second)
+		defer cancel()
+	}
+
+	res, warnings, err := svc.Fetch(ctx, params)
 	var dupErr fetch.DuplicateSourceError
 	if errors.As(err, &dupErr) {
 		// In-flight warnings (e.g. a gate-2 source-bug warning emitted
@@ -148,6 +159,14 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 		}
 		fmt.Fprintln(stderr, "error[unknown]:", err.Error())
 		return exitUnknownSrc
+	}
+	var stopErr fetch.StoppedError
+	if errors.As(err, &stopErr) {
+		for _, w := range warnings {
+			fmt.Fprintln(stderr, renderWarning(w))
+		}
+		fmt.Fprintln(stderr, "error[timeout]:", stopErr.Error())
+		return exitTimeout
 	}
 	var reqErr fetch.RequiredParamError
 	if errors.As(err, &reqErr) {

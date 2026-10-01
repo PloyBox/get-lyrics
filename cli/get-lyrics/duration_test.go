@@ -23,7 +23,7 @@ func (d *durationSource) Capabilities(req source.Request) source.Capabilities {
 func (d *durationSource) CustomParams() []source.ParamSpec { return nil }
 func (d *durationSource) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	return source.Result{
-		Lyrics: "[duration] " + strconv.Itoa(req.Duration) + "\n",
+		Lyrics: "[duration] " + strconv.FormatUint(uint64(req.Duration), 10) + "\n",
 		Title:  req.Song,
 		Filled: source.FieldLyrics | source.FieldTitle,
 	}, nil

@@ -23,4 +23,4 @@ GET /api/get?track_name=...&artist_name=...&album_name=...&duration=<secs>
 - Prefers the first hit with non-empty `plainLyrics`; lrclib commonly returns
   instrumental/synced-only entries at the front, so it falls back to index 0 if nothing fills
   the plain track.
-- 10s per-request timeout.
+- No timeout of its own — the fetch layer bounds each call via the context.

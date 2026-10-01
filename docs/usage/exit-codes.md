@@ -10,3 +10,4 @@
 | 6 | Source requires a parameter (e.g. `--author` missing for `lyricsovh`, or a required `--env` key missing) |
 | 7 | `--output` file already exists and `--overwrite` was not given |
 | 8 | Duplicate `--source` entry |
+| 9 | Overall fetch timeout (`--timeout-global`) exceeded |

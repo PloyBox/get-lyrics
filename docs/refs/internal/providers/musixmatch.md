@@ -35,4 +35,4 @@ track.search → track.lyrics.get / track.subtitle.get   when only Song is set
   track rating (`s_track_rating=desc`) so the best-known match comes first.
 - `cleanLyrics` trims the appended `*******` usage notice (API boilerplate, not lyrics) and
   treats the instrumental placeholder `....` as empty.
-- 10s timeout.
+- No timeout of its own — the fetch layer bounds each call via the context.

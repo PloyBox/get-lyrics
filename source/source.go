@@ -61,7 +61,7 @@ type Request struct {
 	Album  string
 	ISRC   string
 	// Duration is whole seconds; 0 means not provided.
-	Duration  int
+	Duration  uint
 	SyncLevel SyncLevel
 	UserAgent string
 	Custom    map[string]string

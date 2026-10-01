@@ -20,7 +20,7 @@ get-lyrics/
 ├── bootstrap/                  # bootstrap.go: registers real sources; bootstrap_mock.go (test tag): mocks
 ├── internal/
 │   └── provider/               # concrete adapters implementing source.Source
-│       ├── mock/               # mock-* test-only adapters (success/require/nosupport/fail/lrc/nosync/synconly/mismatch/custom/word)
+│       ├── mock/               # mock-* test-only adapters (success/require/nosupport/fail/lrc/nosync/synconly/mismatch/custom/word/slow)
 │       └── real/               # lrclib, lyricsovh, lrccx, musixmatch, betterlyrics adapters
 └── docs/
     ├── refs/                   # package-level reference extracted from code comments
@@ -41,6 +41,8 @@ get-lyrics/
   - `--source`/`-s` — comma-separated source names, tried in order (failover). Default `lrclib`. Entries are trimmed; empty ones dropped.
   - `--author`/`-a`, `--album`/`-A`, `--isrc`/`-i` — filters.
   - `--duration`/`-d` — track duration filter, whole seconds (`225`) or `mm:ss` (`3:45`); normalized to int seconds at parse time, 0 = not provided. Any other value is a usage error (exit 2).
+  - `--timeout`/`-t` — per-source request timeout in whole seconds (default `10`; `0` = no timeout). Negative or non-numeric values are a usage error (exit 2).
+  - `--timeout-global`/`-T` — whole-fetch budget in whole seconds (default `0` = off). It rides on the fetch context; when it ends, fetch stops immediately (exit 9). Negative or non-numeric values are a usage error (exit 2).
   - `--output`/`-o` — write lyrics to this file instead of stdout. **Refuses to overwrite** an existing file (exit 7) unless `--overwrite`/`-O` is given.
   - `--json`/`-j` — write the complete `fetch.Result` as JSON instead of plain lyrics; includes every result field, including empty strings, plus `formatVersion`. Increment `formatVersion` whenever JSON structure or parameter semantics change.
   - `--sync-level`/`-S` — comma-separated `line`/`word`/`none` levels; user-given order is the priority (first match wins). Default `line,none`. Any other value is a usage error (exit 2).
@@ -63,6 +65,7 @@ get-lyrics/
 | 6 | Source-required parameter missing (e.g. `--author` for `lyricsovh`, or a required `--env` key) |
 | 7 | `--output` exists and `--overwrite` not given |
 | 8 | Duplicate `--source` entry (strict precheck) |
+| 9 | Whole-fetch budget (`--timeout-global`) ended |
 
 ## Architecture
 
@@ -70,9 +73,10 @@ Thin CLI layer over a pluggable-source abstraction:
 
 1. **Registration** — `cli/get-lyrics/run.go` runs `bootstrap.RegisterAll(r)` once at package-init time, before `main()`; test builds additionally register `mock-*` sources via `init()` in `cli/get-lyrics/loadmock.go`.
    - `Registry.Register` is **gate 1**: a source's static `CustomParams()` list must contain only legal (`^[A-Z][A-Z0-9_]*$`), distinct keys — a violation returns `ErrInvalidParamName` and panics at startup (adapter init failure is a programmer error).
-2. **Parse** — required positional `<song>` plus flags via `flag.NewFlagSet`; `--sync-level` (`line`/`word`/`none` → `[]fetch.SyncLevel`), `--env` values, and `--duration` (seconds or `mm:ss` → int seconds) parsed and validated at parse time (violations are usage errors, exit 2).
+2. **Parse** — required positional `<song>` plus flags via `flag.NewFlagSet`; `--sync-level` (`line`/`word`/`none` → `[]fetch.SyncLevel`), `--env` values, and `--duration` (seconds or `mm:ss` → int seconds) and `--timeout`/`--timeout-global` (non-negative whole seconds) parsed and validated at parse time (violations are usage errors, exit 2).
 3. **Env fallback** — before the fetch, `main` calls `svc.CustomParamsFor(params)` (strict: unknown source → exit 3, duplicate → exit 8, reported before the fetch; lenient: problem sources silently skipped) and fills every declared key the user did not pass via `-e` from the process environment (`-e` > env > missing; an empty env var counts as missing). Injected keys behave exactly like user-passed ones.
 4. **Fetch** (`fetch.New(registry).Fetch(ctx, params)`) — two-level loop: outer over `params.SyncLevels` (priority order), inner over sources (failover); a per-call result cache dedupes by source+SyncLevel.
+   - **Timeout/stop** — each `src.Fetch` runs under a per-source deadline (`params.Timeout`, 0 = none) derived from the caller's context; when the caller's context ends (deadline or cancellation), fetch stops immediately and returns `StoppedError` (exit 9) instead of failing over.
    - **Precheck** — first a request-level check: `SyncUnknown` in `params.SyncLevels` → `InvalidSyncLevelError` (a caller bug; rejected before any per-source validation including gate 2, in BOTH modes — never downgraded to a warning). Then, per source: duplicate source → exit 8, unknown name → exit 3, missing required param (typed first, then `RequiredCustom` in declaration order) → exit 6 (`--lenient` downgrades these to `warning[precheck]` + skip).
    - **Gate 2** — runs before the missing check: a request-aware custom declaration inconsistent with the static list (invalid name, static mismatch, `RequiredCustom` not a subset of `Custom`, or duplicate `RequiredCustom`) skips the source with `warning[precheck-mismatch]` in BOTH modes — never exit 6.
    - **Abort warnings** — strict precheck errors return the warnings accumulated before the abort, so `main` can print them before the error.
@@ -100,7 +104,7 @@ Adapters declare required typed params via `Capabilities(req).Required` and requ
 
 **Key types (`fetch/fetch.go`):**
 
-- `Params` — now carries `Custom map[string]string`.
+- `Params` — now carries `Custom map[string]string` and `Timeout uint` (per-source call timeout in seconds; 0 = no timeout).
 - `Result` — `Source` = adapter name, `SubSource` = aggregate sub-source, `Level` = SyncLevel of the lyrics (`SyncUnknown`/`SyncNone`/`SyncLine`/`SyncWord`).
 - `Warning` — structured data only (the CLI renders all display text): kinds `UnsupportedParam`/`Downgraded`/`PreCheck`/`PrecheckMismatch`/`FetchFailed`/`ResultMismatch`; `ParamName` for custom keys — `Param` stays 0 for them; plus `Want` (Downgraded direction), `Field`+`Declared` (ResultMismatch), `Err` (underlying cause).
 - `NoResultError` — exit 4.
@@ -108,6 +112,7 @@ Adapters declare required typed params via `Capabilities(req).Required` and requ
 - `UnknownSourceError` — exit 3.
 - `DuplicateSourceError` — exit 8.
 - `RequiredParamError` — exit 6; carries `Param` + `ParamName` (the CLI renderer spells custom keys as `--env <KEY>`).
+- `StoppedError` — exit 9; the caller's context ended (deadline or cancellation) mid-fetch, unwraps to `ctx.Err()`.
 - `CustomParamsFor(params)` — read-only query: static declarations per requested source, only `Source`/`Lenient` participate, no warnings/required checks/gate 2 — used by `main` for help rendering and env fallback.
 
 Unsupported custom keys produce per-source `warning[unsupported]` in map iteration order (unspecified; assert warning sets, never order).
@@ -121,17 +126,17 @@ Unsupported custom keys produce per-source `warning[unsupported]` in map iterati
   - Filters: Author, Album, Duration — the album and duration filters only take effect with `--author` (otherwise each is dropped with an unsupported warning).
   - Duration (int seconds) is passed as `duration=<secs>` on `/api/get`; 0 means not provided.
   - A synced request returns the LRC track when the hit carries one, else the plain track (fetch layer warns `downgraded`).
-  - 10s per-request timeout.
+  - No timeout of its own — the fetch layer bounds each call via the context.
 - **`lyricsovh`** — `https://api.lyrics.ovh/v1/{artist}/{title}`
   - Filter: Author, and **requires** it.
   - Surfaces the API's 404 as not-found.
-  - 10s timeout.
+  - No timeout of its own — the fetch layer bounds each call via the context.
 - **`lrccx`** — `https://api.lrc.cx/jsonapi`
   - Filters: Author, Album (independent of each other).
   - Always LRC-flavoured text:
     - Synced request: keeps the raw text only when it has timestamped lines.
     - Otherwise — and for plain requests — it is stripped of `[mm:ss]`/marker tags.
-  - 10s timeout.
+  - No timeout of its own — the fetch layer bounds each call via the context.
 - **`musixmatch`** — `https://api.musixmatch.com/ws/1.1`
   - Requires the custom `--env` key `MUSIXMATCH_API_KEY` (RequiredCustom).
   - Filters: ISRC, Author.
@@ -142,7 +147,7 @@ Unsupported custom keys produce per-source `warning[unsupported]` in map iterati
   - Subtitle endpoints need the paid Scale plan — on Basic they 402/403, which the adapter treats as "no synced" and falls back to plain (fetch layer warns `downgraded`).
   - Album/Duration unsupported (no album/duration parameter).
   - Instrumental `"...."` and the `*******` usage trailer are stripped.
-  - 10s timeout.
+  - No timeout of its own — the fetch layer bounds each call via the context.
 - **`betterlyrics`** — `https://lyrics-api.boidu.dev`
   - Aggregate adapter: fronts two distinct upstreams and reports the served one via `Result.SubSource` with `FieldSubSource` set.
   - Filter: Author (**requires** it); Album and Duration are also honored.
@@ -151,7 +156,7 @@ Unsupported custom keys produce per-source `warning[unsupported]` in map iterati
     - `line`/`none` → `/kugou/getLyrics`: line request keeps timestamped lines (`SyncLine`), otherwise the text is stripped to plain (`SyncNone`); both with `SubSource = "kugou"`.
   - No custom params (the API issues no keys).
   - 401/429 on uncached songs surface as adapter errors and fail over.
-  - 10s timeout.
+  - No timeout of its own — the fetch layer bounds each call via the context.
 
 Adding a built-in source: create `internal/provider/real/<name>/`, then add an import and `r.Register(<name>.New())` in `bootstrap/bootstrap.go`. No CLI-layer changes required.
 
@@ -169,6 +174,7 @@ Registered only under the `test` build tag via `bootstrap.RegisterAllMock` (neve
 - `mock-mismatch` — precheck-vs-requirement mismatch path.
 - `mock-custom` — custom `--env` params: `LANG` always recognized+required, `COUNTRY` conditional on `LANG`.
 - `mock-word` — word-level path: TTML lyrics on a `word` request, plain otherwise.
+- `mock-slow` — timeout path: blocks until the context ends, exercising `--timeout` (per-source) and `--timeout-global` (exit 9).
 
 ## Testing
 

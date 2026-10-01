@@ -21,6 +21,17 @@ func (InvalidSyncLevelError) Error() string {
 	return "invalid sync level: SyncUnknown is not requestable"
 }
 
+// StoppedError reports that the caller's context ended (deadline or
+// cancellation) while fetch was working, so fetch stopped immediately.
+// Exit code 9.
+type StoppedError struct {
+	Cause error // context.DeadlineExceeded or context.Canceled
+}
+
+func (e StoppedError) Error() string { return e.Cause.Error() }
+
+func (e StoppedError) Unwrap() error { return e.Cause }
+
 // UnknownSourceError identifies the requested but unregistered source
 // name. Exit code 3; unwraps to source.ErrNotFound.
 type UnknownSourceError struct {

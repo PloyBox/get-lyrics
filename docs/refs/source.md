@@ -92,7 +92,7 @@ classify results, a request does not. The numeric values deliberately do **not**
 |---|---|
 | `Song` | required |
 | `Author`, `Album`, `ISRC` | optional refinements, may be empty |
-| `Duration` | track duration in whole seconds; `0` means not provided (optional matching hint, e.g. lrclib `/api/get`) |
+| `Duration` | track duration in `uint` whole seconds; `0` means not provided (optional matching hint, e.g. lrclib `/api/get`) |
 | `SyncLevel` | lyrics format requested; zero value is `SyncNone` |
 | `UserAgent` | HTTP `User-Agent` header the source should send, from `--user-agent`; empty → the source falls back to its own default UA |
 | `Custom` | user-passed `--env` key/value pairs plus process-environment fallbacks; unsupplied keys are absent |

@@ -13,9 +13,9 @@ import (
 func printUsage(w io.Writer, reg *source.Registry, decls map[string][]source.ParamSpec) {
 	var b bytes.Buffer
 	fmt.Fprintln(&b, "Usage: get-lyrics [--source <names>] [--author <name>] [--album <name>]")
-	fmt.Fprintln(&b, "                   [--isrc <code>] [--duration <secs>] [--output <file>]")
-	fmt.Fprintln(&b, "                   [--user-agent <ua>] [--sync-level <levels>] [--json]")
-	fmt.Fprintln(&b, "                   [--quiet] [--version] <song>")
+	fmt.Fprintln(&b, "                   [--isrc <code>] [--duration <secs>] [--timeout <secs>]")
+	fmt.Fprintln(&b, "                   [--timeout-global <secs>] [--output <file>] [--user-agent <ua>]")
+	fmt.Fprintln(&b, "                   [--sync-level <levels>] [--json] [--quiet] [--version] <song>")
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "Options:")
 	fmt.Fprintln(&b, "  --source <names>, -s <names> Lyrics source names (default: lrclib)")
@@ -23,6 +23,8 @@ func printUsage(w io.Writer, reg *source.Registry, decls map[string][]source.Par
 	fmt.Fprintln(&b, "  --album <name>,   -A <name>  Album filter")
 	fmt.Fprintln(&b, "  --isrc <code>,    -i <code>  ISRC identifier")
 	fmt.Fprintln(&b, "  --duration <secs>, -d <secs>  Track duration (seconds or mm:ss)")
+	fmt.Fprintln(&b, "  --timeout <secs>, -t <secs>   Per-source request timeout in seconds (default: 10; 0 = no timeout)")
+	fmt.Fprintln(&b, "  --timeout-global <secs>, -T <secs> Overall fetch timeout in seconds (default: off)")
 	fmt.Fprintln(&b, "  --output <file>,  -o <file>  Write lyrics to file (default: stdout; refuses to overwrite an existing file)")
 	fmt.Fprintln(&b, "  --overwrite, -O               Overwrite an existing --output file")
 	fmt.Fprintln(&b, "  --json, -j                    Write complete fetch result as JSON (default: plain lyrics)")

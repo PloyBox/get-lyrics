@@ -15,3 +15,4 @@ production). Names must start with `mock-`. Each covers one testing concern:
 | `mock-mismatch` | precheck-vs-requirement mismatch path; lists `--author` as a filter but declares nothing required, so the missing parameter only surfaces inside `Fetch` as a `RequiredParamMismatchError` |
 | `mock-custom` | custom `--env` params: statically declares `LANG` (always recognized and required) and `COUNTRY` (recognized and required only when `LANG` is present — demonstrating conditional custom parameters) |
 | `mock-word` | word-level path; returns pseudo TTML on a `SyncWord` request, plain lyrics otherwise |
+| `mock-slow` | timeout path; blocks until the context ends, exercising `--timeout` (per-source) and `--timeout-global` (exit 9) |

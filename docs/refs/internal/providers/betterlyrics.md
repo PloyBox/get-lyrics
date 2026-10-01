@@ -32,4 +32,4 @@ GET /kugou/getLyrics?s=<song>&a=<author>...  line/plain request (SyncLine/SyncNo
   query).
 - 404 is the API's "no match" signal, surfaced as a not-found error rather than a generic
   HTTP-status failure. 401/429 on uncached songs surface as adapter errors and fail over.
-- 10s timeout.
+- No timeout of its own — the fetch layer bounds each call via the context.

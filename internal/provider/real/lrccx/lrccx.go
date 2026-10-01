@@ -12,13 +12,9 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/PloyBox/get-lyrics/source"
 )
-
-// requestTimeout caps each upstream call.
-const requestTimeout = 10 * time.Second
 
 // defaultEndpoint is the public lrc.cx base path; "/jsonapi" is appended.
 const defaultEndpoint = "https://api.lrc.cx"
@@ -146,7 +142,7 @@ func (a *Adapter) client() *http.Client {
 	if a.HTTPClient != nil {
 		return a.HTTPClient
 	}
-	return &http.Client{Timeout: requestTimeout}
+	return &http.Client{}
 }
 
 // buildQuery encodes the non-empty optional fields as lrc.cx query

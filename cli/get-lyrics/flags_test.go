@@ -57,7 +57,7 @@ func TestRun_InvalidDurationValueExitsTwo(t *testing.T) {
 func TestParseDuration(t *testing.T) {
 	cases := []struct {
 		in   string
-		want int
+		want uint
 		err  bool
 	}{
 		{"225", 225, false},
@@ -86,6 +86,41 @@ func TestParseDuration(t *testing.T) {
 		}
 		if got != tc.want {
 			t.Fatalf("parseDuration(%q) = %d; want %d", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestParseTimeout locks the --timeout / --timeout-global grammar:
+// non-negative integer seconds; empty means not provided (0); negative or
+// non-numeric values are errors.
+func TestParseTimeout(t *testing.T) {
+	cases := []struct {
+		in   string
+		want uint
+		err  bool
+	}{
+		{"15", 15, false},
+		{"0", 0, false},
+		{" 20 ", 20, false},
+		{"", 0, false},
+		{"   ", 0, false},
+		{"-3", 0, true},
+		{"abc", 0, true},
+		{"1.5", 0, true},
+	}
+	for _, tc := range cases {
+		got, err := parseTimeout(tc.in)
+		if tc.err {
+			if err == nil {
+				t.Fatalf("parseTimeout(%q) = %d, nil; want error", tc.in, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("parseTimeout(%q) err = %v; want nil", tc.in, err)
+		}
+		if got != tc.want {
+			t.Fatalf("parseTimeout(%q) = %d; want %d", tc.in, got, tc.want)
 		}
 	}
 }

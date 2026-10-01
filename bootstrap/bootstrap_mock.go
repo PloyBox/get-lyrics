@@ -10,6 +10,7 @@ import (
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/nosupport"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/nosync"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/require"
+	"github.com/PloyBox/get-lyrics/internal/provider/mock/slow"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/success"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/synconly"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/word"
@@ -29,6 +30,7 @@ func RegisterAllMock(r *source.Registry) error {
 		mismatch.New(),
 		custom.New(),
 		word.New(),
+		slow.New(),
 	}
 	for _, a := range adapters {
 		if err := r.Register(a); err != nil {

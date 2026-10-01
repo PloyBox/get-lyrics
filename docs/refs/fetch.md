@@ -31,6 +31,15 @@ request.
 Loop shape: outer over `params.SyncLevels` (priority order), inner over eligible sources
 (failover). Unsupported-parameter warnings are detected once per source (memoized).
 
+Timeouts:
+
+- Each `src.Fetch` call runs under a per-source deadline (`Params.Timeout`, `0` = none) derived
+  from the caller's context; that child deadline expires only the single call, so the failure is
+  an ordinary `FetchFailed` warning + failover.
+- When the **caller's** context ends (deadline or cancellation), fetch stops immediately —
+  before classifying the interrupted call as a source failure — and returns `StoppedError` (exit
+  9) instead of failing over or reporting `NoResultError`.
+
 Error semantics:
 
 - `SyncUnknown` in `Params.SyncLevels` → `InvalidSyncLevelError` (a caller bug; rejected
@@ -76,7 +85,8 @@ pre-fetch environment-variable fallback.
   `InvalidSyncLevelError`.
 - `Lenient` controls the precheck stage only: `false` → the first precheck problem aborts;
   `true` → problem sources are skipped with a `PreCheck` warning.
-- `Duration` — whole seconds; `0` means not provided.
+- `Duration` — `uint` whole seconds; `0` means not provided.
+- `Timeout` — per-source call timeout in whole seconds; `0` means no deadline.
 - `UserAgent` — the HTTP `User-Agent` header to send upstream (from `--user-agent`); passed
   to every requested source; empty means the source uses its own default UA.
 - `Custom` — user-supplied `--env` keys plus process-environment fallbacks injected by the
@@ -206,6 +216,9 @@ Returns the first cached track produced by `name` whose `Level` matches `want`, 
   missing field; adapters never return it themselves. The CLI maps it to exit code 6 and
   renders user-facing text from the structured fields. `Error()` is neutral; the CLI renders
   the flag spelling.
+- `StoppedError` — the caller's context ended (deadline or cancellation) while fetch was
+  working, so fetch stopped immediately. Carries the context error as `Cause` and unwraps to
+  it (`context.DeadlineExceeded` / `context.Canceled`); the CLI maps it to exit code 9.
 
 ## Warnings
 

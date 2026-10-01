@@ -77,6 +77,8 @@ get-lyrics --help
 | `--album` | `-A` | Album filter |
 | `--isrc` | `-i` | ISRC identifier |
 | `--duration` | `-d` | Track duration filter (seconds or mm:ss) |
+| `--timeout` | `-t` | Per-source request timeout in seconds (default: `10`; `0` = no timeout) |
+| `--timeout-global` | `-T` | Overall fetch timeout in seconds (default: off) |
 | `--output` | `-o` | Write lyrics to file (default: stdout; refuses to overwrite an existing file) |
 | `--overwrite` | `-O` | Overwrite an existing `--output` file |
 | `--json` | `-j` | Write the complete fetch result as JSON, including empty-string fields; `formatVersion` is fixed at `1` |

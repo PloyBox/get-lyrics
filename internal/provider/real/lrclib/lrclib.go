@@ -12,13 +12,9 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/PloyBox/get-lyrics/source"
 )
-
-// requestTimeout caps each upstream call.
-const requestTimeout = 10 * time.Second
 
 // Adapter implements source.Source against lrclib.net.
 type Adapter struct {
@@ -156,7 +152,7 @@ func (a *Adapter) client() *http.Client {
 	if a.HTTPClient != nil {
 		return a.HTTPClient
 	}
-	return &http.Client{Timeout: requestTimeout}
+	return &http.Client{}
 }
 
 // buildQuery picks the query encoding matching the chosen endpoint:
@@ -174,7 +170,7 @@ func buildQuery(req source.Request) string {
 		q.Set("album_name", a)
 	}
 	if req.Duration > 0 {
-		q.Set("duration", strconv.Itoa(req.Duration))
+		q.Set("duration", strconv.FormatUint(uint64(req.Duration), 10))
 	}
 	return q.Encode()
 }

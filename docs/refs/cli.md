@@ -4,9 +4,9 @@
 
 ```
 Usage: get-lyrics [--source <names>] [--author <name>] [--album <name>]
-                   [--isrc <code>] [--duration <secs>] [--output <file>]
-                   [--user-agent <ua>] [--sync-level <levels>] [--json]
-                   [--quiet] [--version] <song>
+                   [--isrc <code>] [--duration <secs>] [--timeout <secs>]
+                   [--timeout-global <secs>] [--output <file>] [--user-agent <ua>]
+                   [--sync-level <levels>] [--json] [--quiet] [--version] <song>
 ```
 
 ## Exit codes
@@ -21,6 +21,7 @@ Usage: get-lyrics [--source <names>] [--author <name>] [--album <name>]
 | 6 | source-required parameter missing in strict precheck |
 | 7 | `--output` points to an existing file and `--overwrite` was not given |
 | 8 | duplicate `--source` entry (strict precheck) |
+| 9 | overall fetch timeout (`--timeout-global`) exceeded |
 
 ## run.go
 
@@ -51,8 +52,10 @@ Run flow:
    here (same codes as the fetch precheck, but reported first) — then `mergeEnv` fills every
    key not supplied by flag from the process environment.
 6. Open the output sink before the fetch.
-7. `svc.Fetch(...)`: on every failure path the in-flight warnings are printed before the
-   `error[...]` line, then the error is mapped to its exit code.
+7. Build the fetch context — a deadline from `--timeout-global`, when set — then `svc.Fetch(ctx, params)`:
+   on every failure path the in-flight warnings are printed before the `error[...]` line, then the
+   error is mapped to its exit code. A `fetch.StoppedError` (the context's deadline or cancellation
+   ended) maps to exit 9.
 8. On success: print the warnings, truncate + seek the output file, then write the plain
    lyrics or the complete `fetch.Result` as JSON.
 
@@ -82,9 +85,12 @@ or parameter semantics change.
 - `parseSyncLevels`: comma-separated `--sync-level` → ordered `[]fetch.SyncLevel` (`line` →
   `SyncLine`, `word` → `SyncWord`, `none` → `SyncNone`); entries trimmed, empty entries
   dropped; anything else is a usage error (exit 2).
-- `parseDuration`: plain positive integer (`225`) or `mm:ss` (`3:45`) → whole seconds;
+- `parseDuration`: plain positive integer (`225`) or `mm:ss` (`3:45`) → `uint` whole seconds;
   whitespace-only input is treated as not provided (`0`, mirroring the `--author` whitespace
   precedent); anything else is a usage error (exit 2).
+- `parseTimeout`: `--timeout`/`--timeout-global` value → `uint` whole seconds; empty means not
+  provided (`0`); a non-negative integer is accepted (`0` = no timeout); negative or non-numeric
+  values are usage errors (exit 2). The `--timeout` default (`10`) is the flag's raw default.
 - `splitTrimmed`: splits a comma-separated flag value, trimming whitespace and dropping empty
   entries.
 - `parsedFlagsToParams`: converts the raw flags and positional song into `fetch.Params`

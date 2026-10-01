@@ -13,21 +13,23 @@ import (
 // parsedFlags holds the parsed CLI inputs; song is kept separate because
 // it is positional.
 type parsedFlags struct {
-	source     string
-	author     string
-	album      string
-	isrc       string
-	duration   int // whole seconds; normalized at parse time
-	output     string
-	json       bool
-	syncLevels []fetch.SyncLevel // parsed from --sync-level at parse time
-	userAgent  string
-	lenient    bool
-	quiet      bool
-	overwrite  bool
-	help       bool
-	version    bool
-	env        map[string]string // validated at parse time
+	source        string
+	author        string
+	album         string
+	isrc          string
+	duration      uint // whole seconds; normalized at parse time
+	timeout       uint // per-source request timeout in seconds; 0 = no timeout
+	timeoutGlobal uint // whole-fetch budget in seconds; 0 = off
+	output        string
+	json          bool
+	syncLevels    []fetch.SyncLevel // parsed from --sync-level at parse time
+	userAgent     string
+	lenient       bool
+	quiet         bool
+	overwrite     bool
+	help          bool
+	version       bool
+	env           map[string]string // validated at parse time
 }
 
 // parseFlags parses argv; parsing stops at the first positional argument,
@@ -49,6 +51,12 @@ func parseFlags(argv []string) (parsedFlags, []string, error) {
 	var durationRaw string
 	fs.StringVar(&durationRaw, "duration", "", "track duration filter (seconds or mm:ss)")
 	fs.StringVar(&durationRaw, "d", "", "track duration filter (seconds or mm:ss) (short)")
+	var timeoutRaw string
+	fs.StringVar(&timeoutRaw, "timeout", "10", "per-source request timeout in seconds (0 = no timeout)")
+	fs.StringVar(&timeoutRaw, "t", "10", "per-source request timeout in seconds (0 = no timeout) (short)")
+	var timeoutGlobalRaw string
+	fs.StringVar(&timeoutGlobalRaw, "timeout-global", "0", "overall fetch timeout in seconds (0 = off)")
+	fs.StringVar(&timeoutGlobalRaw, "T", "0", "overall fetch timeout in seconds (0 = off) (short)")
 	fs.StringVar(&f.output, "output", "", "output file path")
 	fs.StringVar(&f.output, "o", "", "output file path (short)")
 	fs.BoolVar(&f.json, "json", false, "write complete result as JSON")
@@ -90,6 +98,16 @@ func parseFlags(argv []string) (parsedFlags, []string, error) {
 		return f, nil, err
 	}
 	f.env = env
+	timeout, err := parseTimeout(timeoutRaw)
+	if err != nil {
+		return f, nil, err
+	}
+	f.timeout = timeout
+	timeoutGlobal, err := parseTimeout(timeoutGlobalRaw)
+	if err != nil {
+		return f, nil, err
+	}
+	f.timeoutGlobal = timeoutGlobal
 	return f, fs.Args(), nil
 }
 
@@ -120,28 +138,43 @@ func parseSyncLevels(s string) ([]fetch.SyncLevel, error) {
 // parseDuration converts a --duration value into whole seconds: a plain
 // positive integer ("225") or mm:ss ("3:45"). Whitespace-only input means
 // not provided; any other value is a usage error (exit 2).
-func parseDuration(s string) (int, error) {
+func parseDuration(s string) (uint, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return 0, nil
 	}
 	if !strings.Contains(s, ":") {
-		sec, err := strconv.Atoi(s)
+		sec, err := strconv.ParseUint(s, 10, 64)
 		if err != nil || sec < 1 {
 			return 0, fmt.Errorf("invalid duration value %q (want seconds or mm:ss)", s)
 		}
-		return sec, nil
+		return uint(sec), nil
 	}
 	parts := strings.Split(s, ":")
 	if len(parts) != 2 {
 		return 0, fmt.Errorf("invalid duration value %q (want seconds or mm:ss)", s)
 	}
-	m, errM := strconv.Atoi(parts[0])
-	sec, errS := strconv.Atoi(parts[1])
-	if errM != nil || errS != nil || m < 0 || sec < 0 || sec > 59 || m*60+sec < 1 {
+	m, errM := strconv.ParseUint(parts[0], 10, 64)
+	sec, errS := strconv.ParseUint(parts[1], 10, 64)
+	if errM != nil || errS != nil || sec > 59 || m*60+sec < 1 {
 		return 0, fmt.Errorf("invalid duration value %q (want seconds or mm:ss)", s)
 	}
-	return m*60 + sec, nil
+	return uint(m*60 + sec), nil
+}
+
+// parseTimeout converts a timeout flag value into whole seconds: empty
+// means not provided (0); otherwise a non-negative integer. 0 means no
+// timeout; negative or non-numeric values are usage errors (exit 2).
+func parseTimeout(s string) (uint, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, nil
+	}
+	n, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid timeout value %q (want a non-negative number of seconds)", s)
+	}
+	return uint(n), nil
 }
 
 // splitTrimmed splits a comma-separated flag value, trimming whitespace
@@ -172,5 +205,6 @@ func parsedFlagsToParams(f parsedFlags, song string) fetch.Params {
 		UserAgent:  f.userAgent,
 		Lenient:    f.lenient,
 		Custom:     f.env,
+		Timeout:    f.timeout,
 	}
 }

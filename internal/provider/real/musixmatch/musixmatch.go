@@ -12,13 +12,9 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/PloyBox/get-lyrics/source"
 )
-
-// requestTimeout caps each upstream call.
-const requestTimeout = 10 * time.Second
 
 // defaultEndpoint is the Musixmatch REST base path; the method name (e.g.
 // "matcher.lyrics.get") is appended to form the request URL.
@@ -327,7 +323,7 @@ func (a *Adapter) client() *http.Client {
 	if a.HTTPClient != nil {
 		return a.HTTPClient
 	}
-	return &http.Client{Timeout: requestTimeout}
+	return &http.Client{}
 }
 
 // cleanLyrics trims Musixmatch's appended "*******" usage notice and

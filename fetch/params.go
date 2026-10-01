@@ -14,11 +14,12 @@ type Params struct {
 	Author     string
 	Album      string
 	ISRC       string
-	Duration   int // whole seconds; 0 means not provided
+	Duration   uint // whole seconds; 0 means not provided
 	SyncLevels []SyncLevel
 	Lenient    bool
 	UserAgent  string
 	Custom     map[string]string
+	Timeout    uint // per-source call timeout in seconds; 0 = no timeout
 }
 
 // SyncLevel classifies the lyrics content a fetch.Result carries by its
