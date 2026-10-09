@@ -45,3 +45,8 @@ go.work.sum
 .openhands/
 .augment/
 .commandcode/
+
+# AI Memory
+
+/MEMORY.md
+/memory/
