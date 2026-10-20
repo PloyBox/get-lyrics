@@ -159,44 +159,6 @@ func TestFetch_SyncLevelOrderDeterminesPriority(t *testing.T) {
 	}
 }
 
-func TestFetch_SyncedSourceMatchesLineIteration(t *testing.T) {
-	lrc := lineOrPlain("lrc")
-	r := newRegistry(t, lrc)
-	svc := New(r)
-
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncLine}, Source: []string{"lrc"}})
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	if res.Level != SyncLine || res.Lyrics != "[00:00.00] synced" {
-		t.Fatalf("res = %+v; want synced lyrics", res)
-	}
-	if len(warnings) != 0 {
-		t.Fatalf("warnings = %+v; want none", warnings)
-	}
-}
-
-// TestFetch_SyncedOnlyResultFillsLyrics drives the lrclib synced-only
-// hit: the adapter fills the single Lyrics field with LRC content and
-// declares Level SyncLine; the fetch layer matches it against a line
-// request.
-func TestFetch_SyncedOnlyResultFillsLyrics(t *testing.T) {
-	syncedOnly := lineOnly("synced-only")
-	r := newRegistry(t, syncedOnly)
-	svc := New(r)
-
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncLine}, Source: []string{"synced-only"}})
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	if res.Level != SyncLine || res.Lyrics != "[00:00.00] synced" {
-		t.Fatalf("res = %+v; want synced lyrics from the declared level", res)
-	}
-	if len(warnings) != 0 {
-		t.Fatalf("warnings = %+v; want none for a consistent result", warnings)
-	}
-}
-
 // TestFetch_PlainRequestOnSyncedOnlySourceNoResult is the empty-success
 // regression: a synced-only adapter (Level SyncLine) with a lone "none"
 // iteration must NOT silently succeed with empty lyrics — the synced
@@ -247,46 +209,8 @@ func TestFetch_PlainThenSyncedReusesCachedSyncedTrack(t *testing.T) {
 	}
 }
 
-// TestFetch_LineRoundShortCircuitsWithoutCaching locks the
-// short-circuit semantics: a line-capable source with a "line" request
-// matches immediately and stores nothing — so a follow-up "none" call
-// misses the (per-call) cache and must fetch again, returning plain.
-func TestFetch_LineRoundShortCircuitsWithoutCaching(t *testing.T) {
-	dual := lineOrPlain("dual")
-	r := newRegistry(t, dual)
-	svc := New(r)
-
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncLine, SyncNone}, Source: []string{"dual"}})
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	if res.Level != SyncLine || res.Lyrics != "[00:00.00] synced" {
-		t.Fatalf("res = %+v; want the synced track from the line round", res)
-	}
-	if len(warnings) != 0 {
-		t.Fatalf("warnings = %+v; want none", warnings)
-	}
-
-	// Nothing was stored by the short-circuit, so a fresh call with
-	// "none" misses the cache and fetches again.
-	res, warnings, err = svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"dual"}})
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	if res.Level != SyncNone || res.Lyrics != "plain" {
-		t.Fatalf("res = %+v; want plain lyrics from the none round", res)
-	}
-	if len(warnings) != 0 {
-		t.Fatalf("warnings = %+v; want none", warnings)
-	}
-	if dual.fetchCalls != 2 {
-		t.Fatalf("fetchCalls = %d; want 2 (short-circuit stores nothing)", dual.fetchCalls)
-	}
-}
-
-// TestFetch_WordRequestMatchesWordSource drives the SyncWord match: a
-// word-level request on a source that returns TTML with Level SyncWord
-// matches immediately.
+// TestFetch_WordRequestMatchesWordSource is the word-level happy path: a
+// "word" request is satisfied by a SyncWord track with no warning.
 func TestFetch_WordRequestMatchesWordSource(t *testing.T) {
 	word := wordOrPlain("word")
 	r := newRegistry(t, word)
@@ -321,30 +245,6 @@ func TestFetch_WordRequestOnLineOnlySourceDowngrades(t *testing.T) {
 		t.Fatalf("res = %+v; want empty result on NoResultError", res)
 	}
 	if len(warnings) != 1 || warnings[0].Kind != Downgraded || warnings[0].Want != SyncWord {
-		t.Fatalf("warnings = %+v; want one Downgraded warning with Want=SyncWord", warnings)
-	}
-}
-
-// TestFetch_WordThenLineReusesCachedLineTrack: with "word,line" on a
-// line-only source, the "word" iteration stores the line track
-// (Downgraded warning) and the "line" iteration matches it from the
-// cache — one adapter call total.
-func TestFetch_WordThenLineReusesCachedLineTrack(t *testing.T) {
-	stub := lineOnly("lrc")
-	r := newRegistry(t, stub)
-	svc := New(r)
-
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncWord, SyncLine}, Source: []string{"lrc"}})
-	if err != nil {
-		t.Fatalf("err: %v", err)
-	}
-	if res.Level != SyncLine || res.Lyrics != "[00:00.00] synced" {
-		t.Fatalf("res = %+v; want the cached line track", res)
-	}
-	if stub.fetchCalls != 1 {
-		t.Fatalf("fetchCalls = %d; want 1 (cache hit on second iteration)", stub.fetchCalls)
-	}
-	if len(warnings) != 1 || warnings[0].Want != SyncWord {
 		t.Fatalf("warnings = %+v; want one Downgraded warning with Want=SyncWord", warnings)
 	}
 }

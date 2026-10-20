@@ -5,6 +5,7 @@ package bootstrap
 import (
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/custom"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/fail"
+	"github.com/PloyBox/get-lyrics/internal/provider/mock/gate2"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/lrc"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/mismatch"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/nosupport"
@@ -13,6 +14,7 @@ import (
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/slow"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/success"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/synconly"
+	"github.com/PloyBox/get-lyrics/internal/provider/mock/useragent"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/word"
 	"github.com/PloyBox/get-lyrics/source"
 )
@@ -31,6 +33,8 @@ func RegisterAllMock(r *source.Registry) error {
 		custom.New(),
 		word.New(),
 		slow.New(),
+		gate2.New(),
+		useragent.New(),
 	}
 	for _, a := range adapters {
 		if err := r.Register(a); err != nil {

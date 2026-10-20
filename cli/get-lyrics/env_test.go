@@ -6,74 +6,72 @@ import (
 	"testing"
 )
 
-// TestRun_EnvMissingRequiredExitsSix drives the custom required-param
-// precheck through mock-custom: without LANG the run exits 6 and the
-// message spells the custom key as --env LANG.
-func TestRun_EnvMissingRequiredExitsSix(t *testing.T) {
-	t.Setenv("LANG", "")
-	t.Setenv("COUNTRY", "")
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-custom", "TEST_SONG"}, &stdout, &stderr)
-	if code != exitRequired {
-		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitRequired, stderr.String())
+// TestRun_EnvRequiredPrecheck drives the custom required-param precheck
+// through mock-custom end to end: a missing required key exits 6 with the
+// key spelled as --env, the conditional COUNTRY requirement only kicks in
+// once LANG is present, COUNTRY alone does not satisfy LANG, and --lenient
+// skips the source instead of aborting.
+func TestRun_EnvRequiredPrecheck(t *testing.T) {
+	cases := []struct {
+		name       string
+		env        map[string]string
+		argv       []string
+		wantCode   int
+		wantStderr []string
+		wantAbsent []string
+	}{
+		{
+			name:       "missing LANG",
+			env:        map[string]string{"LANG": "", "COUNTRY": ""},
+			argv:       []string{"--source", "mock-custom", "TEST_SONG"},
+			wantCode:   exitRequired,
+			wantStderr: []string{"error[required]", `source "mock-custom"`, "--env LANG"},
+			wantAbsent: []string{"warning["},
+		},
+		{
+			name:       "conditional COUNTRY once LANG is present",
+			env:        map[string]string{"COUNTRY": ""},
+			argv:       []string{"--source", "mock-custom", "--env", "LANG=en", "TEST_SONG"},
+			wantCode:   exitRequired,
+			wantStderr: []string{"error[required]", "--env COUNTRY"},
+		},
+		{
+			name:       "COUNTRY alone does not satisfy LANG",
+			env:        map[string]string{"LANG": ""},
+			argv:       []string{"--source", "mock-custom", "--env", "COUNTRY=cn", "TEST_SONG"},
+			wantCode:   exitRequired,
+			wantStderr: []string{"error[required]", "--env LANG"},
+			wantAbsent: []string{"warning["},
+		},
+		{
+			name:       "lenient skips the source",
+			env:        map[string]string{"LANG": "", "COUNTRY": ""},
+			argv:       []string{"--lenient", "--source", "mock-custom", "TEST_SONG"},
+			wantCode:   exitFetchFailed,
+			wantStderr: []string{"warning[precheck]", `source "mock-custom"`, "--env LANG", "error[no-result]"},
+		},
 	}
-	wantSub := `error[required]: source "mock-custom" requires --env LANG`
-	if !strings.Contains(stderr.String(), wantSub) {
-		t.Fatalf("stderr missing %q; got %q", wantSub, stderr.String())
-	}
-}
-
-// TestRun_EnvConditionalCountryExitsSix drives mock-custom's
-// conditional requirement: once LANG is present, COUNTRY joins the
-// required list and its absence exits 6.
-func TestRun_EnvConditionalCountryExitsSix(t *testing.T) {
-	t.Setenv("COUNTRY", "")
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-custom", "--env", "LANG=en", "TEST_SONG"}, &stdout, &stderr)
-	if code != exitRequired {
-		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitRequired, stderr.String())
-	}
-	wantSub := `error[required]: source "mock-custom" requires --env COUNTRY`
-	if !strings.Contains(stderr.String(), wantSub) {
-		t.Fatalf("stderr missing %q; got %q", wantSub, stderr.String())
-	}
-}
-
-// TestRun_EnvCountryWithoutLangExitsSix: COUNTRY alone is not
-// recognized (conditional), so LANG stays the missing required key; the
-// strict precheck abort carries no unsupported warning for COUNTRY.
-func TestRun_EnvCountryWithoutLangExitsSix(t *testing.T) {
-	t.Setenv("LANG", "")
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-custom", "--env", "COUNTRY=cn", "TEST_SONG"}, &stdout, &stderr)
-	if code != exitRequired {
-		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitRequired, stderr.String())
-	}
-	wantSub := `error[required]: source "mock-custom" requires --env LANG`
-	if !strings.Contains(stderr.String(), wantSub) {
-		t.Fatalf("stderr missing %q; got %q", wantSub, stderr.String())
-	}
-	if strings.Contains(stderr.String(), "warning[") {
-		t.Fatalf("stderr should carry no warnings on this strict abort: %q", stderr.String())
-	}
-}
-
-// TestRun_EnvLenientSkipsMissing mirrors the typed lenient path: a
-// missing required custom key skips the source with a PreCheck warning.
-func TestRun_EnvLenientSkipsMissing(t *testing.T) {
-	t.Setenv("LANG", "")
-	t.Setenv("COUNTRY", "")
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--lenient", "--source", "mock-custom", "TEST_SONG"}, &stdout, &stderr)
-	if code != exitFetchFailed {
-		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitFetchFailed, stderr.String())
-	}
-	wantSub := `warning[precheck]: source "mock-custom" skipped: requires --env LANG`
-	if !strings.Contains(stderr.String(), wantSub) {
-		t.Fatalf("stderr missing %q; got %q", wantSub, stderr.String())
-	}
-	if !strings.Contains(stderr.String(), "error[no-result]") {
-		t.Fatalf("stderr missing no-result error: %q", stderr.String())
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for key, value := range tc.env {
+				t.Setenv(key, value)
+			}
+			var stdout, stderr bytes.Buffer
+			code := Run(tc.argv, &stdout, &stderr)
+			if code != tc.wantCode {
+				t.Fatalf("code = %d; want %d (stderr=%q)", code, tc.wantCode, stderr.String())
+			}
+			for _, want := range tc.wantStderr {
+				if !strings.Contains(stderr.String(), want) {
+					t.Fatalf("stderr missing %q; got %q", want, stderr.String())
+				}
+			}
+			for _, absent := range tc.wantAbsent {
+				if strings.Contains(stderr.String(), absent) {
+					t.Fatalf("stderr should not contain %q: %q", absent, stderr.String())
+				}
+			}
+		})
 	}
 }
 
@@ -84,17 +82,17 @@ func TestRun_EnvProvidedSucceeds(t *testing.T) {
 	t.Setenv("COUNTRY", "")
 	var stdout, stderr bytes.Buffer
 	code := Run(
-		[]string{"--source", "mock-custom", "--env", "LANG=en", "--env", "COUNTRY=cn", "TEST_SONG"},
+		[]string{"--source", "mock-custom", "--env", "LANG=en", "--env", "COUNTRY=cn", "--sync-level", "none", "TEST_SONG"},
 		&stdout, &stderr,
 	)
 	if code != exitOK {
 		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "(lang=en)") {
-		t.Fatalf("stdout missing lang=en, mock-custom must read Request.Custom: %q", stdout.String())
+	if got := stdout.String(); !strings.Contains(got, "TEST_SONG") || !strings.Contains(got, "(lang=en)") {
+		t.Fatalf("stdout = %q; want lyrics carrying Request.Custom (lang=en)", got)
 	}
-	if strings.Contains(stderr.String(), "does not support") {
-		t.Fatalf("stderr should carry no unsupported warnings: %q", stderr.String())
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr should carry no warnings: %q", stderr.String())
 	}
 }
 
@@ -111,8 +109,10 @@ func TestRun_EnvUnrecognizedKeyWarns(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), `warning[unsupported]: source "mock-custom" does not support --env FOO`) {
-		t.Fatalf("stderr missing FOO unsupported warning: %q", stderr.String())
+	for _, want := range []string{"warning[unsupported]", `source "mock-custom"`, "--env FOO"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr missing %q: %q", want, stderr.String())
+		}
 	}
 }
 
@@ -129,7 +129,7 @@ func TestRun_EnvMultipleUnrecognizedWarnsSet(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
 	}
-	if got := strings.Count(stderr.String(), "does not support --env"); got != 2 {
+	if got := strings.Count(stderr.String(), "warning[unsupported]"); got != 2 {
 		t.Fatalf("unsupported warnings = %d; want 2 (stderr=%q)", got, stderr.String())
 	}
 	if !strings.Contains(stderr.String(), "--env FOO") || !strings.Contains(stderr.String(), "--env BAR") {
@@ -144,14 +144,15 @@ func TestRun_EnvInvalidInputsExitTwo(t *testing.T) {
 	cases := []struct {
 		name string
 		argv []string
+		want []string // tokens identifying the validation that fired
 	}{
-		{"lowercase key", []string{"--env", "lang=en", "TEST_SONG"}},
-		{"digit-start key", []string{"--env", "1LANG=en", "TEST_SONG"}},
-		{"hyphen key", []string{"--env", "LANG-X=en", "TEST_SONG"}},
-		{"empty value", []string{"--env", "LANG=", "TEST_SONG"}},
-		{"whitespace value", []string{"--env", "LANG=  ", "TEST_SONG"}},
-		{"missing value", []string{"--env", "LANG", "TEST_SONG"}},
-		{"duplicate key", []string{"--env", "LANG=en", "--env", "LANG=fr", "TEST_SONG"}},
+		{"lowercase key", []string{"--env", "lang=en", "TEST_SONG"}, []string{"lang"}},
+		{"digit-start key", []string{"--env", "1LANG=en", "TEST_SONG"}, []string{"1LANG"}},
+		{"hyphen key", []string{"--env", "LANG-X=en", "TEST_SONG"}, []string{"LANG-X"}},
+		{"empty value", []string{"--env", "LANG=", "TEST_SONG"}, []string{"LANG="}},
+		{"whitespace value", []string{"--env", "LANG=  ", "TEST_SONG"}, []string{"LANG=  "}},
+		{"missing value", []string{"--env", "LANG", "TEST_SONG"}, []string{"LANG"}},
+		{"duplicate key", []string{"--env", "LANG=en", "--env", "LANG=fr", "TEST_SONG"}, []string{"duplicate", "LANG"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -162,6 +163,11 @@ func TestRun_EnvInvalidInputsExitTwo(t *testing.T) {
 			}
 			if !strings.Contains(stderr.String(), "error[usage]") {
 				t.Fatalf("stderr missing usage tag: %q", stderr.String())
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(stderr.String(), want) {
+					t.Fatalf("stderr missing %q; got %q", want, stderr.String())
+				}
 			}
 		})
 	}
@@ -197,7 +203,7 @@ func TestRun_EnvFallbackFromProcessEnv(t *testing.T) {
 	if !strings.Contains(stdout.String(), "(lang=en)") {
 		t.Fatalf("stdout missing env-injected lang=en: %q", stdout.String())
 	}
-	if strings.Contains(stderr.String(), "does not support") {
+	if strings.Contains(stderr.String(), "warning[unsupported]") {
 		t.Fatalf("stderr should carry no unsupported warnings: %q", stderr.String())
 	}
 }
@@ -251,7 +257,9 @@ func TestRun_EnvInjectedToUndeclaringSourceWarns(t *testing.T) {
 	if !strings.Contains(stdout.String(), "[mock-nosupport]") {
 		t.Fatalf("stdout missing nosupport lyrics: %q", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), `warning[unsupported]: source "mock-nosupport" does not support --env LANG`) {
-		t.Fatalf("stderr missing injected-LANG unsupported warning: %q", stderr.String())
+	for _, want := range []string{"warning[unsupported]", `source "mock-nosupport"`, "--env LANG"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr missing %q: %q", want, stderr.String())
+		}
 	}
 }

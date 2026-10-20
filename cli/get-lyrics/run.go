@@ -213,14 +213,18 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 	if parsed.json {
 		var level string
 		switch res.Level {
-			case fetch.SyncUnknown: level = "unknown"
-			case fetch.SyncNone: level = "none"
-			case fetch.SyncLine: level = "line"
-			case fetch.SyncWord: level = "word"
+		case fetch.SyncUnknown:
+			level = "unknown"
+		case fetch.SyncNone:
+			level = "none"
+		case fetch.SyncLine:
+			level = "line"
+		case fetch.SyncWord:
+			level = "word"
 		}
 		data, merr := json.Marshal(struct {
 			FormatVersion int `json:"formatVersion"`
-			Level string
+			Level         string
 			fetch.Result
 		}{FormatVersion: 2, Level: level, Result: res})
 		if merr != nil {

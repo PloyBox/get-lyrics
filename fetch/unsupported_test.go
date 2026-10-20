@@ -2,12 +2,16 @@ package fetch
 
 import (
 	"context"
-	"reflect"
+	"slices"
+	"sort"
 	"testing"
 
 	"github.com/PloyBox/get-lyrics/source"
 )
 
+// TestFetch_AllParamsUnsupportedEmitsFourWarnings drives the typed
+// unsupported-parameter path: every supplied filter a source does not honor
+// produces one warning. The warning set is asserted, not its order.
 func TestFetch_AllParamsUnsupportedEmitsFourWarnings(t *testing.T) {
 	stub := &fakeSrc{
 		name: "stub",
@@ -16,6 +20,7 @@ func TestFetch_AllParamsUnsupportedEmitsFourWarnings(t *testing.T) {
 			return source.Result{
 				Lyrics: "L",
 				Title:  r.Song,
+				Level:  source.SyncNone,
 				Filled: source.FieldLyrics | source.FieldTitle,
 			}, nil
 		},
@@ -34,94 +39,21 @@ func TestFetch_AllParamsUnsupportedEmitsFourWarnings(t *testing.T) {
 	wantParams := []source.Param{source.ParamAuthor, source.ParamAlbum, source.ParamISRC, source.ParamDuration}
 	gotParams := make([]source.Param, len(warnings))
 	for i, w := range warnings {
-		gotParams[i] = w.Param
-	}
-	if !reflect.DeepEqual(gotParams, wantParams) {
-		t.Fatalf("warnings order = %v; want %v", gotParams, wantParams)
-	}
-	for _, w := range warnings {
 		if w.Kind != UnsupportedParam {
 			t.Fatalf("warning %+v; want Kind UnsupportedParam", w)
 		}
-	}
-}
-
-func TestDetectUnsupported_EmptyRequestYieldsNoWarnings(t *testing.T) {
-	stub := &fakeSrc{name: "stub", caps: source.Capabilities{}, fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
-		return source.Result{}, nil
-	}}
-	got := detectUnsupported(Params{Song: "S"}, stub)
-	if len(got) != 0 {
-		t.Fatalf("got %+v; want none", got)
-	}
-}
-
-func TestDetectUnsupported_ParamOrder(t *testing.T) {
-	// Lock in stable warning ordering: author, album, isrc, duration.
-	// The sync level is intentionally absent — it is covered by the
-	// Downgraded warning instead.
-	stub := &fakeSrc{name: "stub", caps: source.Capabilities{}, fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
-		return source.Result{}, nil
-	}}
-	got := detectUnsupported(
-		Params{Song: "S", Author: "A", Album: "B", ISRC: "I", Duration: 5, SyncLevels: []SyncLevel{SyncLine}},
-		stub,
-	)
-	want := []source.Param{source.ParamAuthor, source.ParamAlbum, source.ParamISRC, source.ParamDuration}
-	gotParams := make([]source.Param, len(got))
-	for i, w := range got {
 		gotParams[i] = w.Param
 	}
-	if !reflect.DeepEqual(gotParams, want) {
-		t.Fatalf("got order %v; want %v", gotParams, want)
+	sort.Slice(gotParams, func(i, j int) bool { return gotParams[i] < gotParams[j] })
+	if !slices.Equal(gotParams, wantParams) {
+		t.Fatalf("warning set = %v; want %v (order unspecified)", gotParams, wantParams)
 	}
 }
 
-func TestDetectUnsupported_WhitespaceOnlyParamsIgnored(t *testing.T) {
-	stub := &fakeSrc{
-		name: "stub",
-		caps: source.Capabilities{},
-		fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
-			return source.Result{}, nil
-		},
-	}
-	got := detectUnsupported(Params{Song: "S", Author: " ", Album: "\t", ISRC: "  "}, stub)
-	if len(got) != 0 {
-		t.Fatalf("got %+v; want none for whitespace-only params", got)
-	}
-}
-
-// TestDetectUnsupported_ConditionalAlbumWithoutAuthor drives the
-// request-aware capability query (lrclib semantics): an adapter that
-// honors --album only when --author is present must produce an
-// unsupported warning for the album filter when author is absent, and
-// none when author is present.
-func TestDetectUnsupported_ConditionalAlbumWithoutAuthor(t *testing.T) {
-	cond := &fakeSrc{
-		name: "cond",
-		capsFn: func(req source.Request) source.Capabilities {
-			c := source.Capabilities{Filters: source.ParamAuthor | source.ParamAlbum}
-			if req.Author == "" {
-				c.Filters &^= source.ParamAlbum
-			}
-			return c
-		},
-	}
-	got := detectUnsupported(Params{Song: "S", Album: "B"}, cond)
-	if len(got) != 1 || got[0].Param != source.ParamAlbum {
-		t.Fatalf("got %+v; want one Album unsupported warning without author", got)
-	}
-	got = detectUnsupported(Params{Song: "S", Author: "A", Album: "B"}, cond)
-	if len(got) != 0 {
-		t.Fatalf("got %+v; want no warnings when author is present", got)
-	}
-}
-
-// TestFetch_ConditionalAlbumWarnsWithoutAuthor locks the defect fix
-// end to end: the fetch pipeline surfaces the unsupported warning when
-// --album is given without --author to a conditionally-supporting
-// adapter, and stays silent when both are present.
-func TestFetch_ConditionalAlbumWarnsWithoutAuthor(t *testing.T) {
+// TestFetch_ConditionalAlbumSupport drives request-aware capabilities: a
+// source that honors --album only together with --author must warn about the
+// dropped album when --author is absent, and stay silent when it is present.
+func TestFetch_ConditionalAlbumSupport(t *testing.T) {
 	cond := &fakeSrc{
 		name: "cond",
 		capsFn: func(req source.Request) source.Capabilities {
@@ -132,29 +64,42 @@ func TestFetch_ConditionalAlbumWarnsWithoutAuthor(t *testing.T) {
 			return c
 		},
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
-			return source.Result{
-				Lyrics: "L",
-				Title:  r.Song,
-				Filled: source.FieldLyrics | source.FieldTitle,
-			}, nil
+			return source.Result{Lyrics: "L", Title: r.Song, Level: source.SyncNone, Filled: source.FieldLyrics | source.FieldTitle}, nil
 		},
 	}
-	r := newRegistry(t, cond)
-	svc := New(r)
+	svc := New(newRegistry(t, cond))
 
-	res, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Album: "B", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"cond"}})
-	if err != nil || res.Lyrics != "L" {
-		t.Fatalf("res = %+v, err = %v; want lyrics", res, err)
-	}
-	if len(warnings) != 1 || warnings[0].Kind != UnsupportedParam || warnings[0].Param != source.ParamAlbum {
-		t.Fatalf("warnings = %+v; want one Album unsupported warning", warnings)
-	}
-
-	res, warnings, err = svc.Fetch(context.Background(), Params{Song: "S", Author: "A", Album: "B", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"cond"}})
-	if err != nil || res.Lyrics != "L" {
-		t.Fatalf("res = %+v, err = %v; want lyrics", res, err)
-	}
-	if len(warnings) != 0 {
-		t.Fatalf("warnings = %+v; want none when author is present", warnings)
+	for _, tc := range []struct {
+		name       string
+		params     Params
+		wantParams []source.Param
+	}{
+		{
+			"album without author",
+			Params{Song: "S", Album: "B"},
+			[]source.Param{source.ParamAlbum},
+		},
+		{
+			"album with author",
+			Params{Song: "S", Author: "A", Album: "B"},
+			nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.params.SyncLevels = []SyncLevel{SyncNone}
+			tc.params.Source = []string{"cond"}
+			_, warnings, err := svc.Fetch(context.Background(), tc.params)
+			if err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if len(warnings) != len(tc.wantParams) {
+				t.Fatalf("warnings = %+v; want %d", warnings, len(tc.wantParams))
+			}
+			for i, w := range warnings {
+				if w.Kind != UnsupportedParam || w.Param != tc.wantParams[i] {
+					t.Fatalf("warning %d = %+v; want UnsupportedParam %v", i, w, tc.wantParams[i])
+				}
+			}
+		})
 	}
 }

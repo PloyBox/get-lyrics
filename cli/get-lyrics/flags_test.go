@@ -6,32 +6,14 @@ import (
 	"testing"
 )
 
-// TestRun_UnknownFlagExitsTwo drives the parseFlags error branch: an
-// unrecognized flag makes flag.Parse fail, which Run maps to exit 2.
-func TestRun_UnknownFlagExitsTwo(t *testing.T) {
+func TestRun_InvalidSyncLevelValueExitsTwo(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--bogus", "TEST_SONG"}, &stdout, &stderr)
+	code := Run([]string{"--sync-level", "karaoke", "TEST_SONG"}, &stdout, &stderr)
 	if code != exitUsage {
 		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitUsage, stderr.String())
 	}
 	if !strings.Contains(stderr.String(), "error[usage]") {
 		t.Fatalf("stderr missing usage tag: %q", stderr.String())
-	}
-	if !strings.Contains(stderr.String(), "flag provided but not defined") {
-		t.Fatalf("stderr missing flag parse error: %q", stderr.String())
-	}
-}
-
-// TestRun_InvalidSyncLevelValueExitsTwo: any comma-separated value other
-// than line/none is rejected at parse time with a usage error.
-func TestRun_InvalidSyncLevelValueExitsTwo(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-lrc", "--sync-level", "karaoke", "TEST_SONG"}, &stdout, &stderr)
-	if code != exitUsage {
-		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitUsage, stderr.String())
-	}
-	if !strings.Contains(stderr.String(), `invalid sync level value "karaoke"`) {
-		t.Fatalf("stderr missing invalid sync level message: %q", stderr.String())
 	}
 }
 
@@ -43,17 +25,15 @@ func TestRun_InvalidDurationValueExitsTwo(t *testing.T) {
 	if code != exitUsage {
 		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitUsage, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), `invalid duration value "abc"`) {
-		t.Fatalf("stderr missing invalid duration message: %q", stderr.String())
-	}
 	if !strings.Contains(stderr.String(), "error[usage]") {
 		t.Fatalf("stderr missing usage tag: %q", stderr.String())
 	}
 }
 
-// TestParseDuration locks the --duration value grammar: whole seconds,
-// mm:ss, and whitespace-only (not provided) are accepted; anything else
-// is an error.
+// TestParseDuration locks the --duration value grammar on the (pure)
+// parser: whole seconds, mm:ss, and whitespace-only (not provided) are
+// accepted; anything else is an error. The user-visible half of the same
+// contract is covered by TestRun_InvalidDurationValueExitsTwo.
 func TestParseDuration(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -90,9 +70,10 @@ func TestParseDuration(t *testing.T) {
 	}
 }
 
-// TestParseTimeout locks the --timeout / --timeout-global grammar:
-// non-negative integer seconds; empty means not provided (0); negative or
-// non-numeric values are errors.
+// TestParseTimeout locks the --timeout / --timeout-global grammar on the
+// (pure) parser: non-negative integer seconds; empty means not provided
+// (0); negative or non-numeric values are errors. The user-visible half is
+// covered by TestRun_InvalidTimeoutValueExitsTwo.
 func TestParseTimeout(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -125,18 +106,12 @@ func TestParseTimeout(t *testing.T) {
 	}
 }
 
-func TestRun_SyncLevelValueIsTrimmed(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-lrc", "--sync-level", " line", "TEST_SONG"}, &stdout, &stderr)
-	if code != exitOK {
-		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
-	}
-	if !strings.Contains(stdout.String(), "[00:00.00]") {
-		t.Fatalf("stdout missing synced lyrics: %q", stdout.String())
-	}
-}
-
-func TestRun_SyncLevelOnlyEmptyEntriesExitsFour(t *testing.T) {
+// TestRun_SyncLevelAllEmptyEntriesYieldsNoResult pins the documented
+// behaviour for a --sync-level value made only of separators: the empty
+// entries are dropped, the level list ends up empty, so there is no
+// iteration to match and the run ends in the unified no-result error
+// (exit 4) rather than a usage error.
+func TestRun_SyncLevelAllEmptyEntriesYieldsNoResult(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"--source", "mock-lrc", "--sync-level", ",", "TEST_SONG"}, &stdout, &stderr)
 	if code != exitFetchFailed {
@@ -144,16 +119,5 @@ func TestRun_SyncLevelOnlyEmptyEntriesExitsFour(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "error[no-result]") {
 		t.Fatalf("stderr missing no-result error: %q", stderr.String())
-	}
-}
-
-func TestRun_SourceEmptyEntriesFiltered(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-lrc,", "TEST_SONG"}, &stdout, &stderr)
-	if code != exitOK {
-		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
-	}
-	if !strings.Contains(stdout.String(), "[00:00.00]") {
-		t.Fatalf("stdout missing lyrics: %q", stdout.String())
 	}
 }

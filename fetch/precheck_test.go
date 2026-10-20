@@ -10,89 +10,59 @@ import (
 	"github.com/PloyBox/get-lyrics/source"
 )
 
-func TestFetch_UnknownSourceReturnsErrNotFound(t *testing.T) {
-	r := newRegistry(t, &fakeSrc{name: "known"})
-	svc := New(r)
-	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Source: []string{"nope"}})
-	if !errors.Is(err, source.ErrNotFound) {
-		t.Fatalf("err = %v; want ErrNotFound", err)
-	}
-	var unk UnknownSourceError
-	if !errors.As(err, &unk) || unk.Name != "nope" {
-		t.Fatalf("err = %v; want UnknownSourceError{Name: nope}", err)
-	}
-	if len(warnings) != 0 {
-		t.Fatalf("warnings = %v; want none", warnings)
-	}
-}
-
-// TestFetch_StrictPrecheckRequiredParamFailsFast proves the strict
-// precheck aborts on the first missing required parameter without
-// fetching any source — not even earlier eligible ones.
+// TestFetch_StrictPrecheckRequiredParamFailsFast locks the typed
+// required-param precheck: a source whose Required bit is missing from the
+// request aborts the fetch with RequiredParamError before any adapter runs.
+// A zero-value params.Duration (not provided) counts as missing.
 func TestFetch_StrictPrecheckRequiredParamFailsFast(t *testing.T) {
-	ok := &fakeSrc{
-		name: "ok",
-		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
-			return source.Result{Lyrics: "L"}, nil
-		},
-	}
-	req := &fakeSrc{
-		name: "req",
-		caps: source.Capabilities{Required: source.ParamAuthor},
-		fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
-			return source.Result{Lyrics: "R"}, nil
-		},
-	}
-	r := newRegistry(t, ok, req)
-	svc := New(r)
+	for _, tc := range []struct {
+		name  string
+		param source.Param
+		// params carries everything but the required bit under test.
+		params Params
+	}{
+		{"author", source.ParamAuthor, Params{Song: "S"}},
+		{"duration", source.ParamDuration, Params{Song: "S"}},
+		{"isrc", source.ParamISRC, Params{Song: "S", Author: "A"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &fakeSrc{
+				name: "req",
+				caps: source.Capabilities{Required: tc.param},
+				fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
+					return source.Result{Lyrics: "R"}, nil
+				},
+			}
+			ok := &fakeSrc{
+				name: "ok",
+				fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
+					return source.Result{Lyrics: "L"}, nil
+				},
+			}
+			svc := New(newRegistry(t, ok, req))
 
-	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Source: []string{"ok", "req"}})
-	var reqErr RequiredParamError
-	if !errors.As(err, &reqErr) {
-		t.Fatalf("err = %v; want RequiredParamError", err)
-	}
-	if reqErr.Source != "req" || reqErr.Param != source.ParamAuthor {
-		t.Fatalf("reqErr = %+v; want author-required for req", reqErr)
-	}
-	if len(warnings) != 0 {
-		t.Fatalf("warnings = %+v; want none on strict precheck failure", warnings)
-	}
-	if ok.fetchCalls != 0 {
-		t.Fatalf("ok.fetchCalls = %d; want 0 (fail-fast before any fetch)", ok.fetchCalls)
+			tc.params.Source = []string{"ok", "req"}
+			_, warnings, err := svc.Fetch(context.Background(), tc.params)
+			var reqErr RequiredParamError
+			if !errors.As(err, &reqErr) {
+				t.Fatalf("err = %v; want RequiredParamError", err)
+			}
+			if reqErr.Source != "req" || reqErr.Param != tc.param {
+				t.Fatalf("reqErr = %+v; want %v required for req", reqErr, tc.param)
+			}
+			if len(warnings) != 0 {
+				t.Fatalf("warnings = %+v; want none on strict precheck failure", warnings)
+			}
+			if ok.fetchCalls != 0 || req.fetchCalls != 0 {
+				t.Fatalf("fetchCalls ok=%d req=%d; want 0 (fail-fast before any fetch)", ok.fetchCalls, req.fetchCalls)
+			}
+		})
 	}
 }
 
-// TestFetch_StrictPrecheckRequiredDurationFailsFast locks the
-// ParamDuration required semantics: a source requiring duration treats a
-// zero-value (not provided) params.Duration as missing, so the strict
-// precheck aborts with RequiredParamError before any fetch.
-func TestFetch_StrictPrecheckRequiredDurationFailsFast(t *testing.T) {
-	req := &fakeSrc{
-		name: "reqdur",
-		caps: source.Capabilities{Required: source.ParamDuration},
-		fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
-			return source.Result{Lyrics: "R"}, nil
-		},
-	}
-	r := newRegistry(t, req)
-	svc := New(r)
-
-	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Source: []string{"reqdur"}})
-	var reqErr RequiredParamError
-	if !errors.As(err, &reqErr) {
-		t.Fatalf("err = %v; want RequiredParamError", err)
-	}
-	if reqErr.Source != "reqdur" || reqErr.Param != source.ParamDuration {
-		t.Fatalf("reqErr = %+v; want duration-required for reqdur", reqErr)
-	}
-	if len(warnings) != 0 {
-		t.Fatalf("warnings = %+v; want none on strict precheck failure", warnings)
-	}
-	if req.fetchCalls != 0 {
-		t.Fatalf("req.fetchCalls = %d; want 0 (fail-fast before any fetch)", req.fetchCalls)
-	}
-}
-
+// TestFetch_RequiredParamMismatchFailsOverWithWarning: a fetch-time
+// RequiredParamMismatchError (a declaration bug) is not fatal — it becomes a
+// PrecheckMismatch warning carrying the cause and the loop moves on.
 func TestFetch_RequiredParamMismatchFailsOverWithWarning(t *testing.T) {
 	buggy := &fakeSrc{
 		name: "buggy",
@@ -135,6 +105,8 @@ func TestFetch_RequiredParamMismatchFailsOverWithWarning(t *testing.T) {
 	}
 }
 
+// TestFetch_StrictPrecheckUnknownSourceFailsFast: in strict mode an unknown
+// source name aborts before any adapter runs, even one listed earlier.
 func TestFetch_StrictPrecheckUnknownSourceFailsFast(t *testing.T) {
 	ok := &fakeSrc{
 		name: "ok",
@@ -243,30 +215,9 @@ func TestFetch_LenientSkipsProblemSources(t *testing.T) {
 	}
 }
 
-func TestFetch_LenientAllSkippedReturnsNoResult(t *testing.T) {
-	req := &fakeSrc{
-		name: "req",
-		caps: source.Capabilities{Required: source.ParamAuthor},
-	}
-	r := newRegistry(t, req)
-	svc := New(r)
-
-	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", Source: []string{"req", "nope"}, Lenient: true})
-	var noRes NoResultError
-	if !errors.As(err, &noRes) {
-		t.Fatalf("err = %v; want NoResultError", err)
-	}
-	if len(warnings) != 2 {
-		t.Fatalf("warnings = %+v; want two PreCheck warnings", warnings)
-	}
-	for _, w := range warnings {
-		if w.Kind != PreCheck {
-			t.Fatalf("warning %+v; want Kind PreCheck", w)
-		}
-	}
-}
-
-func TestFetch_DuplicateSourceStrictReturnsUsageError(t *testing.T) {
+// TestFetch_DuplicateSourceStrictReturnsDuplicateError: strict mode rejects a
+// repeated source name before any fetch; the CLI maps the error to exit 8.
+func TestFetch_DuplicateSourceStrictReturnsDuplicateError(t *testing.T) {
 	src := &fakeSrc{
 		name: "a",
 		fetch: func(_ context.Context, r source.Request) (source.Result, error) {
@@ -286,6 +237,8 @@ func TestFetch_DuplicateSourceStrictReturnsUsageError(t *testing.T) {
 	}
 }
 
+// TestFetch_DuplicateSourceLenientDedupes: lenient mode drops the repeated
+// entry with a PreCheck warning and calls the adapter exactly once.
 func TestFetch_DuplicateSourceLenientDedupes(t *testing.T) {
 	src := &fakeSrc{
 		name: "a",

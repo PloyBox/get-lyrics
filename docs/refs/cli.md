@@ -68,7 +68,7 @@ Truncate/seek happen only on the real output file — stdout (the fallback) must
 truncated or seeked. Because truncation happens only after a successful fetch, existing files
 keep their content on every failure path (exit 3/4/6/7/8).
 
-JSON output marshals `{formatVersion, fetch.Result}` with `formatVersion` 1; it includes every
+JSON output marshals `{formatVersion, fetch.Result}` with `formatVersion` 2; it includes every
 result field, including empty strings. Increment `formatVersion` whenever the JSON structure
 or parameter semantics change.
 

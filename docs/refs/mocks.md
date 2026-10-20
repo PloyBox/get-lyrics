@@ -16,3 +16,7 @@ production). Names must start with `mock-`. Each covers one testing concern:
 | `mock-custom` | custom `--env` params: statically declares `LANG` (always recognized and required) and `COUNTRY` (recognized and required only when `LANG` is present — demonstrating conditional custom parameters) |
 | `mock-word` | word-level path; returns pseudo TTML on a `SyncWord` request, plain lyrics otherwise |
 | `mock-slow` | timeout path; blocks until the context ends, exercising `--timeout` (per-source) and `--timeout-global` (exit 9) |
+| `mock-gate2` | gate-2 path; the request-aware declaration contradicts the empty static list (`RequiredCustom: LANG-X`), so precheck skips it with `warning[precheck-mismatch]` — never exit 6 — even though it also requires `--author` |
+| `mock-useragent` | user-agent path; echoes the incoming `Request.UserAgent` into its lyrics, so a CLI run can assert the header the adapter actually received |
+
+CLI-level tests reach these adapters only through `--source`; they never register fixtures into the shared registry themselves. A new test concern means a new `mock-*` adapter registered in `bootstrap/bootstrap_mock.go`.

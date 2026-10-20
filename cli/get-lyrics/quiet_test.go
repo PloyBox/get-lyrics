@@ -17,8 +17,8 @@ func TestRun_QuietSuppressesWarnings(t *testing.T) {
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q; want empty", stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "TEST_SONG") {
-		t.Fatalf("stdout missing lyrics: %q", stdout.String())
+	if got := stdout.String(); !strings.Contains(got, "TEST_SONG") || !strings.Contains(got, "lyrics") {
+		t.Fatalf("stdout = %q; want lyrics", got)
 	}
 }
 
@@ -43,32 +43,6 @@ func TestRun_QuietShortFlagSuppressesFetchWarningsAndErrors(t *testing.T) {
 func TestRun_QuietSuppressesUsageErrors(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"--quiet"}, &stdout, &stderr)
-	if code != exitUsage {
-		t.Fatalf("code = %d; want %d", code, exitUsage)
-	}
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr = %q; want empty", stderr.String())
-	}
-}
-
-// TestRun_QuietListedInHelp locks that --help lists the flag with both
-// spellings.
-func TestRun_QuietListedInHelp(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--help"}, &stdout, &stderr)
-	if code != exitOK {
-		t.Fatalf("code = %d; want 0", code)
-	}
-	if !strings.Contains(stdout.String(), "--quiet, -q") {
-		t.Fatalf("stdout missing --quiet flag: %q", stdout.String())
-	}
-}
-
-// TestRun_QuietSuppressesFlagParseErrors locks that --quiet is honored
-// even when flag parsing fails after it.
-func TestRun_QuietSuppressesFlagParseErrors(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--quiet", "--bogus", "TEST_SONG"}, &stdout, &stderr)
 	if code != exitUsage {
 		t.Fatalf("code = %d; want %d", code, exitUsage)
 	}

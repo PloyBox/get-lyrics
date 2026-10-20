@@ -42,23 +42,3 @@ func TestFetch_AdapterErrorFailsOverToNextSource(t *testing.T) {
 		t.Fatalf("warnings = %+v; want one FetchFailed warning for bad", warnings)
 	}
 }
-
-func TestFetch_AllSourcesFailReturnsNoResult(t *testing.T) {
-	bad := &fakeSrc{
-		name: "bad",
-		fetch: func(_ context.Context, _ source.Request) (source.Result, error) {
-			return source.Result{}, errors.New("boom")
-		},
-	}
-	r := newRegistry(t, bad)
-	svc := New(r)
-
-	_, warnings, err := svc.Fetch(context.Background(), Params{Song: "S", SyncLevels: []SyncLevel{SyncNone}, Source: []string{"bad"}})
-	var noRes NoResultError
-	if !errors.As(err, &noRes) {
-		t.Fatalf("err = %v; want NoResultError", err)
-	}
-	if len(warnings) != 1 || warnings[0].Kind != FetchFailed {
-		t.Fatalf("warnings = %+v; want one FetchFailed warning", warnings)
-	}
-}

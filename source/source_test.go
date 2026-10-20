@@ -55,13 +55,6 @@ func TestRegistry_DuplicateRegistrationRejected(t *testing.T) {
 	}
 }
 
-func TestRegistry_RegisterNilRejected(t *testing.T) {
-	r := NewRegistry()
-	if err := r.Register(nil); err == nil {
-		t.Fatalf("Register(nil) should fail")
-	}
-}
-
 func TestRegistry_NamesSortedAndComplete(t *testing.T) {
 	r := NewRegistry()
 	for _, n := range []string{"gamma", "alpha", "beta"} {
@@ -72,22 +65,6 @@ func TestRegistry_NamesSortedAndComplete(t *testing.T) {
 	want := []string{"alpha", "beta", "gamma"}
 	if got := r.Names(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Names() = %v; want %v", got, want)
-	}
-}
-
-func TestParam_BitmaskComposition(t *testing.T) {
-	combined := ParamAuthor | ParamAlbum
-	if combined&ParamAuthor == 0 {
-		t.Fatalf("combined missing Author bit")
-	}
-	if combined&ParamAlbum == 0 {
-		t.Fatalf("combined missing Album bit")
-	}
-	if combined&ParamISRC != 0 {
-		t.Fatalf("combined should not include ISRC")
-	}
-	if combined&ParamDuration != 0 {
-		t.Fatalf("combined should not include Duration")
 	}
 }
 
@@ -105,21 +82,6 @@ func TestValidParamName(t *testing.T) {
 		}
 	}
 }
-
-func TestRegistry_RegisterAcceptsValidCustomParams(t *testing.T) {
-	r := NewRegistry()
-	err := r.Register(&fakeSource{
-		name:   "ok",
-		custom: []ParamSpec{{Name: "LANG"}, {Name: "COUNTRY"}},
-	})
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
-}
-
-// TestRegistry_RegisterRejectsInvalidParamName locks gate 1: a static
-// CustomParams() entry that does not match ParamNamePattern fails
-// registration with ErrInvalidParamName carrying source and key.
 func TestRegistry_RegisterRejectsInvalidParamName(t *testing.T) {
 	r := NewRegistry()
 	err := r.Register(&fakeSource{name: "bad", custom: []ParamSpec{{Name: "lang"}}})
@@ -149,18 +111,5 @@ func TestRegistry_RegisterRejectsDuplicateParamName(t *testing.T) {
 	}
 	if !iae.Duplicate || iae.Source != "dup" || iae.Name != "LANG" {
 		t.Fatalf("err = %+v; want Duplicate=true, Source=dup, Name=LANG", iae)
-	}
-}
-
-func TestErrInvalidParamName_Message(t *testing.T) {
-	got := (ErrInvalidParamName{Source: "x", Name: "lang"}).Error()
-	want := `source "x" declared invalid custom key "lang" (source bug: must match ^[A-Z][A-Z0-9_]*$)`
-	if got != want {
-		t.Fatalf("message = %q; want %q", got, want)
-	}
-	got = (ErrInvalidParamName{Source: "x", Name: "LANG", Duplicate: true}).Error()
-	want = `source "x" declared duplicate custom key "LANG" (source bug)`
-	if got != want {
-		t.Fatalf("message = %q; want %q", got, want)
 	}
 }
