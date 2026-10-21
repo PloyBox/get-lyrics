@@ -12,12 +12,15 @@ import (
 // "Source parameters:" section.
 func printUsage(w io.Writer, reg *source.Registry, decls map[string][]source.ParamSpec) {
 	var b bytes.Buffer
-	fmt.Fprintln(&b, "Usage: get-lyrics [--source <names>] [--author <name>] [--album <name>]")
-	fmt.Fprintln(&b, "                   [--isrc <code>] [--duration <secs>] [--timeout <secs>]")
-	fmt.Fprintln(&b, "                   [--timeout-global <secs>] [--output <file>] [--user-agent <ua>]")
-	fmt.Fprintln(&b, "                   [--sync-level <levels>] [--json] [--quiet] [--version] <song>")
+	fmt.Fprintln(&b, "Usage: get-lyrics --name <title> [--source <names>] [--author <name>]")
+	fmt.Fprintln(&b, "                   [--album <name>] [--isrc <code>] [--duration <secs>]")
+	fmt.Fprintln(&b, "                   [--timeout <secs>] [--timeout-global <secs>]")
+	fmt.Fprintln(&b, "                   [--output <file>] [--overwrite] [--json]")
+	fmt.Fprintln(&b, "                   [--sync-level <levels>] [--user-agent <ua>]")
+	fmt.Fprintln(&b, "                   [--env <key=value>] [--lenient] [--quiet] [--version]")
 	fmt.Fprintln(&b, "")
 	fmt.Fprintln(&b, "Options:")
+	fmt.Fprintln(&b, "  --name <title>,   -n <title> Song title (required)")
 	fmt.Fprintln(&b, "  --source <names>, -s <names> Lyrics source names (default: lrclib)")
 	fmt.Fprintln(&b, "  --author <name>,  -a <name>  Author / artist filter")
 	fmt.Fprintln(&b, "  --album <name>,   -A <name>  Album filter")
@@ -36,8 +39,7 @@ func printUsage(w io.Writer, reg *source.Registry, decls map[string][]source.Par
 	fmt.Fprintln(&b, "  --help, -h                   Show this help and exit")
 	fmt.Fprintln(&b, "  --version, -v                Print version and exit")
 	fmt.Fprintln(&b, "")
-	fmt.Fprintln(&b, "Positionals:")
-	fmt.Fprintln(&b, "  <song>                       Song title (required)")
+	fmt.Fprintln(&b, "Positional arguments are not accepted; pass the song title with --name.")
 	if reg != nil {
 		fmt.Fprintln(&b, "")
 		fmt.Fprintln(&b, "Available sources:")

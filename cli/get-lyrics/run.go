@@ -71,15 +71,19 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 		fmt.Fprintf(stdout, "get-lyrics %s\n", version)
 		return exitOK
 	}
-	if len(positional) != 1 {
-		fmt.Fprintf(stderr, "error[usage]: expected 1 song title, got %d\n", len(positional))
+	if len(positional) > 0 {
+		fmt.Fprintf(stderr, "error[usage]: unexpected positional argument %q (use --name for the song title)\n", positional[0])
 		printUsage(stderr, nil, nil)
 		return exitUsage
 	}
-	song := positional[0]
+	if parsed.song == "" {
+		fmt.Fprintln(stderr, "error[usage]: song title is required (use --name)")
+		printUsage(stderr, nil, nil)
+		return exitUsage
+	}
 
 	svc := fetch.New(registry)
-	params := parsedFlagsToParams(parsed, song)
+	params := parsedFlagsToParams(parsed)
 
 	decls, err := svc.CustomParamsFor(params)
 	if err != nil {

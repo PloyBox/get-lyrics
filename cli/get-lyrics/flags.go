@@ -10,9 +10,9 @@ import (
 	"github.com/PloyBox/get-lyrics/fetch"
 )
 
-// parsedFlags holds the parsed CLI inputs; song is kept separate because
-// it is positional.
+// parsedFlags holds the parsed CLI inputs.
 type parsedFlags struct {
+	song          string
 	source        string
 	author        string
 	album         string
@@ -32,14 +32,15 @@ type parsedFlags struct {
 	env           map[string]string // validated at parse time
 }
 
-// parseFlags parses argv; parsing stops at the first positional argument,
-// so flags must precede the song. An unknown flag maps to exitUsage. The
-// positional arguments are returned raw for Run to validate arity.
+// parseFlags parses argv. An unknown flag maps to exitUsage. Positional
+// arguments are returned raw so Run can reject them.
 func parseFlags(argv []string) (parsedFlags, []string, error) {
 	fs := flag.NewFlagSet("get-lyrics", flag.ContinueOnError)
 	// Silence flag's own usage writer; Run writes its own on error.
 	fs.SetOutput(io.Discard)
 	var f parsedFlags
+	fs.StringVar(&f.song, "name", "", "song title")
+	fs.StringVar(&f.song, "n", "", "song title (short)")
 	fs.StringVar(&f.source, "source", "lrclib", "lyrics source name")
 	fs.StringVar(&f.source, "s", "lrclib", "lyrics source name (short)")
 	fs.StringVar(&f.author, "author", "", "author/artist filter")
@@ -191,11 +192,11 @@ func splitTrimmed(s string) []string {
 	return out
 }
 
-// parsedFlagsToParams converts the raw flags and positional song into
-// fetch.Params; defaults live in parseFlags.
-func parsedFlagsToParams(f parsedFlags, song string) fetch.Params {
+// parsedFlagsToParams converts the raw flags into fetch.Params; defaults
+// live in parseFlags.
+func parsedFlagsToParams(f parsedFlags) fetch.Params {
 	return fetch.Params{
-		Song:       song,
+		Song:       f.song,
 		Source:     splitTrimmed(f.source),
 		Author:     f.author,
 		Album:      f.album,

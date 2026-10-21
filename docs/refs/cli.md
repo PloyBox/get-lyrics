@@ -3,10 +3,12 @@
 `get-lyrics` fetches song lyrics from a registered source.
 
 ```
-Usage: get-lyrics [--source <names>] [--author <name>] [--album <name>]
-                   [--isrc <code>] [--duration <secs>] [--timeout <secs>]
-                   [--timeout-global <secs>] [--output <file>] [--user-agent <ua>]
-                   [--sync-level <levels>] [--json] [--quiet] [--version] <song>
+Usage: get-lyrics --name <title> [--source <names>] [--author <name>]
+                   [--album <name>] [--isrc <code>] [--duration <secs>]
+                   [--timeout <secs>] [--timeout-global <secs>]
+                   [--output <file>] [--overwrite] [--json]
+                   [--sync-level <levels>] [--user-agent <ua>]
+                   [--env <key=value>] [--lenient] [--quiet] [--version]
 ```
 
 ## Exit codes
@@ -14,7 +16,7 @@ Usage: get-lyrics [--source <names>] [--author <name>] [--album <name>]
 | Code | Meaning |
 |------|---------|
 | 0 | success (stderr may still carry warnings) |
-| 2 | usage error (missing/multiple positionals, unknown/typo flag, invalid `--sync-level` value, invalid `--duration`, invalid/duplicate `--env`) |
+| 2 | usage error (missing `--name`, any positional argument, unknown/typo flag, invalid `--sync-level` value, invalid `--duration`, invalid/duplicate `--env`) |
 | 3 | unknown source (strict precheck) |
 | 4 | no valid result: every source skipped (lenient) or failed, or no result matched the requested sync levels |
 | 5 | output failure (file open, write, or close) |
@@ -47,7 +49,7 @@ Run flow:
 2. `--help` → full declaration for rendering only, no env fallback (lenient mode and the
    sorted registry names make this query infallible); print usage, exit 0.
 3. `--version` → print `get-lyrics <version>`, exit 0.
-4. Positional count != 1 → `error[usage]: expected 1 song title, got <n>` + usage, exit 2.
+4. Any positional argument → `error[usage]: unexpected positional argument "<arg>" (use --name for the song title)` + usage, exit 2. Missing/empty `--name` → `error[usage]: song title is required (use --name)` + usage, exit 2.
 5. `svc.CustomParamsFor(params)` for the requested sources — strict mode reports exit 3/8
    here (same codes as the fetch precheck, but reported first) — then `mergeEnv` fills every
    key not supplied by flag from the process environment.
@@ -74,14 +76,14 @@ or parameter semantics change.
 
 ## flags.go
 
-- `parsedFlags` holds the parsed inputs; the positional arguments are kept separate because
-  they are not flags. `parseFlags` returns them raw and `Run` enforces strict arity — exactly
-  one positional (the song title), zero or more than one being a usage error (exit 2).
+- `parsedFlags` holds the parsed inputs, including `song` from `--name`/`-n`. The positional
+  arguments are kept separate because they are not flags. `parseFlags` returns them raw and
+  `Run` rejects any of them — the song title is a flag, never a positional (exit 2).
 - `parseFlags(argv)` handles both `-x`/`--x` forms using Go `flag`'s default behavior:
-  parsing stops at the first positional argument, so flags must precede the song. Unknown
-  flags become a non-nil error which `Run` maps to `exitUsage`. Flag's own usage writer is
-  silenced (`io.Discard`); `Run` writes its own on error. On error the flags parsed so far
-  are still returned, so `Run` honors `--quiet` even when a later parse step fails.
+  parsing stops at the first positional argument, which is then reported as a usage error.
+  Unknown flags become a non-nil error which `Run` maps to `exitUsage`. Flag's own usage
+  writer is silenced (`io.Discard`); `Run` writes its own on error. On error the flags parsed
+  so far are still returned, so `Run` honors `--quiet` even when a later parse step fails.
 - `parseSyncLevels`: comma-separated `--sync-level` → ordered `[]fetch.SyncLevel` (`line` →
   `SyncLine`, `word` → `SyncWord`, `none` → `SyncNone`); entries trimmed, empty entries
   dropped; anything else is a usage error (exit 2).
@@ -93,7 +95,7 @@ or parameter semantics change.
   values are usage errors (exit 2). The `--timeout` default (`10`) is the flag's raw default.
 - `splitTrimmed`: splits a comma-separated flag value, trimming whitespace and dropping empty
   entries.
-- `parsedFlagsToParams`: converts the raw flags and positional song into `fetch.Params`
+- `parsedFlagsToParams`: converts the raw flags (including `--name`) into `fetch.Params`
   without applying defaults (those live in `parseFlags`); source lists are trimmed and empty
   entries dropped here; sync levels are already parsed into `SyncLevels`.
 
@@ -151,10 +153,11 @@ including the `[kind]` tag.
 
 ## usage.go
 
-`printUsage(w, reg, decls)` writes the help text. Examples use the long (`--`) form; the
-underlying flag library also accepts short forms. When `decls` is non-nil it feeds the
-"Source parameters:" section: a per-source list of the static `--env` keys and their
-descriptions. When `reg` is non-nil it lists the available sources.
+`printUsage(w, reg, decls)` writes the help text. The synopsis shows `--name <title>` as
+required and every flag; examples use the long (`--`) form, and the underlying flag library
+also accepts short forms. It states that positional arguments are not accepted. When `decls`
+is non-nil it feeds the "Source parameters:" section: a per-source list of the static `--env`
+keys and their descriptions. When `reg` is non-nil it lists the available sources.
 
 ## loadmock.go
 

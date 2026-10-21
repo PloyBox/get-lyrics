@@ -1,49 +1,52 @@
 # Usage
 
+The song title is mandatory and is passed with `--name`/`-n`. Positional
+arguments are not accepted.
+
 **Basic:**
 
 ```sh
 # Search lrclib for "Bohemian Rhapsody" (default source)
-get-lyrics "Bohemian Rhapsody"
+get-lyrics --name "Bohemian Rhapsody"
 
 # Narrow by artist
-get-lyrics --author "Queen" "Bohemian Rhapsody"
+get-lyrics --name "Bohemian Rhapsody" --author "Queen"
 
 # Use lyrics.ovh (requires --author)
-get-lyrics --source "lyricsovh" --author "Queen" "Bohemian Rhapsody"
+get-lyrics --name "Bohemian Rhapsody" --source "lyricsovh" --author "Queen"
 
 # Try several sources in order (failover)
-get-lyrics --source "lrclib,lyricsovh" --author "Queen" "Bohemian Rhapsody"
+get-lyrics --name "Bohemian Rhapsody" --source "lrclib,lyricsovh" --author "Queen"
 
 # Skip sources that can't be used instead of failing (precheck only)
-get-lyrics --lenient --source "lyricsovh,lrclib" "Bohemian Rhapsody"
+get-lyrics --name "Bohemian Rhapsody" --lenient --source "lyricsovh,lrclib"
 ```
 
 **Output to file:**
 
 ```sh
 # Write to a new file (refuses to overwrite an existing one)
-get-lyrics --author "Queen" --output "lyrics.txt" "Bohemian Rhapsody"
+get-lyrics --name "Bohemian Rhapsody" --author "Queen" --output "lyrics.txt"
 
 # Explicitly overwrite an existing file
-get-lyrics --author "Queen" --output "lyrics.txt" --overwrite "Bohemian Rhapsody"
+get-lyrics --name "Bohemian Rhapsody" --author "Queen" --output "lyrics.txt" --overwrite
 ```
 
 **Force sync level:**
 
 ```sh
 # Force LRC output
-get-lyrics --author "Queen" --sync-level "line" "Bohemian Rhapsody"
+get-lyrics --name "Bohemian Rhapsody" --author "Queen" --sync-level "line"
 
 # Force plain lyrics instead
-get-lyrics --author "Queen" --sync-level "none" "Bohemian Rhapsody"
+get-lyrics --name "Bohemian Rhapsody" --author "Queen" --sync-level "none"
 ```
 
 **Set a custom User-Agent:**
 
 ```sh
 # Override the HTTP User-Agent sent to sources (useful for attribution)
-get-lyrics --user-agent "my-app/1.0 (contact@example.com)" --author "Queen" "Bohemian Rhapsody"
+get-lyrics --name "Bohemian Rhapsody" --user-agent "my-app/1.0 (contact@example.com)" --author "Queen"
 ```
 
 **Custom source parameters (`--env`):**
@@ -53,10 +56,10 @@ Sources can declare custom input keys (see [Source Parameters](source-parameters
 ```sh
 # musixmatch requires its API key as a custom parameter (a free Basic key
 # works for plain lyrics; see "Built-in Sources")
-get-lyrics --source musixmatch --env MUSIXMATCH_API_KEY=xxx --author "Queen" "Bohemian Rhapsody"
+get-lyrics --name "Bohemian Rhapsody" --source musixmatch --env MUSIXMATCH_API_KEY=xxx --author "Queen"
 
 # The same keys can come from the environment when not passed via --env
-MUSIXMATCH_API_KEY=xxx get-lyrics --source musixmatch --author "Queen" "Bohemian Rhapsody"
+MUSIXMATCH_API_KEY=xxx get-lyrics --name "Bohemian Rhapsody" --source musixmatch --author "Queen"
 ```
 
 **List available sources:**
@@ -69,6 +72,7 @@ get-lyrics --help
 
 | Flag | Short | Description |
 |------|-------|-------------|
+| `--name` | `-n` | Song title (required) |
 | `--source` | `-s` | Comma-separated lyrics source names, tried in order (default: `lrclib`) |
 | `--author` | `-a` | Artist / author filter |
 | `--album` | `-A` | Album filter |
@@ -87,8 +91,8 @@ get-lyrics --help
 | `--help` | `-h` | Show help and exit |
 | `--version` | `-v` | Print version and exit |
 
+- The song title is mandatory: pass it with `--name`/`-n`. Positional arguments are rejected (exit 2).
 - Both `--flag` and `-flag` forms are accepted.
 - Quotes are optional for values without spaces.
-- Flags must come before the song title; exactly one positional (the song) is accepted — zero or more is a usage error.
 
 See [Exit Codes](exit-codes.md) for what each failure returns.
