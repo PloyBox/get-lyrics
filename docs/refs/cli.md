@@ -158,5 +158,5 @@ descriptions. When `reg` is non-nil it lists the available sources.
 
 ## loadmock.go
 
-Build tag `test`. Registers the `mock-*` sources so binaries built with `-tags test` (and the
-test suite itself) can exercise them. Production builds exclude this file.
+Build tag `test`. Calls the no-op `bootstrap.RegisterAllMock`; kept as test-only
+wiring for future mock adapters. Production builds exclude this file.

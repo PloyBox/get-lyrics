@@ -111,7 +111,7 @@ Projects the CLI params onto a `source.Request` for capability queries.
 - `SyncLevel` is deliberately omitted — zero value is `SyncNone`; synced output is a runtime
   property.
 - `Custom` is projected so capability queries see the user-supplied keys — conditional
-  recognition/requirements (e.g. `mock-custom`'s `COUNTRY` depending on `LANG`) would
+  recognition/requirements (a key available only when another key is present) would
   otherwise never hold in precheck and `detectUnsupported`.
 
 ## sourceSyncLevel

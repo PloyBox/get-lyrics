@@ -2,42 +2,10 @@
 
 package bootstrap
 
-import (
-	"github.com/PloyBox/get-lyrics/internal/provider/mock/custom"
-	"github.com/PloyBox/get-lyrics/internal/provider/mock/fail"
-	"github.com/PloyBox/get-lyrics/internal/provider/mock/gate2"
-	"github.com/PloyBox/get-lyrics/internal/provider/mock/lrc"
-	"github.com/PloyBox/get-lyrics/internal/provider/mock/mismatch"
-	"github.com/PloyBox/get-lyrics/internal/provider/mock/nosupport"
-	"github.com/PloyBox/get-lyrics/internal/provider/mock/require"
-	"github.com/PloyBox/get-lyrics/internal/provider/mock/slow"
-	"github.com/PloyBox/get-lyrics/internal/provider/mock/success"
-	"github.com/PloyBox/get-lyrics/internal/provider/mock/synconly"
-	"github.com/PloyBox/get-lyrics/internal/provider/mock/useragent"
-	"github.com/PloyBox/get-lyrics/internal/provider/mock/word"
-	"github.com/PloyBox/get-lyrics/source"
-)
+import "github.com/PloyBox/get-lyrics/source"
 
-// RegisterAllMock registers every mock/test-only adapter into r.
-func RegisterAllMock(r *source.Registry) error {
-	adapters := []source.Source{
-		success.New(),
-		require.New(),
-		nosupport.New(),
-		fail.New(),
-		lrc.New(),
-		synconly.New(),
-		mismatch.New(),
-		custom.New(),
-		word.New(),
-		slow.New(),
-		gate2.New(),
-		useragent.New(),
-	}
-	for _, a := range adapters {
-		if err := r.Register(a); err != nil {
-			return err
-		}
-	}
+// RegisterAllMock no longer registers any adapter: all mocks were removed.
+// It stays as a no-op so test-tag wiring keeps compiling.
+func RegisterAllMock(*source.Registry) error {
 	return nil
 }

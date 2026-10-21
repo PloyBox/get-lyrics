@@ -51,15 +51,12 @@ get-lyrics --user-agent "my-app/1.0 (contact@example.com)" --author "Queen" "Boh
 Sources can declare custom input keys (see [Source Parameters](source-parameters.md)). Pass them with a repeatable `--env key=value` flag; a missing key falls back to the process environment:
 
 ```sh
-# Pass a key directly (repeatable; -e is the short form)
-get-lyrics --source mock-custom --env LANG=en --env COUNTRY=cn "TEST_SONG"
-
-# The same keys can come from the environment when not passed via --env
-LANG=en COUNTRY=cn get-lyrics --source mock-custom "TEST_SONG"
-
 # musixmatch requires its API key as a custom parameter (a free Basic key
 # works for plain lyrics; see "Built-in Sources")
 get-lyrics --source musixmatch --env MUSIXMATCH_API_KEY=xxx --author "Queen" "Bohemian Rhapsody"
+
+# The same keys can come from the environment when not passed via --env
+MUSIXMATCH_API_KEY=xxx get-lyrics --source musixmatch --author "Queen" "Bohemian Rhapsody"
 ```
 
 **List available sources:**

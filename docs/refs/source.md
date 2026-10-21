@@ -6,8 +6,8 @@ lookup, and can fetch lyrics for a given `Request`. Built-in adapters are regist
 explicitly through `bootstrap.RegisterAll`.
 
 The package lives at the module root (importable as a dependency library), as do `fetch`
-and `bootstrap`; concrete adapters live under `internal/provider/` (`real/`, `mock/`) —
-source is the abstraction, provider is the implementation.
+and `bootstrap`; concrete adapters live under `internal/provider/real/` — source is the
+abstraction, provider is the implementation.
 
 ## Param
 
@@ -63,7 +63,7 @@ when another field is present (e.g. lrclib uses `--album` only when `--author` i
 |---|---|
 | `Filters` | `Request` fields the adapter uses to refine the lookup for this request; supplied-but-unlisted fields produce unsupported-parameter warnings |
 | `Required` | `Request` fields that must be non-empty; enforced during precheck (exit 6) |
-| `Custom` | custom parameters the adapter recognizes for this request; conditionally supported ones are listed only when their precondition holds (`mock-custom` lists `COUNTRY` only with `LANG`) |
+| `Custom` | custom parameters the adapter recognizes for this request; conditionally supported ones are listed only when their precondition holds |
 | `RequiredCustom` | names of custom parameters that must be present; must be a duplicate-free subset of this request's `Custom` names |
 
 Every `Custom`/`RequiredCustom` name must be legal and present in `CustomParams()` — gate 2;
