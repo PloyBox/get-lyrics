@@ -6,34 +6,36 @@ import (
 	"testing"
 )
 
-func TestRun_InvalidSyncLevelValueExitsTwo(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--sync-level", "karaoke", "TEST_SONG"}, &stdout, &stderr)
-	if code != exitUsage {
-		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitUsage, stderr.String())
+// TestRun_InvalidFlagValueExitsTwo locks the CLI wiring: a value the
+// parser rejects is a usage error before any source runs.
+func TestRun_InvalidFlagValueExitsTwo(t *testing.T) {
+	cases := []struct {
+		name string
+		argv []string
+	}{
+		{"sync level", []string{"--sync-level", "karaoke", "TEST_SONG"}},
+		{"duration", []string{"--duration", "abc", "TEST_SONG"}},
+		{"timeout", []string{"--timeout", "abc", "TEST_SONG"}},
+		{"negative timeout", []string{"--timeout=-3", "TEST_SONG"}},
+		{"timeout global", []string{"--timeout-global", "abc", "TEST_SONG"}},
 	}
-	if !strings.Contains(stderr.String(), "error[usage]") {
-		t.Fatalf("stderr missing usage tag: %q", stderr.String())
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := Run(tc.argv, &stdout, &stderr)
+			if code != exitUsage {
+				t.Fatalf("code = %d; want %d (stderr=%q)",
+					code, exitUsage, stderr.String())
+			}
+			if !strings.Contains(stderr.String(), "error[usage]") {
+				t.Fatalf("stderr missing usage tag: %q", stderr.String())
+			}
+		})
 	}
 }
 
-// TestRun_InvalidDurationValueExitsTwo: a --duration value that is not
-// seconds or mm:ss is rejected at parse time with a usage error.
-func TestRun_InvalidDurationValueExitsTwo(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-success", "--duration", "abc", "TEST_SONG"}, &stdout, &stderr)
-	if code != exitUsage {
-		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitUsage, stderr.String())
-	}
-	if !strings.Contains(stderr.String(), "error[usage]") {
-		t.Fatalf("stderr missing usage tag: %q", stderr.String())
-	}
-}
-
-// TestParseDuration locks the --duration value grammar on the (pure)
-// parser: whole seconds, mm:ss, and whitespace-only (not provided) are
-// accepted; anything else is an error. The user-visible half of the same
-// contract is covered by TestRun_InvalidDurationValueExitsTwo.
+// TestParseDuration locks the --duration grammar on the pure parser; the
+// user-visible wiring is covered by TestRun_InvalidFlagValueExitsTwo.
 func TestParseDuration(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -70,10 +72,8 @@ func TestParseDuration(t *testing.T) {
 	}
 }
 
-// TestParseTimeout locks the --timeout / --timeout-global grammar on the
-// (pure) parser: non-negative integer seconds; empty means not provided
-// (0); negative or non-numeric values are errors. The user-visible half is
-// covered by TestRun_InvalidTimeoutValueExitsTwo.
+// TestParseTimeout locks the --timeout grammar on the pure parser; the
+// user-visible wiring is covered by TestRun_InvalidFlagValueExitsTwo.
 func TestParseTimeout(t *testing.T) {
 	cases := []struct {
 		in   string

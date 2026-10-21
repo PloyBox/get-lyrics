@@ -9,7 +9,6 @@ import (
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/lrc"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/mismatch"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/nosupport"
-	"github.com/PloyBox/get-lyrics/internal/provider/mock/nosync"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/require"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/slow"
 	"github.com/PloyBox/get-lyrics/internal/provider/mock/success"
@@ -27,7 +26,6 @@ func RegisterAllMock(r *source.Registry) error {
 		nosupport.New(),
 		fail.New(),
 		lrc.New(),
-		nosync.New(),
 		synconly.New(),
 		mismatch.New(),
 		custom.New(),

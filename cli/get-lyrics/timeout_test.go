@@ -46,23 +46,3 @@ func TestRun_TimeoutPerSourceFailsOver(t *testing.T) {
 		t.Fatalf("stderr missing fetch-failed warning: %q", stderr.String())
 	}
 }
-
-// TestRun_InvalidTimeoutValueExitsTwo locks the CLI half of the timeout
-// grammar: a negative or non-numeric --timeout/--timeout-global is a usage
-// error. The parser half is TestParseTimeout.
-func TestRun_InvalidTimeoutValueExitsTwo(t *testing.T) {
-	for _, argv := range [][]string{
-		{"--timeout", "abc", "TEST_SONG"},
-		{"--timeout=-3", "TEST_SONG"},
-		{"--timeout-global", "abc", "TEST_SONG"},
-	} {
-		var stdout, stderr bytes.Buffer
-		code := Run(argv, &stdout, &stderr)
-		if code != exitUsage {
-			t.Fatalf("Run(%v) code = %d; want %d (stderr=%q)", argv, code, exitUsage, stderr.String())
-		}
-		if !strings.Contains(stderr.String(), "error[usage]") {
-			t.Fatalf("Run(%v) stderr missing usage tag: %q", argv, stderr.String())
-		}
-	}
-}

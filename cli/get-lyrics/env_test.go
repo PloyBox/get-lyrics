@@ -7,10 +7,10 @@ import (
 )
 
 // TestRun_EnvRequiredPrecheck drives the custom required-param precheck
-// through mock-custom end to end: a missing required key exits 6 with the
-// key spelled as --env, the conditional COUNTRY requirement only kicks in
-// once LANG is present, COUNTRY alone does not satisfy LANG, and --lenient
-// skips the source instead of aborting.
+// through mock-custom end to end: a missing (or empty-env) required key
+// exits 6 with the key spelled as --env, the conditional COUNTRY
+// requirement only kicks in once LANG is present, COUNTRY alone does not
+// satisfy LANG, and --lenient skips the source instead of aborting.
 func TestRun_EnvRequiredPrecheck(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -21,7 +21,7 @@ func TestRun_EnvRequiredPrecheck(t *testing.T) {
 		wantAbsent []string
 	}{
 		{
-			name:       "missing LANG",
+			name:       "empty process env treated as missing LANG",
 			env:        map[string]string{"LANG": "", "COUNTRY": ""},
 			argv:       []string{"--source", "mock-custom", "TEST_SONG"},
 			wantCode:   exitRequired,
@@ -96,26 +96,6 @@ func TestRun_EnvProvidedSucceeds(t *testing.T) {
 	}
 }
 
-// TestRun_EnvUnrecognizedKeyWarns: a user-supplied key the source does
-// not recognize produces one unsupported warning, success intact.
-func TestRun_EnvUnrecognizedKeyWarns(t *testing.T) {
-	t.Setenv("LANG", "")
-	t.Setenv("COUNTRY", "")
-	var stdout, stderr bytes.Buffer
-	code := Run(
-		[]string{"--source", "mock-custom", "--env", "LANG=en", "--env", "COUNTRY=cn", "--env", "FOO=bar", "TEST_SONG"},
-		&stdout, &stderr,
-	)
-	if code != exitOK {
-		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
-	}
-	for _, want := range []string{"warning[unsupported]", `source "mock-custom"`, "--env FOO"} {
-		if !strings.Contains(stderr.String(), want) {
-			t.Fatalf("stderr missing %q: %q", want, stderr.String())
-		}
-	}
-}
-
 // TestRun_EnvMultipleUnrecognizedWarnsSet: multiple unrecognized keys
 // warn with unspecified order — assert the warning set, not the order.
 func TestRun_EnvMultipleUnrecognizedWarnsSet(t *testing.T) {
@@ -132,8 +112,10 @@ func TestRun_EnvMultipleUnrecognizedWarnsSet(t *testing.T) {
 	if got := strings.Count(stderr.String(), "warning[unsupported]"); got != 2 {
 		t.Fatalf("unsupported warnings = %d; want 2 (stderr=%q)", got, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "--env FOO") || !strings.Contains(stderr.String(), "--env BAR") {
-		t.Fatalf("stderr missing FOO/BAR warnings: %q", stderr.String())
+	for _, want := range []string{`source "mock-custom"`, "--env FOO", "--env BAR"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr missing %q: %q", want, stderr.String())
+		}
 	}
 }
 
@@ -222,19 +204,6 @@ func TestRun_EnvFlagBeatsProcessEnv(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "(lang=flagvalue)") {
 		t.Fatalf("stdout should carry the -e value, got %q", stdout.String())
-	}
-}
-
-// TestRun_EnvEmptyProcessEnvTreatedMissing: an environment variable that
-// exists but is empty (LANG=) counts as missing and is not injected, so
-// the required-key semantics kick in.
-func TestRun_EnvEmptyProcessEnvTreatedMissing(t *testing.T) {
-	t.Setenv("LANG", "")
-	t.Setenv("COUNTRY", "")
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-custom", "TEST_SONG"}, &stdout, &stderr)
-	if code != exitRequired {
-		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitRequired, stderr.String())
 	}
 }
 

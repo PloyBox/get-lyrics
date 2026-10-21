@@ -10,7 +10,6 @@ production). Names must start with `mock-`. Each covers one testing concern:
 | `mock-nosupport` | no-param path; declares nothing |
 | `mock-fail` | exit 4; `Fetch` always errors |
 | `mock-lrc` | synced path; returns LRC lyrics on a `SyncLine` request, plain otherwise |
-| `mock-nosync` | downgrade path; honors `--sync-level` in principle but never returns synced lyrics |
 | `mock-synconly` | synced-only path; never fills plain lyrics and always reports `Level = SyncLine`, so a plain request cannot match it (downgrade warning, no empty success) while a later `line` iteration reuses it from the cache |
 | `mock-mismatch` | precheck-vs-requirement mismatch path; lists `--author` as a filter but declares nothing required, so the missing parameter only surfaces inside `Fetch` as a `RequiredParamMismatchError` |
 | `mock-custom` | custom `--env` params: statically declares `LANG` (always recognized and required) and `COUNTRY` (recognized and required only when `LANG` is present — demonstrating conditional custom parameters) |

@@ -3,8 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"io"
-	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -121,32 +119,32 @@ func TestRun_JSONResultEnvelope(t *testing.T) {
 	}
 }
 
-// TestRun_DoesNotCloseStdoutWriter covers the one property a bytes.Buffer
-// cannot: Run must not close (or otherwise own) the stdout writer it is
-// handed — a pipe makes a premature close visible.
-func TestRun_DoesNotCloseStdoutWriter(t *testing.T) {
-	pr, pw, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pr.Close()
-	defer pw.Close()
+// closeSpy records whether Run closes the writer it is handed.
+type closeSpy struct {
+	bytes.Buffer
+	closed bool
+}
 
+func (s *closeSpy) Close() error {
+	s.closed = true
+	return nil
+}
+
+// TestRun_DoesNotCloseStdoutWriter covers the one property a plain
+// bytes.Buffer cannot: Run must not close the stdout writer it is handed.
+func TestRun_DoesNotCloseStdoutWriter(t *testing.T) {
+	var out closeSpy
 	var stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-nosupport", "TEST_SONG"}, pw, &stderr)
+	code := Run([]string{"--source", "mock-nosupport", "TEST_SONG"}, &out, &stderr)
 	if code != exitOK {
 		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
 	}
-	// Close the write end so ReadAll returns; Run never closes the
-	// stdout fallback itself.
-	pw.Close()
-
-	b, err := io.ReadAll(pr)
-	if err != nil {
-		t.Fatal(err)
+	if out.closed {
+		t.Fatal("Run must not close the stdout writer")
 	}
-	if got := string(b); !strings.Contains(got, "TEST_SONG") || !strings.Contains(got, "lyrics") {
-		t.Fatalf("stdout = %q; want lyrics (Run must not close the writer)", got)
+	if got := out.String(); !strings.Contains(got, "TEST_SONG") ||
+		!strings.Contains(got, "lyrics") {
+		t.Fatalf("stdout = %q; want lyrics", got)
 	}
 }
 

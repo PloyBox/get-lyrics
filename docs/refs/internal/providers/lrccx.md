@@ -17,7 +17,7 @@ GET https://api.lrc.cx/jsonapi?title=<song>&artist=<author>&album=<album>
   response text — but only when it actually contains timestamped lines; otherwise (and for
   plain requests) the text is stripped of `[mm:ss]` timestamps and section tags (`[Verse]`,
   `[!text]`, …) to produce plain lyrics. Unsynced `[!text]` entries therefore fall back to
-  plain lyrics, matching the `mock-nosync` semantics at the CLI layer.
+  plain lyrics, matching the plain-only fallback semantics at the CLI layer.
 - The album value `[Unknown Album]` is treated as empty per the API docs. The `path`
   parameter is intentionally never sent — the CLI has no notion of a local music file.
 - No timeout of its own — the fetch layer bounds each call via the context.

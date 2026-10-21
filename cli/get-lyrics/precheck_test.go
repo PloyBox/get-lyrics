@@ -23,20 +23,23 @@ func TestRun_SourceRequiresAuthorExitsSix(t *testing.T) {
 	}
 }
 
-// TestRun_MockMismatchMissingAuthorWarnsAndExitsFour drives the gate-2 path
-// end to end: mock-mismatch's declaration is inconsistent, so it is skipped
-// with a precheck-mismatch warning even in strict mode — never exit 6 — and
-// the run ends in the unified no-result error (exit 4).
+// TestRun_MockMismatchMissingAuthorWarnsAndExitsFour drives the fetch-time
+// mismatch path: a missing --author becomes a warning, never exit 6.
 func TestRun_MockMismatchMissingAuthorWarnsAndExitsFour(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"--source", "mock-mismatch", "TEST_SONG"}, &stdout, &stderr)
 	if code != exitFetchFailed {
 		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitFetchFailed, stderr.String())
 	}
-	for _, want := range []string{"warning[precheck-mismatch]", `source "mock-mismatch"`} {
+	for _, want := range []string{
+		"warning[precheck-mismatch]", `source "mock-mismatch"`, "--author",
+	} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Fatalf("stderr missing %q: %q", want, stderr.String())
 		}
+	}
+	if strings.Contains(stderr.String(), "LANG-X") {
+		t.Fatalf("must render fetch-time mismatch, not gate 2: %q", stderr.String())
 	}
 	if !strings.Contains(stderr.String(), "error[no-result]") {
 		t.Fatalf("stderr missing no-result error: %q", stderr.String())

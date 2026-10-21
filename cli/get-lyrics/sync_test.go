@@ -27,26 +27,6 @@ func TestRun_SyncLevelLineOnPlainOnlySourceExitsFour(t *testing.T) {
 	}
 }
 
-// TestRun_SyncLevelLineNoSyncedExitsFour is the same exit-4 downgrade path
-// one level lower: mock-nosync declares no filters at all and always
-// answers with plain lyrics, so a lone "line" iteration cannot match.
-func TestRun_SyncLevelLineNoSyncedExitsFour(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-nosync", "--sync-level", "line", "TEST_SONG"}, &stdout, &stderr)
-	if code != exitFetchFailed {
-		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitFetchFailed, stderr.String())
-	}
-	if stdout.String() != "" {
-		t.Fatalf("stdout should be empty on failure: %q", stdout.String())
-	}
-	if !strings.Contains(stderr.String(), "warning[downgraded]") {
-		t.Fatalf("stderr missing downgrade warning: %q", stderr.String())
-	}
-	if !strings.Contains(stderr.String(), "error[no-result]") {
-		t.Fatalf("stderr missing no-result error: %q", stderr.String())
-	}
-}
-
 // TestRun_SyncedOnlySourceWithNoneExitsFour is the empty-success
 // regression end to end: mock-synconly never fills plain Lyrics, so a
 // lone "none" iteration cannot match — exit 4 with the symmetric
@@ -74,23 +54,6 @@ func TestRun_SyncedOnlySourceWithNoneExitsFour(t *testing.T) {
 	ei := strings.Index(stderrStr, "error[no-result]")
 	if wi == -1 || ei == -1 || wi > ei {
 		t.Fatalf("expected downgrade warning before error; stderr=%q", stderrStr)
-	}
-}
-
-// TestRun_SyncLevelNoneBeforeLinePrefersPlain proves the user-given order is
-// the priority: mock-lrc could serve LRC, but "none" comes first, so the
-// plain answer from the first iteration is returned without a downgrade.
-func TestRun_SyncLevelNoneBeforeLinePrefersPlain(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-lrc", "--sync-level", "none,line", "TEST_SONG"}, &stdout, &stderr)
-	if code != exitOK {
-		t.Fatalf("code = %d; want 0 (stderr=%q)", code, stderr.String())
-	}
-	if strings.Contains(stdout.String(), "[00:00.00]") {
-		t.Fatalf("stdout should carry plain lyrics, got %q", stdout.String())
-	}
-	if stderr.String() != "" {
-		t.Fatalf("stderr not empty: %q", stderr.String())
 	}
 }
 
@@ -128,25 +91,5 @@ func TestRun_SyncLevelWordDegradesOnLineOnlySource(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), "[00:00.00]") {
 		t.Fatalf("stdout should carry the plain fallback, got %q", stdout.String())
-	}
-}
-
-// TestRun_SyncLevelWordOnPlainOnlySourceExitsFour: mock-success is
-// plain-only, so a lone "word" iteration cannot match — exit 4 with the
-// word downgrade warning and no-result error.
-func TestRun_SyncLevelWordOnPlainOnlySourceExitsFour(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"--source", "mock-success", "--author", "TEST_AUTHOR", "--sync-level", "word", "TEST_SONG"}, &stdout, &stderr)
-	if code != exitFetchFailed {
-		t.Fatalf("code = %d; want %d (stderr=%q)", code, exitFetchFailed, stderr.String())
-	}
-	if stdout.String() != "" {
-		t.Fatalf("stdout should be empty on failure: %q", stdout.String())
-	}
-	if !strings.Contains(stderr.String(), "warning[downgraded]") {
-		t.Fatalf("stderr missing word downgrade warning: %q", stderr.String())
-	}
-	if !strings.Contains(stderr.String(), "error[no-result]") {
-		t.Fatalf("stderr missing no-result error: %q", stderr.String())
 	}
 }

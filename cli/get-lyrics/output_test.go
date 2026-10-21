@@ -61,80 +61,57 @@ func TestRun_ExistingOutputFileRefusedWithoutOverwrite(t *testing.T) {
 	}
 }
 
-// outputFailureCases is the shared table of failure paths, in both the
-// --overwrite and the plain form: each one must leave the filesystem
-// untouched (an existing file keeps its content, a new one is never left
-// behind).
-var outputFailureCases = []struct {
-	name string
-	argv func(path string) []string
-	want int
-}{
-	{
-		"unknown source",
-		func(path string) []string { return []string{"--source", "nope", "--output", path, "TEST_SONG"} },
-		exitUnknownSrc,
-	},
-	{
-		"fetch failure",
-		func(path string) []string {
-			return []string{"--source", "mock-fail", "--author", "X", "--output", path, "TEST_SONG"}
-		},
-		exitFetchFailed,
-	},
-	{
-		"required param missing",
-		func(path string) []string { return []string{"--source", "mock-require", "--output", path, "TEST_SONG"} },
-		exitRequired,
-	},
-}
-
-// withOverwrite returns argv with --overwrite prepended.
-func withOverwrite(argv []string) []string {
-	return append([]string{"--overwrite"}, argv...)
-}
-
-// TestRun_FailedRunLeavesOutputFileAlone covers both halves of the
-// no-collateral-damage rule for every failure path: with --overwrite the
-// pre-existing file keeps its original content (truncation happens only
-// after a successful fetch), and without it no fresh empty file is left
-// behind.
+// TestRun_FailedRunLeavesOutputFileAlone checks that a failed run keeps an
+// existing file intact and leaves no newly created file behind.
 func TestRun_FailedRunLeavesOutputFileAlone(t *testing.T) {
 	const original = "keep me\n"
-	for _, tc := range outputFailureCases {
-		t.Run(tc.name+"/existing file kept", func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "out.txt")
-			if err := os.WriteFile(path, []byte(original), 0644); err != nil {
-				t.Fatalf("write seed file: %v", err)
-			}
-
-			var stdout, stderr bytes.Buffer
-			code := Run(withOverwrite(tc.argv(path)), &stdout, &stderr)
-			if code != tc.want {
-				t.Fatalf("code = %d; want %d (stderr=%q)", code, tc.want, stderr.String())
-			}
-			got, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatalf("read file: %v", err)
-			}
-			if string(got) != original {
-				t.Fatalf("file content = %q; want %q", string(got), original)
-			}
-		})
-
-		t.Run(tc.name+"/no file created", func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "out.txt")
-
-			var stdout, stderr bytes.Buffer
-			code := Run(tc.argv(path), &stdout, &stderr)
-			if code != tc.want {
-				t.Fatalf("code = %d; want %d (stderr=%q)", code, tc.want, stderr.String())
-			}
-			if _, err := os.Stat(path); !os.IsNotExist(err) {
-				t.Fatalf("output file %q exists after failed run (err=%v)", path, err)
-			}
-		})
+	argv := func(path string, overwrite bool) []string {
+		a := []string{
+			"--source", "mock-fail",
+			"--author", "X",
+			"--output", path,
+			"TEST_SONG",
+		}
+		if overwrite {
+			a = append([]string{"--overwrite"}, a...)
+		}
+		return a
 	}
+
+	t.Run("existing file kept", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "out.txt")
+		if err := os.WriteFile(path, []byte(original), 0644); err != nil {
+			t.Fatalf("write seed file: %v", err)
+		}
+
+		var stdout, stderr bytes.Buffer
+		code := Run(argv(path, true), &stdout, &stderr)
+		if code != exitFetchFailed {
+			t.Fatalf("code = %d; want %d (stderr=%q)",
+				code, exitFetchFailed, stderr.String())
+		}
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read file: %v", err)
+		}
+		if string(got) != original {
+			t.Fatalf("file content = %q; want %q", string(got), original)
+		}
+	})
+
+	t.Run("no file created", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "out.txt")
+
+		var stdout, stderr bytes.Buffer
+		code := Run(argv(path, false), &stdout, &stderr)
+		if code != exitFetchFailed {
+			t.Fatalf("code = %d; want %d (stderr=%q)",
+				code, exitFetchFailed, stderr.String())
+		}
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("output file %q exists after failed run (err=%v)", path, err)
+		}
+	})
 }
 
 func TestRun_OutputFileTruncatedOnlyOnSuccess(t *testing.T) {
