@@ -65,11 +65,8 @@ func RunContext(ctx context.Context, argv []string, stdout, stderr io.Writer) (c
 	if parsed.quiet {
 		stderr = io.Discard
 	}
-	if err != nil {
-		fmt.Fprintln(stderr, "error[usage]:", err)
-		printUsage(stderr, nil, nil)
-		return exitUsage
-	}
+	// help/version are dispatched before the parse error, so invalid or
+	// repeated flags cannot stop them.
 	if parsed.help {
 		// Declaration for rendering only; no env fallback.
 		decls, _ := fetch.New(registry).CustomParamsFor(fetch.Params{Source: registry.Names(), Lenient: true})
@@ -79,6 +76,11 @@ func RunContext(ctx context.Context, argv []string, stdout, stderr io.Writer) (c
 	if parsed.version {
 		fmt.Fprintf(stdout, "get-lyrics %s\n", version)
 		return exitOK
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, "error[usage]:", err)
+		printUsage(stderr, nil, nil)
+		return exitUsage
 	}
 	if len(positional) > 0 {
 		fmt.Fprintf(stderr, "error[usage]: unexpected positional argument %q (use --name for the song title)\n", positional[0])

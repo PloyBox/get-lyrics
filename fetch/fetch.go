@@ -78,8 +78,11 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 					continue
 				}
 				kind := FetchFailed
-				if errors.Is(ferr, source.ErrNotFound) {
+				switch {
+				case errors.Is(ferr, source.ErrNotFound):
 					kind = NotFound
+				case errors.Is(ferr, source.ErrBodyTooLarge):
+					kind = BodyTooLarge
 				}
 				warnings = append(warnings, Warning{
 					Kind:   kind,

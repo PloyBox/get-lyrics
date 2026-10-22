@@ -122,6 +122,10 @@ type Source interface {
 
 var ErrNotFound = errors.New("source: not found")
 
+// ErrBodyTooLarge reports an upstream response over the adapter cap. Adapters
+// wrap it, e.g. fmt.Errorf("read body: %w", source.ErrBodyTooLarge).
+var ErrBodyTooLarge = errors.New("source: response body too large")
+
 var ErrDuplicate = errors.New("source: duplicate registration")
 
 // ErrInvalidParamName is raised by gate 1: a static CustomParams()
@@ -207,16 +211,4 @@ func (r *Registry) Names() []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// Unregister removes name; used by tests to stage and tear down fixtures
-// against a shared *Registry.
-func (r *Registry) Unregister(name string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if _, ok := r.sources[name]; !ok {
-		return ErrNotFound
-	}
-	delete(r.sources, name)
-	return nil
 }

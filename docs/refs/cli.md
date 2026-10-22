@@ -44,25 +44,27 @@ Usage: get-lyrics --name <title> [--source <names>] [--author <name>]
 
 Run flow:
 
-1. Parse flags; when `--quiet` is set, stderr is redirected to `io.Discard` before anything
-   is printed, silencing every later line (warnings and errors alike) while exit codes stay
-   meaningful — honored even when parsing itself fails after the flag. On parse error →
-   `error[usage]` + usage, exit 2.
-2. `--help` → full declaration for rendering only, no env fallback (lenient mode and the
-   sorted registry names make this query infallible); print usage, exit 0.
+1. Parse flags; `parseFlags` returns early for `--help`/`--version`, skipping repeat and value
+   validation. When `--quiet` is set, stderr is redirected to `io.Discard` before anything is
+   printed, silencing every later line (warnings and errors alike) while exit codes stay
+   meaningful — honored even when parsing itself fails after the flag.
+2. `--help` — checked before the parse error, so invalid values or repeated flags cannot stop it →
+   full declaration for rendering only, no env fallback (lenient mode and the sorted registry
+   names make this query infallible); print usage, exit 0.
 3. `--version` → print `get-lyrics <version>`, exit 0.
-4. Any positional argument → `error[usage]: unexpected positional argument "<arg>" (use --name for the song title)` + usage, exit 2. Missing/empty `--name` → `error[usage]: song title is required (use --name)` + usage, exit 2.
-5. `parsedFlagsToParams` splits `--source` and rejects an empty source or sync-level list
+4. Parse errors (unknown flag, invalid value, repeated flag) → `error[usage]` + usage, exit 2.
+5. Any positional argument → `error[usage]: unexpected positional argument "<arg>" (use --name for the song title)` + usage, exit 2. Missing/empty `--name` (empty after trimming) → `error[usage]: song title is required (use --name)` + usage, exit 2.
+6. `parsedFlagsToParams` splits `--source` and rejects an empty source or sync-level list
    (exit 2). Then `svc.CustomParamsFor(params)` for the requested sources — strict mode reports
    exit 3/8 here (same codes as the fetch precheck, but reported first) — followed by `mergeEnv`
    filling every key not supplied by flag from the process environment.
-6. Open the output sink before the fetch. File output is written to a temp file in the target
+7. Open the output sink before the fetch. File output is written to a temp file in the target
    directory; stdout is used unchanged when `--output` is empty.
-7. Build the fetch context — a deadline from `--timeout-global`, when set, derived from the
+8. Build the fetch context — a deadline from `--timeout-global`, when set, derived from the
    caller's context — then `svc.Fetch(ctx, params)`: on every failure path the in-flight
    warnings are printed before the `error[...]` line, then the error is mapped to its exit code.
    A `fetch.StoppedError` (the context's deadline or cancellation ended) maps to exit 9.
-8. On success: print the warnings, write the plain lyrics or the complete `fetch.Result` as
+9. On success: print the warnings, write the plain lyrics or the complete `fetch.Result` as
    JSON, then `commit` the sink (`Sync`, `Close`, `Rename`).
 
 Output-file handling: a failed run never touches the target. New output is created only on
@@ -88,6 +90,9 @@ parameter semantics change.
   Unknown flags become a non-nil error which `Run` maps to `exitUsage`. Flag's own usage
   writer is silenced (`io.Discard`); `Run` writes its own on error. On error the flags parsed
   so far are still returned, so `Run` honors `--quiet` even when a later parse step fails.
+- When `--help`/`--version` was parsed, `parseFlags` returns before repeat detection and value
+  validation, so those checks cannot turn a help/version request into a usage error; `Run`
+  dispatches them before handling the parse error.
 - Every flag except `--env`/`-e` registers a setter that records a second occurrence; after
   `Parse`, `parseFlags` reports the first repeated flag (in argv order) as a usage error
   (exit 2). String flags use `fs.Func`, bool flags `fs.BoolFunc`; aliases share one setter, so
@@ -104,7 +109,8 @@ parameter semantics change.
   values are usage errors (exit 2). The `--timeout` default (`10`) is the flag's raw default.
 - `splitTrimmed`: splits a comma-separated flag value, trimming whitespace and dropping empty
   entries.
-- `parseFlags` trims the scalar `--source` value; it does not split it.
+- `parseFlags` trims `--name` (`song`) and the scalar `--source` value; it does not split
+  `--source`.
 - `parsedFlagsToParams`: converts the raw flags (including `--name`) into `fetch.Params`
   without applying defaults (those live in `parseFlags`). It splits `--source` and rejects an
   empty source or sync-level list with a usage error (exit 2); sync levels are already parsed
@@ -160,6 +166,7 @@ including the `[kind]` tag.
     bug); trying next source`, or `declared invalid --env key "<K>" (source bug)`
   - `fetch`: `failed: <err>; trying next source`
   - `not-found`: `found no match; trying next source`
+  - `body-limit`: `returned an oversized response; trying next source`
   - `result`: `declares field "<F>" but left it empty (source issue)` / `filled field "<F>"
     without declaring it (source issue)`
   - fallback: `warning[unknown]` — a safety net so a future kind never renders as an empty

@@ -33,8 +33,8 @@ type parsedFlags struct {
 	env           map[string]string // validated at parse time
 }
 
-// parseFlags parses argv. An unknown flag maps to exitUsage. Positional
-// arguments are returned raw so Run can reject them.
+// parseFlags parses argv. An unknown flag maps to exitUsage; positional
+// arguments are returned raw. help/version return before any validation.
 func parseFlags(argv []string) (parsedFlags, []string, error) {
 	fs := flag.NewFlagSet("get-lyrics", flag.ContinueOnError)
 	// Silence flag's own usage writer; Run writes its own on error.
@@ -104,9 +104,14 @@ func parseFlags(argv []string) (parsedFlags, []string, error) {
 	if err := fs.Parse(argv); err != nil {
 		return f, nil, err
 	}
+	// help/version win: skip repeat and value validation.
+	if f.help || f.version {
+		return f, fs.Args(), nil
+	}
 	if len(repeats) > 0 {
 		return f, nil, fmt.Errorf("flag %s given more than once (only --env may be repeated)", repeats[0])
 	}
+	f.song = strings.TrimSpace(f.song)
 	f.source = strings.TrimSpace(f.source)
 	syncLevels, err := parseSyncLevels(syncLevel)
 	if err != nil {

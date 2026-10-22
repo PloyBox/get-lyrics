@@ -80,20 +80,21 @@ func (s *Service) precheck(params Params, warnings *[]Warning) ([]string, error)
 // validateCustomDecl enforces gate 2, returning the first offending key
 // name or "" when the request-aware declaration is consistent.
 func validateCustomDecl(src source.Source, caps source.Capabilities) string {
-	static := make(map[string]bool, len(src.CustomParams()))
-	for _, spec := range src.CustomParams() {
-		static[spec.Name] = true
+	custom := src.CustomParams()
+	declared := make(map[string]bool, len(custom))
+	for _, spec := range custom {
+		declared[spec.Name] = true
 	}
 	recognized := make(map[string]bool, len(caps.Custom))
 	for _, spec := range caps.Custom {
 		recognized[spec.Name] = true
-		if !source.ValidParamName(spec.Name) || !static[spec.Name] {
+		if !source.ValidParamName(spec.Name) || !declared[spec.Name] {
 			return spec.Name
 		}
 	}
 	seen := make(map[string]bool, len(caps.RequiredCustom))
 	for _, name := range caps.RequiredCustom {
-		if !source.ValidParamName(name) || !static[name] || !recognized[name] {
+		if !source.ValidParamName(name) || !declared[name] || !recognized[name] {
 			return name
 		}
 		if seen[name] {

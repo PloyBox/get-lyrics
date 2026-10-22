@@ -11,3 +11,5 @@
 | 7 | `--output` file already exists and `--overwrite` was not given |
 | 8 | Duplicate `--source` entry |
 | 9 | Overall fetch timeout (`--timeout-global`) exceeded, or the fetch was cancelled (e.g. Ctrl-C) |
+
+`--help`/`--version` are dispatched before validation and exit 0 even when another flag's value is invalid or a flag is repeated (with both, `--help` wins). A flag-syntax error met before them (e.g. an unknown flag) still exits 2.

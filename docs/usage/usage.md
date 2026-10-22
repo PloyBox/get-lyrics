@@ -75,7 +75,7 @@ get-lyrics --help
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--name` | `-n` | Song title (required) |
+| `--name` | `-n` | Song title (required; surrounding whitespace is trimmed) |
 | `--source` | `-s` | Comma-separated lyrics source names, tried in order (default: `lrclib`; at least one name required) |
 | `--author` | `-a` | Artist / author filter |
 | `--album` | `-A` | Album filter |
@@ -94,9 +94,10 @@ get-lyrics --help
 | `--help` | `-h` | Show help and exit |
 | `--version` | `-v` | Print version and exit |
 
-- The song title is mandatory: pass it with `--name`/`-n`. Positional arguments are rejected (exit 2).
+- The song title is mandatory: pass it with `--name`/`-n`; surrounding whitespace is trimmed, so a whitespace-only value counts as missing. Positional arguments are rejected (exit 2).
 - Empty `--source`/`--sync-level` values (including comma-only lists) are usage errors (exit 2).
 - Every flag except `--env`/`-e` may be given only once; a repeated flag is a usage error (exit 2).
+- `--help`/`--version` are honored before value validation: they exit 0 even when another flag's value is invalid or a flag is repeated. If both are given, `--help` wins.
 - `--json` keys are UpperCamelCase (`FormatVersion`, `Level`, `Lyrics`, `Title`, `Artist`, `Album`, `ISRC`, `Source`, `SubSource`).
 - Ctrl-C cancels an in-flight fetch (exit 9) and removes any temp output file.
 - Both `--flag` and `-flag` forms are accepted.

@@ -17,6 +17,7 @@ const (
 	FetchFailed                         // adapter error; fetch moved on to the next source
 	ResultMismatch                      // Filled mask disagrees with the field contents
 	NotFound                            // adapter found no match (wraps source.ErrNotFound)
+	BodyTooLarge                        // adapter response exceeded the body-size cap
 )
 
 // Warning describes one issue observed while resolving lyrics. It carries

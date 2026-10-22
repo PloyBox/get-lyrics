@@ -150,6 +150,9 @@ song.
 
 - `ErrNotFound` — `Registry.Get` on an unknown name; adapters also wrap it when the upstream
   lookup finds no match, and the fetch layer turns it into `warning[not-found]`.
+- `ErrBodyTooLarge` — adapters wrap it (via the shared HTTP helper) when an upstream response
+  exceeds the body-size cap; the fetch layer turns it into `warning[body-limit]`. Wrap it as
+  `fmt.Errorf("read body: %w", source.ErrBodyTooLarge)` so `errors.Is` keeps working.
 - `ErrDuplicate` — `Registry.Register` on a name already registered.
 - `ErrInvalidParamName` — raised by `Registry.Register` (gate 1) when a static
   `CustomParams()` declaration violates the `--env` key contract: a name not matching
@@ -175,7 +178,3 @@ song.
 - `Get(name)` returns the `Source` or `(nil, ErrNotFound)`.
 - `Names()` returns the registered names in sorted order; used by `--help`/`-h` to list
   available sources.
-- `Unregister(name)` removes a source; `ErrNotFound` when absent. It exists primarily so
-  tests can stage and tear down fixtures against a shared `*Registry` without exposing its
-  internal map. Production code should not need it: built-in adapters are registered once at
-  startup and live for the process lifetime.
