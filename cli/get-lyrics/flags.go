@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -84,6 +85,7 @@ func parseFlags(argv []string) (parsedFlags, []string, error) {
 	if err := fs.Parse(argv); err != nil {
 		return f, nil, err
 	}
+	f.source = strings.TrimSpace(f.source)
 	syncLevels, err := parseSyncLevels(syncLevel)
 	if err != nil {
 		return f, nil, err
@@ -114,7 +116,8 @@ func parseFlags(argv []string) (parsedFlags, []string, error) {
 
 // parseSyncLevels converts a comma-separated --sync-level value into the
 // ordered SyncLevels the fetch layer consumes; entries are trimmed and
-// empty ones dropped. Any other value is a usage error (exit 2).
+// empty ones dropped. Invalid values are usage errors (exit 2); an empty
+// result is rejected later by parsedFlagsToParams.
 func parseSyncLevels(s string) ([]fetch.SyncLevel, error) {
 	parts := strings.Split(s, ",")
 	out := make([]fetch.SyncLevel, 0, len(parts))
@@ -193,11 +196,20 @@ func splitTrimmed(s string) []string {
 }
 
 // parsedFlagsToParams converts the raw flags into fetch.Params; defaults
-// live in parseFlags.
-func parsedFlagsToParams(f parsedFlags) fetch.Params {
+// live in parseFlags. It splits --source and rejects empty lists.
+func parsedFlagsToParams(f parsedFlags) (fetch.Params, error) {
+	sources := splitTrimmed(f.source)
+	if len(sources) == 0 {
+		return fetch.Params{}, fmt.Errorf(
+			"invalid --source value %q: at least one source name is required", f.source)
+	}
+	if len(f.syncLevels) == 0 {
+		return fetch.Params{}, errors.New(
+			`invalid --sync-level value: at least one of "line", "word" or "none" is required`)
+	}
 	return fetch.Params{
 		Song:       f.song,
-		Source:     splitTrimmed(f.source),
+		Source:     sources,
 		Author:     f.author,
 		Album:      f.album,
 		ISRC:       f.isrc,
@@ -207,5 +219,5 @@ func parsedFlagsToParams(f parsedFlags) fetch.Params {
 		Lenient:    f.lenient,
 		Custom:     f.env,
 		Timeout:    f.timeout,
-	}
+	}, nil
 }

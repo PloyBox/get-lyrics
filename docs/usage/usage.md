@@ -32,6 +32,9 @@ get-lyrics --name "Bohemian Rhapsody" --author "Queen" --output "lyrics.txt"
 get-lyrics --name "Bohemian Rhapsody" --author "Queen" --output "lyrics.txt" --overwrite
 ```
 
+File output is written to a temp file and renamed into place only after a complete write:
+a failed run leaves an existing file untouched, and a new file appears only on success.
+
 **Force sync level:**
 
 ```sh
@@ -73,7 +76,7 @@ get-lyrics --help
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--name` | `-n` | Song title (required) |
-| `--source` | `-s` | Comma-separated lyrics source names, tried in order (default: `lrclib`) |
+| `--source` | `-s` | Comma-separated lyrics source names, tried in order (default: `lrclib`; at least one name required) |
 | `--author` | `-a` | Artist / author filter |
 | `--album` | `-A` | Album filter |
 | `--isrc` | `-i` | ISRC identifier |
@@ -83,7 +86,7 @@ get-lyrics --help
 | `--output` | `-o` | Write lyrics to file (default: stdout; refuses to overwrite an existing file) |
 | `--overwrite` | `-O` | Overwrite an existing `--output` file |
 | `--json` | `-j` | Write the complete fetch result as JSON, including empty-string fields; `formatVersion` is `2` and increments when the JSON shape or parameter semantics change |
-| `--sync-level` | `-S` | Comma-separated sync levels (default: `line,none`; `line` enables LRC, `word` syllable-level TTML). User-given order is the priority |
+| `--sync-level` | `-S` | Comma-separated sync levels (default: `line,none`; `line` enables LRC, `word` syllable-level TTML; at least one level required). User-given order is the priority |
 | `--user-agent` | `-u` | HTTP `User-Agent` header sent to sources (default: `get-lyrics/<ver> (+https://github.com/PloyBox/get-lyrics)`) |
 | `--env` | `-e` | Custom source parameter `key=value` (repeatable; key must match `^[A-Z][A-Z0-9_]*$`) |
 | `--lenient` | `-l` | Skip invalid sources instead of failing fast (precheck only) |
@@ -92,6 +95,8 @@ get-lyrics --help
 | `--version` | `-v` | Print version and exit |
 
 - The song title is mandatory: pass it with `--name`/`-n`. Positional arguments are rejected (exit 2).
+- Empty `--source`/`--sync-level` values (including comma-only lists) are usage errors (exit 2).
+- Ctrl-C cancels an in-flight fetch (exit 9) and removes any temp output file.
 - Both `--flag` and `-flag` forms are accepted.
 - Quotes are optional for values without spaces.
 

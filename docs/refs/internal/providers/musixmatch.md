@@ -24,9 +24,12 @@ track.search → track.lyrics.get / track.subtitle.get   when only Song is set
   when available, else the plain lyrics.
 - Album is not supported — neither the matcher nor the search endpoints take an album
   parameter.
-- `do` issues one GET against a method, injecting the API key, and decodes the JSON envelope.
-  The effective status is `message.header.status_code` when present — Musixmatch returns HTTP
-  200 with an error code in the body for many failures — falling back to the HTTP status.
+- `do` issues one GET against a method and decodes the JSON envelope. The API key is injected
+  after request construction, so build errors cannot echo it. The effective status is
+  `message.header.status_code` when present — Musixmatch returns HTTP 200 with an error code in
+  the body for many failures — falling back to the HTTP status.
+- `redactAPIKey` rewrites `*url.Error` URLs to `apikey=REDACTED` before the error reaches the
+  CLI, so a transport failure never prints the key.
 - `decodeResponse` maps the envelope: an empty/`[]`/`{}` body on success is the API's
   no-match signal (`errNotFound`); 401/402/403 get explicit, actionable messages; 404 → not
   found; anything else uses the API hint or a bounded body excerpt.

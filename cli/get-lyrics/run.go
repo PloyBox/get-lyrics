@@ -8,8 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/PloyBox/get-lyrics/bootstrap"
@@ -51,7 +52,12 @@ const (
 
 // Run is the testable core: argv excludes the program name; stdout and
 // stderr are explicit writers. It returns the exit code.
-func Run(argv []string, stdout, stderr io.Writer) (code int) {
+func Run(argv []string, stdout, stderr io.Writer) int {
+	return RunContext(context.Background(), argv, stdout, stderr)
+}
+
+// RunContext is Run with a caller-supplied cancellation context.
+func RunContext(ctx context.Context, argv []string, stdout, stderr io.Writer) (code int) {
 	parsed, positional, err := parseFlags(argv)
 	if parsed.quiet {
 		stderr = io.Discard
@@ -83,7 +89,12 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 	}
 
 	svc := fetch.New(registry)
-	params := parsedFlagsToParams(parsed)
+	params, perr := parsedFlagsToParams(parsed)
+	if perr != nil {
+		fmt.Fprintln(stderr, "error[usage]:", perr)
+		printUsage(stderr, nil, nil)
+		return exitUsage
+	}
 
 	decls, err := svc.CustomParamsFor(params)
 	if err != nil {
@@ -101,7 +112,7 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 	}
 	params.Custom = mergeEnv(params.Custom, decls)
 
-	out, closer, created, err := openOutput(parsed.output, parsed.overwrite, stdout)
+	sink, err := openOutput(parsed.output, parsed.overwrite, stdout)
 	if err != nil {
 		var existsErr outputExistsError
 		if errors.As(err, &existsErr) {
@@ -112,34 +123,13 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 		return exitOutputFailed
 	}
 	defer func() {
-		// Only files this process created via O_EXCL are ever removed;
-		// compare the path's current inode with the open fd first so a
-		// file that replaced ours is never deleted.
-		same := false
-		if created {
-			if f, ok := out.(*os.File); ok {
-				fi1, e1 := f.Stat()
-				fi2, e2 := os.Lstat(parsed.output)
-				same = e1 == nil && e2 == nil && os.SameFile(fi1, fi2)
-			}
-		}
-		cerr := closer()
-		if code == exitOK && cerr != nil {
-			fmt.Fprintln(stderr, "error[output]:", cerr)
-			code = exitOutputFailed
-		}
-		// A failed run must not leave a freshly created empty file
-		// behind; pre-existing files are never touched here.
-		if code != exitOK && created && same {
-			if rerr := os.Remove(parsed.output); rerr != nil && !errors.Is(rerr, fs.ErrNotExist) {
-				fmt.Fprintf(stderr, "warning[cleanup]: remove %q: %v\n", parsed.output, rerr)
-			}
+		if aerr := sink.abort(); aerr != nil {
+			fmt.Fprintf(stderr, "warning[cleanup]: %v\n", aerr)
 		}
 	}()
 
 	// The whole-fetch budget rides on the context: when it ends, fetch
 	// stops and reports a StoppedError.
-	ctx := context.Background()
 	if parsed.timeoutGlobal > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(parsed.timeoutGlobal)*time.Second)
@@ -200,20 +190,6 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 		fmt.Fprintln(stderr, renderWarning(w))
 	}
 
-	// Only the real output file is truncated here — stdout (the
-	// fallback) must never be truncated or seeked.
-	if parsed.output != "" {
-		if f, ok := out.(*os.File); ok {
-			if err := f.Truncate(0); err != nil {
-				fmt.Fprintln(stderr, "error[output]:", err)
-				return exitOutputFailed
-			}
-			if _, err := f.Seek(0, io.SeekStart); err != nil {
-				fmt.Fprintln(stderr, "error[output]:", err)
-				return exitOutputFailed
-			}
-		}
-	}
 	if parsed.json {
 		var level string
 		switch res.Level {
@@ -236,18 +212,29 @@ func Run(argv []string, stdout, stderr io.Writer) (code int) {
 			return exitOutputFailed
 		}
 		data = append(data, '\n')
-		if _, werr := out.Write(data); werr != nil {
+		if _, werr := sink.Write(data); werr != nil {
 			fmt.Fprintln(stderr, "error[output]:", werr)
 			return exitOutputFailed
 		}
-	} else if _, werr := io.WriteString(out, res.Lyrics); werr != nil {
+	} else if _, werr := io.WriteString(sink, res.Lyrics); werr != nil {
 		fmt.Fprintln(stderr, "error[output]:", werr)
+		return exitOutputFailed
+	}
+	if err := sink.commit(); err != nil {
+		var existsErr outputExistsError
+		if errors.As(err, &existsErr) {
+			fmt.Fprintln(stderr, "error[output]:", err)
+			return exitFileExists
+		}
+		fmt.Fprintln(stderr, "error[output]:", err)
 		return exitOutputFailed
 	}
 	return exitOK
 }
 
 func main() {
-	code := Run(os.Args[1:], os.Stdout, os.Stderr)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	code := RunContext(ctx, os.Args[1:], os.Stdout, os.Stderr)
+	stop()
 	os.Exit(code)
 }

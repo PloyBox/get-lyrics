@@ -16,14 +16,14 @@ Usage: get-lyrics --name <title> [--source <names>] [--author <name>]
 | Code | Meaning |
 |------|---------|
 | 0 | success (stderr may still carry warnings) |
-| 2 | usage error (missing `--name`, any positional argument, unknown/typo flag, invalid `--sync-level` value, invalid `--duration`, invalid/duplicate `--env`) |
+| 2 | usage error (missing `--name`, any positional argument, unknown/typo flag, invalid or empty `--sync-level`, invalid `--duration`, empty `--source`, invalid/duplicate `--env`) |
 | 3 | unknown source (strict precheck) |
 | 4 | no valid result: every source skipped (lenient) or failed, or no result matched the requested sync levels |
-| 5 | output failure (file open, write, or close) |
+| 5 | output failure (temp file create, write, sync, close, or rename) |
 | 6 | source-required parameter missing in strict precheck |
 | 7 | `--output` points to an existing file and `--overwrite` was not given |
 | 8 | duplicate `--source` entry (strict precheck) |
-| 9 | overall fetch timeout (`--timeout-global`) exceeded |
+| 9 | overall fetch timeout (`--timeout-global`) exceeded, or the context was cancelled (e.g. Ctrl-C) |
 
 ## run.go
 
@@ -37,8 +37,10 @@ Usage: get-lyrics --name <title> [--source <names>] [--author <name>]
 - `registry` is populated at package-init time so `RegisterAll` runs before `main()`.
   `mustRegisterAll` panics on registration failure: an adapter init failure is a programmer
   error, so it bails out before any CLI handling runs.
-- `Run(argv, stdout, stderr) (code int)` is the testable core — `argv` excludes the program
-  name, and stdout/stderr are explicit writers. `main` calls it with `os.Args[1:]`.
+- `Run(argv, stdout, stderr) int` is the testable core — `argv` excludes the program name,
+  and stdout/stderr are explicit writers. It delegates to `RunContext` with a background
+  context. `main` builds a `signal.NotifyContext` (SIGINT/SIGTERM) and calls `RunContext`
+  with it, so Ctrl-C cancels the fetch and the deferred cleanup runs.
 
 Run flow:
 
@@ -50,25 +52,24 @@ Run flow:
    sorted registry names make this query infallible); print usage, exit 0.
 3. `--version` → print `get-lyrics <version>`, exit 0.
 4. Any positional argument → `error[usage]: unexpected positional argument "<arg>" (use --name for the song title)` + usage, exit 2. Missing/empty `--name` → `error[usage]: song title is required (use --name)` + usage, exit 2.
-5. `svc.CustomParamsFor(params)` for the requested sources — strict mode reports exit 3/8
-   here (same codes as the fetch precheck, but reported first) — then `mergeEnv` fills every
-   key not supplied by flag from the process environment.
-6. Open the output sink before the fetch.
-7. Build the fetch context — a deadline from `--timeout-global`, when set — then `svc.Fetch(ctx, params)`:
-   on every failure path the in-flight warnings are printed before the `error[...]` line, then the
-   error is mapped to its exit code. A `fetch.StoppedError` (the context's deadline or cancellation
-   ended) maps to exit 9.
-8. On success: print the warnings, truncate + seek the output file, then write the plain
-   lyrics or the complete `fetch.Result` as JSON.
+5. `parsedFlagsToParams` splits `--source` and rejects an empty source or sync-level list
+   (exit 2). Then `svc.CustomParamsFor(params)` for the requested sources — strict mode reports
+   exit 3/8 here (same codes as the fetch precheck, but reported first) — followed by `mergeEnv`
+   filling every key not supplied by flag from the process environment.
+6. Open the output sink before the fetch. File output is written to a temp file in the target
+   directory; stdout is used unchanged when `--output` is empty.
+7. Build the fetch context — a deadline from `--timeout-global`, when set, derived from the
+   caller's context — then `svc.Fetch(ctx, params)`: on every failure path the in-flight
+   warnings are printed before the `error[...]` line, then the error is mapped to its exit code.
+   A `fetch.StoppedError` (the context's deadline or cancellation ended) maps to exit 9.
+8. On success: print the warnings, write the plain lyrics or the complete `fetch.Result` as
+   JSON, then `commit` the sink (`Sync`, `Close`, `Rename`).
 
-Output-file cleanup (`defer`): only files this process created via `O_EXCL` are ever
-removed; before removing, the path's current inode is compared with the open fd so a file
-that replaced ours is never deleted. A failed run must not leave a freshly created empty file
-behind; pre-existing files are never touched here.
-
-Truncate/seek happen only on the real output file — stdout (the fallback) must never be
-truncated or seeked. Because truncation happens only after a successful fetch, existing files
-keep their content on every failure path (exit 3/4/6/7/8).
+Output-file handling: a failed run never touches the target. New output is created only on
+success (rename into place); an existing `--output` file is replaced atomically on success and
+kept byte-for-byte on every failure path. `--overwrite` is required when the target already
+exists and is checked before the fetch (with a final re-check before the rename). Temp files
+are removed by the sink's `abort` on every failure path, including Ctrl-C.
 
 JSON output marshals `{formatVersion, fetch.Result}` with `formatVersion` 2; it includes every
 result field, including empty strings. Increment `formatVersion` whenever the JSON structure
@@ -86,7 +87,8 @@ or parameter semantics change.
   so far are still returned, so `Run` honors `--quiet` even when a later parse step fails.
 - `parseSyncLevels`: comma-separated `--sync-level` → ordered `[]fetch.SyncLevel` (`line` →
   `SyncLine`, `word` → `SyncWord`, `none` → `SyncNone`); entries trimmed, empty entries
-  dropped; anything else is a usage error (exit 2).
+  dropped; anything else is a usage error (exit 2). An empty result is rejected later by
+  `parsedFlagsToParams`.
 - `parseDuration`: plain positive integer (`225`) or `mm:ss` (`3:45`) → `uint` whole seconds;
   whitespace-only input is treated as not provided (`0`, mirroring the `--author` whitespace
   precedent); anything else is a usage error (exit 2).
@@ -95,9 +97,11 @@ or parameter semantics change.
   values are usage errors (exit 2). The `--timeout` default (`10`) is the flag's raw default.
 - `splitTrimmed`: splits a comma-separated flag value, trimming whitespace and dropping empty
   entries.
+- `parseFlags` trims the scalar `--source` value; it does not split it.
 - `parsedFlagsToParams`: converts the raw flags (including `--name`) into `fetch.Params`
-  without applying defaults (those live in `parseFlags`); source lists are trimmed and empty
-  entries dropped here; sync levels are already parsed into `SyncLevels`.
+  without applying defaults (those live in `parseFlags`). It splits `--source` and rejects an
+  empty source or sync-level list with a usage error (exit 2); sync levels are already parsed
+  into `SyncLevels`.
 
 ## env.go
 
@@ -118,13 +122,17 @@ or parameter semantics change.
 
 - `outputExistsError` — `--output` points to an existing file while `--overwrite` was not
   given; `Run` maps it to exit code 7.
-- `openOutput(path, overwrite, fallback)` returns the lyrics sink: stdout when path is empty,
-  an `*os.File` otherwise. A new file is created exclusively (`O_CREATE|O_EXCL`) and reported
-  via `created` so the caller can remove it on failure. An existing file is only opened when
-  `overwrite` is set, and never with `O_TRUNC` — truncation happens only after a successful
-  fetch, so a failed run leaves existing content intact. The caller must invoke the closer.
-  - `WARNING: O_EXCL is not completely safe; file races cannot be fully eliminated.`
-  - If the file vanishes between the two opens, the exclusive create is retried.
+- `outputSink` embeds `io.Writer` plus `commit()` and `abort()`. stdout uses no-op hooks; a
+  file sink writes to a temp file.
+- `openOutput(path, overwrite, fallback)` returns the sink. Without `--overwrite`, an existing
+  target is rejected before the fetch. The temp file is created in the target directory
+  (`os.CreateTemp`) so the final `os.Rename` stays on one filesystem. The target's permission
+  bits are preserved on overwrite; new files get 0644.
+- `commit` runs `Sync` → `Close` → a final existence check (without `--overwrite`) →
+  `Rename`. Any failure removes the temp file and leaves the target untouched; a concurrent
+  create still loses the final check-to-rename race (as did the previous `O_EXCL` approach).
+- `abort` closes and removes the temp file; it is a no-op after a successful commit and runs
+  from `Run`'s defer, so Ctrl-C and every failure path clean up.
 
 ## render.go
 

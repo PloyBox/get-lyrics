@@ -7,12 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/PloyBox/get-lyrics/internal/httpx"
 	"github.com/PloyBox/get-lyrics/source"
 )
 
@@ -246,25 +246,45 @@ func (a *Adapter) fetchTrackSubtitle(ctx context.Context, apiKey, ua string, tra
 // do issues one GET against method, injecting the API key, and decodes the
 // JSON envelope.
 func (a *Adapter) do(ctx context.Context, apiKey, ua, method string, q url.Values, out any) error {
-	q.Set("apikey", apiKey)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, a.endpoint()+"/"+method+"?"+q.Encode(), nil)
 	if err != nil {
 		return fmt.Errorf("musixmatch: build request: %w", err)
 	}
+	query := httpReq.URL.Query()
+	query.Set("apikey", apiKey)
+	httpReq.URL.RawQuery = query.Encode()
 	httpReq.Header.Set("User-Agent", ua)
 	httpReq.Header.Set("Accept", "application/json")
 
 	resp, err := a.client().Do(httpReq)
 	if err != nil {
-		return fmt.Errorf("musixmatch: request failed: %w", err)
+		return fmt.Errorf("musixmatch: request failed: %w", redactAPIKey(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := httpx.ReadBody(resp.Body)
 	if err != nil {
 		return fmt.Errorf("musixmatch: read body: %w", err)
 	}
 	return decodeResponse(body, resp.StatusCode, out)
+}
+
+// redactAPIKey strips the API key from a transport error's URL.
+func redactAPIKey(err error) error {
+	var ue *url.Error
+	if !errors.As(err, &ue) {
+		return err
+	}
+	copied := *ue
+	if u, perr := url.Parse(copied.URL); perr == nil {
+		q := u.Query()
+		if q.Has("apikey") {
+			q.Set("apikey", "REDACTED")
+			u.RawQuery = q.Encode()
+		}
+		copied.URL = u.String()
+	}
+	return &copied
 }
 
 // decodeResponse maps a Musixmatch response to an error or decodes the

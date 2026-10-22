@@ -7,12 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 
+	"github.com/PloyBox/get-lyrics/internal/httpx"
 	"github.com/PloyBox/get-lyrics/source"
 )
 
@@ -68,7 +68,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := httpx.ReadBody(resp.Body)
 	if err != nil {
 		return source.Result{}, fmt.Errorf("lrccx: read body: %w", err)
 	}
