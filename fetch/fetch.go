@@ -77,8 +77,12 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 					})
 					continue
 				}
+				kind := FetchFailed
+				if errors.Is(ferr, source.ErrNotFound) {
+					kind = NotFound
+				}
 				warnings = append(warnings, Warning{
-					Kind:   FetchFailed,
+					Kind:   kind,
 					Source: name,
 					Err:    ferr,
 				})

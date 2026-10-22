@@ -1,5 +1,5 @@
 // Package lrccx implements source.Source against the legacy lrc.cx lyrics
-// API. See docs/refs/providers/lrccx.md.
+// API. See docs/refs/internal/providers/lrccx.md.
 package lrccx
 
 import (
@@ -32,7 +32,8 @@ type Adapter struct {
 	// server, and self-hosted LrcApi instances can set it too.
 	Endpoint string
 
-	// HTTPClient is reused across calls. nil → http.DefaultClient.
+	// HTTPClient is used for every request when set. nil → a new client
+	// with no timeout; the request context bounds each call.
 	HTTPClient *http.Client
 }
 
@@ -81,7 +82,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		return source.Result{}, fmt.Errorf("lrccx: decode response: %w", err)
 	}
 	if len(hits) == 0 {
-		return source.Result{}, fmt.Errorf("lrccx: no lyrics found for %q", req.Song)
+		return source.Result{}, fmt.Errorf("lrccx: no lyrics found for %q: %w", req.Song, source.ErrNotFound)
 	}
 
 	// The response is ranked by score descending; take the first hit whose
@@ -126,7 +127,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		res.Filled |= source.FieldLyrics
 	}
 	if res.Filled&source.FieldLyrics == 0 {
-		return source.Result{}, fmt.Errorf("lrccx: no usable lyrics for %q", req.Song)
+		return source.Result{}, fmt.Errorf("lrccx: no usable lyrics for %q: %w", req.Song, source.ErrNotFound)
 	}
 	return res, nil
 }

@@ -65,6 +65,8 @@ func renderWarning(w fetch.Warning) string {
 		return fmt.Sprintf(`warning[precheck-mismatch]: source "%s" declared invalid --env key %q (source bug)`, w.Source, w.ParamName)
 	case fetch.FetchFailed:
 		return fmt.Sprintf(`warning[fetch]: source "%s" failed: %v; trying next source`, w.Source, w.Err)
+	case fetch.NotFound:
+		return fmt.Sprintf(`warning[not-found]: source "%s" found no match; trying next source`, w.Source)
 	case fetch.ResultMismatch:
 		if w.Declared {
 			return fmt.Sprintf(`warning[result]: source "%s" declares field %q but left it empty (source issue)`, w.Source, w.Field.String())

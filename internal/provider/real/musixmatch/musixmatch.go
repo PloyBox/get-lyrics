@@ -1,5 +1,5 @@
 // Package musixmatch implements source.Source against the Musixmatch API.
-// See docs/refs/providers/musixmatch.md.
+// See docs/refs/internal/providers/musixmatch.md.
 package musixmatch
 
 import (
@@ -23,17 +23,14 @@ const defaultEndpoint = "https://api.musixmatch.com/ws/1.1"
 // apiKeyParam is the required custom --env key carrying the API key.
 const apiKeyParam = "MUSIXMATCH_API_KEY"
 
-// errNotFound marks an API-level 404 or an empty result body, so callers
-// can distinguish it from transport/hard failures and fall back.
-var errNotFound = errors.New("musixmatch: not found")
-
 // Adapter implements source.Source against api.musixmatch.com.
 type Adapter struct {
 	// Endpoint overrides the REST base path; tests point it at an httptest
 	// server.
 	Endpoint string
 
-	// HTTPClient is reused across calls. nil → http.DefaultClient.
+	// HTTPClient is used for every request when set. nil → a new client
+	// with no timeout; the request context bounds each call.
 	HTTPClient *http.Client
 }
 
@@ -80,7 +77,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	switch {
 	case strings.TrimSpace(req.ISRC) != "":
 		track, err := a.getTrackByISRC(ctx, apiKey, ua, strings.TrimSpace(req.ISRC))
-		if err != nil && !errors.Is(err, errNotFound) {
+		if err != nil && !errors.Is(err, source.ErrNotFound) {
 			return source.Result{}, err
 		}
 		res, err = a.fetchByTrack(ctx, apiKey, ua, req, track)
@@ -97,7 +94,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		}
 		if res.Filled&source.FieldLyrics == 0 {
 			lyrics, err := a.fetchMatcherLyrics(ctx, apiKey, ua, req)
-			if err != nil && !errors.Is(err, errNotFound) {
+			if err != nil && !errors.Is(err, source.ErrNotFound) {
 				return source.Result{}, err
 			}
 			if lyrics != "" {
@@ -108,7 +105,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		}
 	default:
 		track, err := a.searchTrack(ctx, apiKey, ua, req.Song)
-		if err != nil && !errors.Is(err, errNotFound) {
+		if err != nil && !errors.Is(err, source.ErrNotFound) {
 			return source.Result{}, err
 		}
 		res, err = a.fetchByTrack(ctx, apiKey, ua, req, track)
@@ -118,7 +115,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	}
 
 	if res.Filled&source.FieldLyrics == 0 {
-		return source.Result{}, fmt.Errorf("musixmatch: no usable lyrics for %q", req.Song)
+		return source.Result{}, fmt.Errorf("musixmatch: no usable lyrics for %q: %w", req.Song, source.ErrNotFound)
 	}
 	return res, nil
 }
@@ -150,7 +147,7 @@ func (a *Adapter) fetchByTrack(ctx context.Context, apiKey, ua string, req sourc
 	}
 	if res.Filled&source.FieldLyrics == 0 && track.CommontrackID != 0 {
 		lyrics, err := a.fetchTrackLyrics(ctx, apiKey, ua, track.CommontrackID)
-		if err != nil && !errors.Is(err, errNotFound) {
+		if err != nil && !errors.Is(err, source.ErrNotFound) {
 			return source.Result{}, err
 		}
 		if lyrics != "" {
@@ -187,7 +184,7 @@ func (a *Adapter) fetchMatcherSubtitle(ctx context.Context, apiKey, ua string, r
 }
 
 // getTrackByISRC returns the track identified by isrc via track.get; an
-// empty commontrack id in the response means no match (errNotFound).
+// empty commontrack id in the response means no match (source.ErrNotFound).
 func (a *Adapter) getTrackByISRC(ctx context.Context, apiKey, ua, isrc string) (musixmatchTrack, error) {
 	q := url.Values{}
 	q.Set("track_isrc", isrc)
@@ -196,7 +193,7 @@ func (a *Adapter) getTrackByISRC(ctx context.Context, apiKey, ua, isrc string) (
 		return musixmatchTrack{}, err
 	}
 	if out.Track.CommontrackID == 0 {
-		return musixmatchTrack{}, errNotFound
+		return musixmatchTrack{}, source.ErrNotFound
 	}
 	return out.Track, nil
 }
@@ -218,7 +215,7 @@ func (a *Adapter) searchTrack(ctx context.Context, apiKey, ua, song string) (mus
 			return item.Track, nil
 		}
 	}
-	return musixmatchTrack{}, errNotFound
+	return musixmatchTrack{}, source.ErrNotFound
 }
 
 // fetchTrackLyrics returns the plain track by commontrack id.
@@ -293,7 +290,7 @@ func redactAPIKey(err error) error {
 // many failures — falling back to the HTTP status.
 func decodeResponse(body []byte, httpStatus int, out any) error {
 	if strings.TrimSpace(string(body)) == "[]" {
-		return errNotFound
+		return source.ErrNotFound
 	}
 	var api apiResponse
 	if err := json.Unmarshal(body, &api); err != nil {
@@ -307,7 +304,7 @@ func decodeResponse(body []byte, httpStatus int, out any) error {
 	case code == http.StatusOK:
 		raw := strings.TrimSpace(string(api.Message.Body))
 		if raw == "" || raw == "[]" || raw == "{}" || raw == "null" {
-			return errNotFound
+			return source.ErrNotFound
 		}
 		if out == nil {
 			return nil
@@ -323,7 +320,7 @@ func decodeResponse(body []byte, httpStatus int, out any) error {
 	case code == http.StatusForbidden:
 		return fmt.Errorf("musixmatch: not authorized for this endpoint (HTTP 403)")
 	case code == http.StatusNotFound:
-		return errNotFound
+		return source.ErrNotFound
 	default:
 		if hint := strings.TrimSpace(api.Message.Header.Hint); hint != "" {
 			return fmt.Errorf("musixmatch: API status %d: %s", code, hint)

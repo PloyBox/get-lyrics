@@ -53,6 +53,8 @@ Error semantics:
 - adapter errors during fetch → `FetchFailed` warning + fail over to the next source (never
   aborts, regardless of lenient); a source raising `RequiredParamMismatchError` instead
   becomes a `PrecheckMismatch` warning + fail over.
+- an adapter error wrapping `source.ErrNotFound` (the upstream had no match) → `NotFound`
+  warning + fail over, instead of a generic `FetchFailed`.
 - no result matched any sync level → `NoResultError`, with the in-flight warnings so the
   caller can print why each source failed.
 
@@ -232,6 +234,7 @@ Returns the first cached track produced by `name` whose `Level` matches `want`, 
 | `PrecheckMismatch` | a source raised `RequiredParamMismatchError` from `Fetch` — its capability declaration disagrees with what `Fetch` actually needs (source implementation bug) |
 | `FetchFailed` | the adapter returned an error; fetch moved on to the next source |
 | `ResultMismatch` | the adapter's `Filled` mask disagrees with the actual field contents (declared field left empty, or filled field not declared). The result is still used as-is (trust policy) |
+| `NotFound` | the adapter reported no match (an error wrapping `source.ErrNotFound`); fetch moved on to the next source |
 
 `Warning` carries structured data only — the CLI renders all display text, including the
 `[kind]` tag, from these fields.
@@ -245,7 +248,7 @@ Returns the first cached track produced by `name` whose `Level` matches `want`, 
 | `Want` | the sync level requested by the iteration that produced a `Downgraded` warning: `SyncLine` → the source returned no LRC-synced lyrics, `SyncWord` → no word-synced lyrics, `SyncNone` → it returned only synced lyrics. Zero for every other kind |
 | `Field` | the result field a `ResultMismatch` refers to |
 | `Declared` | for a `ResultMismatch`: `true` when the source declared `Field` via `Filled` but left it empty, `false` when it filled it without declaring it |
-| `Err` | underlying cause when one exists: the adapter error for `FetchFailed`, the registry error for a not-found `PreCheck`, the `RequiredParamMismatchError` for a fetch-time `PrecheckMismatch`; nil otherwise |
+| `Err` | underlying cause when one exists: the adapter error for `FetchFailed`/`NotFound`, the registry error for a not-found `PreCheck`, the `RequiredParamMismatchError` for a fetch-time `PrecheckMismatch`; nil otherwise |
 
 ### detectUnsupported
 

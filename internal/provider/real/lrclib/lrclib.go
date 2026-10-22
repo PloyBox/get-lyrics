@@ -1,5 +1,5 @@
 // Package lrclib implements source.Source against the public lrclib.net API.
-// See docs/refs/providers/lrclib.md.
+// See docs/refs/internal/providers/lrclib.md.
 package lrclib
 
 import (
@@ -22,7 +22,8 @@ type Adapter struct {
 	// server.
 	Endpoint string
 
-	// HTTPClient is reused across calls. nil → http.DefaultClient.
+	// HTTPClient is used for every request when set. nil → a new client
+	// with no timeout; the request context bounds each call.
 	HTTPClient *http.Client
 }
 
@@ -69,6 +70,10 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	if err != nil {
 		return source.Result{}, fmt.Errorf("lrclib: read body: %w", err)
 	}
+	// 404 is the API's "no match" signal.
+	if resp.StatusCode == http.StatusNotFound {
+		return source.Result{}, fmt.Errorf("lrclib: no lyrics found for %q: %w", req.Song, source.ErrNotFound)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return source.Result{}, fmt.Errorf("lrclib: HTTP %d: %s", resp.StatusCode, truncate(body, 200))
 	}
@@ -83,14 +88,14 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 			return source.Result{}, fmt.Errorf("lrclib: decode response: %w", err)
 		}
 		if single.PlainLyrics == "" && single.SyncedLyrics == "" {
-			return source.Result{}, fmt.Errorf("lrclib: no lyrics found for %q", req.Song)
+			return source.Result{}, fmt.Errorf("lrclib: no lyrics found for %q: %w", req.Song, source.ErrNotFound)
 		}
 		hits = []lrclibHit{single}
 	} else if err := json.Unmarshal(body, &hits); err != nil {
 		return source.Result{}, fmt.Errorf("lrclib: decode response: %w", err)
 	}
 	if len(hits) == 0 {
-		return source.Result{}, fmt.Errorf("lrclib: no lyrics found for %q", req.Song)
+		return source.Result{}, fmt.Errorf("lrclib: no lyrics found for %q: %w", req.Song, source.ErrNotFound)
 	}
 
 	// Prefer the first hit with non-empty plainLyrics; fall back to the
@@ -133,7 +138,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		res.Filled |= source.FieldLyrics
 	}
 	if res.Filled&source.FieldLyrics == 0 {
-		return source.Result{}, fmt.Errorf("lrclib: no usable lyrics for %q", req.Song)
+		return source.Result{}, fmt.Errorf("lrclib: no usable lyrics for %q: %w", req.Song, source.ErrNotFound)
 	}
 	return res, nil
 }

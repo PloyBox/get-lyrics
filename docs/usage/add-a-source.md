@@ -12,5 +12,6 @@ To declare custom input keys:
 - List the request's recognized keys in `Capabilities(req).Custom` and the request's required keys in `Capabilities(req).RequiredCustom`. Both may be conditional on `req` (a key required only when another key/field is present). `RequiredCustom` must be a subset of the request's `Custom` names.
 - Read the values from `req.Custom` inside `Fetch`.
 - Keys are env-style `^[A-Z][A-Z0-9_]*$`; an invalid or duplicate static declaration fails registration at startup (a source bug), and an inconsistent dynamic declaration is flagged at precheck with `warning[precheck-mismatch]` and the source is skipped.
+- When the lookup finds nothing, wrap `source.ErrNotFound`; the CLI then reports `warning[not-found]` and falls over to the next source.
 
 `--help` automatically lists the new source and its parameters.

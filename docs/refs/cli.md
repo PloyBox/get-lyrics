@@ -16,7 +16,7 @@ Usage: get-lyrics --name <title> [--source <names>] [--author <name>]
 | Code | Meaning |
 |------|---------|
 | 0 | success (stderr may still carry warnings) |
-| 2 | usage error (missing `--name`, any positional argument, unknown/typo flag, invalid or empty `--sync-level`, invalid `--duration`, empty `--source`, invalid/duplicate `--env`) |
+| 2 | usage error (missing `--name`, any positional argument, unknown/typo flag, a non-`--env` flag given more than once, invalid or empty `--sync-level`, invalid `--duration`, empty `--source`, invalid/duplicate `--env`) |
 | 3 | unknown source (strict precheck) |
 | 4 | no valid result: every source skipped (lenient) or failed, or no result matched the requested sync levels |
 | 5 | output failure (temp file create, write, sync, close, or rename) |
@@ -71,9 +71,12 @@ kept byte-for-byte on every failure path. `--overwrite` is required when the tar
 exists and is checked before the fetch (with a final re-check before the rename). Temp files
 are removed by the sink's `abort` on every failure path, including Ctrl-C.
 
-JSON output marshals `{formatVersion, fetch.Result}` with `formatVersion` 2; it includes every
-result field, including empty strings. Increment `formatVersion` whenever the JSON structure
-or parameter semantics change.
+JSON output marshals the CLI-owned struct `{FormatVersion, Level, fetch.Result}` with
+`FormatVersion` 3 (`jsonFormatVersion` in `run.go`); it includes every result field, including
+empty strings, and every key is UpperCamelCase (`FormatVersion`, `Level`, `Lyrics`, `Title`,
+`Artist`, `Album`, `ISRC`, `Source`, `SubSource`). The outer `Level` shadows the embedded
+numeric `fetch.Result.Level`. Increment `FormatVersion` whenever the JSON structure or
+parameter semantics change.
 
 ## flags.go
 
@@ -85,6 +88,10 @@ or parameter semantics change.
   Unknown flags become a non-nil error which `Run` maps to `exitUsage`. Flag's own usage
   writer is silenced (`io.Discard`); `Run` writes its own on error. On error the flags parsed
   so far are still returned, so `Run` honors `--quiet` even when a later parse step fails.
+- Every flag except `--env`/`-e` registers a setter that records a second occurrence; after
+  `Parse`, `parseFlags` reports the first repeated flag (in argv order) as a usage error
+  (exit 2). String flags use `fs.Func`, bool flags `fs.BoolFunc`; aliases share one setter, so
+  `-s a --source b` also counts as a repeat.
 - `parseSyncLevels`: comma-separated `--sync-level` → ordered `[]fetch.SyncLevel` (`line` →
   `SyncLine`, `word` → `SyncWord`, `none` → `SyncNone`); entries trimmed, empty entries
   dropped; anything else is a usage error (exit 2). An empty result is rejected later by
@@ -152,6 +159,7 @@ including the `[kind]` tag.
   - `precheck-mismatch`: fetch-time `requires <flag> but precheck did not enforce it (source
     bug); trying next source`, or `declared invalid --env key "<K>" (source bug)`
   - `fetch`: `failed: <err>; trying next source`
+  - `not-found`: `found no match; trying next source`
   - `result`: `declares field "<F>" but left it empty (source issue)` / `filled field "<F>"
     without declaring it (source issue)`
   - fallback: `warning[unknown]` — a safety net so a future kind never renders as an empty

@@ -16,6 +16,7 @@ const (
 	PrecheckMismatch                    // a source's declaration disagrees with its Fetch
 	FetchFailed                         // adapter error; fetch moved on to the next source
 	ResultMismatch                      // Filled mask disagrees with the field contents
+	NotFound                            // adapter found no match (wraps source.ErrNotFound)
 )
 
 // Warning describes one issue observed while resolving lyrics. It carries

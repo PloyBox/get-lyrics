@@ -40,50 +40,72 @@ func parseFlags(argv []string) (parsedFlags, []string, error) {
 	// Silence flag's own usage writer; Run writes its own on error.
 	fs.SetOutput(io.Discard)
 	var f parsedFlags
-	fs.StringVar(&f.song, "name", "", "song title")
-	fs.StringVar(&f.song, "n", "", "song title (short)")
-	fs.StringVar(&f.source, "source", "lrclib", "lyrics source name")
-	fs.StringVar(&f.source, "s", "lrclib", "lyrics source name (short)")
-	fs.StringVar(&f.author, "author", "", "author/artist filter")
-	fs.StringVar(&f.author, "a", "", "author/artist filter (short)")
-	fs.StringVar(&f.album, "album", "", "album filter")
-	fs.StringVar(&f.album, "A", "", "album filter (short)")
-	fs.StringVar(&f.isrc, "isrc", "", "ISRC identifier")
-	fs.StringVar(&f.isrc, "i", "", "ISRC identifier (short)")
-	var durationRaw string
-	fs.StringVar(&durationRaw, "duration", "", "track duration filter (seconds or mm:ss)")
-	fs.StringVar(&durationRaw, "d", "", "track duration filter (seconds or mm:ss) (short)")
-	var timeoutRaw string
-	fs.StringVar(&timeoutRaw, "timeout", "10", "per-source request timeout in seconds (0 = no timeout)")
-	fs.StringVar(&timeoutRaw, "t", "10", "per-source request timeout in seconds (0 = no timeout) (short)")
-	var timeoutGlobalRaw string
-	fs.StringVar(&timeoutGlobalRaw, "timeout-global", "0", "overall fetch timeout in seconds (0 = off)")
-	fs.StringVar(&timeoutGlobalRaw, "T", "0", "overall fetch timeout in seconds (0 = off) (short)")
-	fs.StringVar(&f.output, "output", "", "output file path")
-	fs.StringVar(&f.output, "o", "", "output file path (short)")
-	fs.BoolVar(&f.json, "json", false, "write complete result as JSON")
-	fs.BoolVar(&f.json, "j", false, "write complete result as JSON (short)")
-	var syncLevel string
-	fs.StringVar(&syncLevel, "sync-level", "line,none", "synced (line/word) or plain (none) lyrics")
-	fs.StringVar(&syncLevel, "S", "line,none", "synced (line/word) or plain (none) lyrics (short)")
-	fs.StringVar(&f.userAgent, "user-agent", defaultUserAgent(), "User-Agent header for HTTP requests")
-	fs.StringVar(&f.userAgent, "u", defaultUserAgent(), "User-Agent header for HTTP requests (short)")
-	fs.BoolVar(&f.lenient, "lenient", false, "skip invalid sources instead of failing")
-	fs.BoolVar(&f.lenient, "l", false, "skip invalid sources instead of failing (short)")
-	fs.BoolVar(&f.quiet, "quiet", false, "suppress all stderr output")
-	fs.BoolVar(&f.quiet, "q", false, "suppress all stderr output (short)")
-	fs.BoolVar(&f.overwrite, "overwrite", false, "overwrite an existing output file")
-	fs.BoolVar(&f.overwrite, "O", false, "overwrite an existing output file (short)")
-	fs.BoolVar(&f.help, "help", false, "show help")
-	fs.BoolVar(&f.help, "h", false, "show help (short)")
-	fs.BoolVar(&f.version, "version", false, "print version and exit")
-	fs.BoolVar(&f.version, "v", false, "print version and exit (short)")
+
+	// repeats records each flag given more than once, in argv order; only
+	// --env may be repeated.
+	repeats := make([]string, 0, 1)
+
+	addString := func(long, short, def, usage string, dst *string) {
+		*dst = def
+		seen := false
+		set := func(v string) error {
+			if seen {
+				repeats = append(repeats, "--"+long)
+			}
+			seen = true
+			*dst = v
+			return nil
+		}
+		fs.Func(long, usage, set)
+		fs.Func(short, usage+" (short)", set)
+	}
+
+	addBool := func(long, short, usage string, dst *bool) {
+		seen := false
+		set := func(v string) error {
+			if seen {
+				repeats = append(repeats, "--"+long)
+			}
+			seen = true
+			b, err := strconv.ParseBool(v)
+			if err != nil {
+				return err
+			}
+			*dst = b
+			return nil
+		}
+		fs.BoolFunc(long, usage, set)
+		fs.BoolFunc(short, usage+" (short)", set)
+	}
+
+	var durationRaw, timeoutRaw, timeoutGlobalRaw, syncLevel string
+	addString("name", "n", "", "song title", &f.song)
+	addString("source", "s", "lrclib", "lyrics source name", &f.source)
+	addString("author", "a", "", "author/artist filter", &f.author)
+	addString("album", "A", "", "album filter", &f.album)
+	addString("isrc", "i", "", "ISRC identifier", &f.isrc)
+	addString("duration", "d", "", "track duration filter (seconds or mm:ss)", &durationRaw)
+	addString("timeout", "t", "10", "per-source request timeout in seconds (0 = no timeout)", &timeoutRaw)
+	addString("timeout-global", "T", "0", "overall fetch timeout in seconds (0 = off)", &timeoutGlobalRaw)
+	addString("output", "o", "", "output file path", &f.output)
+	addBool("json", "j", "write complete result as JSON", &f.json)
+	addString("sync-level", "S", "line,none", "synced (line/word) or plain (none) lyrics", &syncLevel)
+	addString("user-agent", "u", defaultUserAgent(), "User-Agent header for HTTP requests", &f.userAgent)
+	addBool("lenient", "l", "skip invalid sources instead of failing", &f.lenient)
+	addBool("quiet", "q", "suppress all stderr output", &f.quiet)
+	addBool("overwrite", "O", "overwrite an existing output file", &f.overwrite)
+	addBool("help", "h", "show help", &f.help)
+	addBool("version", "v", "print version and exit", &f.version)
+
 	var envs envList
 	fs.Var(&envs, "env", "custom source parameter key=value (repeatable)")
 	fs.Var(&envs, "e", "custom source parameter key=value (repeatable, short)")
 
 	if err := fs.Parse(argv); err != nil {
 		return f, nil, err
+	}
+	if len(repeats) > 0 {
+		return f, nil, fmt.Errorf("flag %s given more than once (only --env may be repeated)", repeats[0])
 	}
 	f.source = strings.TrimSpace(f.source)
 	syncLevels, err := parseSyncLevels(syncLevel)

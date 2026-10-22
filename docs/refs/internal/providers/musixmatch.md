@@ -31,7 +31,7 @@ track.search → track.lyrics.get / track.subtitle.get   when only Song is set
 - `redactAPIKey` rewrites `*url.Error` URLs to `apikey=REDACTED` before the error reaches the
   CLI, so a transport failure never prints the key.
 - `decodeResponse` maps the envelope: an empty/`[]`/`{}` body on success is the API's
-  no-match signal (`errNotFound`); 401/402/403 get explicit, actionable messages; 404 → not
+  no-match signal (`source.ErrNotFound`); 401/402/403 get explicit, actionable messages; 404 → not
   found; anything else uses the API hint or a bounded body excerpt.
 - `getTrackByISRC` treats an empty commontrack id in the response as no match.
 - `searchTrack` finds the first search hit with `has_lyrics` and a commontrack id, ranked by

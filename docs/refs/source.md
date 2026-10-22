@@ -144,11 +144,12 @@ song.
 | `Name() string` | identifier used on the CLI (`--source <name>`); stable, lowercase, unique across registered adapters |
 | `Capabilities(req Request) Capabilities` | how this adapter handles `req` — which filters it honors and which it requires. The request is passed so conditional support is expressible; most adapters return a constant. The fetch layer compares `Filters` against the user-supplied request to produce per-field warnings, and enforces `Required` during precheck |
 | `CustomParams() []ParamSpec` | the full static list of custom parameters this source supports, independent of any request. Backs the `--help` "Source parameters:" section and the pre-fetch environment-variable fallback; sources without custom parameters return nil |
-| `Fetch(ctx, req) (Result, error)` | performs the lookup; must respect `ctx`. A non-nil error means the lookup failed and no lyrics are available. Warnings about unsupported parameters are **not** returned here — the fetch layer computes them. A required parameter missing at fetch time (precheck should have caught it) is reported as `RequiredParamMismatchError` |
+| `Fetch(ctx, req) (Result, error)` | performs the lookup; must respect `ctx`. A non-nil error means the lookup failed and no lyrics are available. Warnings about unsupported parameters are **not** returned here — the fetch layer computes them. A required parameter missing at fetch time (precheck should have caught it) is reported as `RequiredParamMismatchError`; a lookup with no match returns an error wrapping `source.ErrNotFound` |
 
 ## Errors
 
-- `ErrNotFound` — `Registry.Get` on an unknown name.
+- `ErrNotFound` — `Registry.Get` on an unknown name; adapters also wrap it when the upstream
+  lookup finds no match, and the fetch layer turns it into `warning[not-found]`.
 - `ErrDuplicate` — `Registry.Register` on a name already registered.
 - `ErrInvalidParamName` — raised by `Registry.Register` (gate 1) when a static
   `CustomParams()` declaration violates the `--env` key contract: a name not matching

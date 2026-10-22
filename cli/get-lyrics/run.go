@@ -50,6 +50,9 @@ const (
 	exitTimeout      = 9
 )
 
+// jsonFormatVersion is the --json wire format; bump on any shape change.
+const jsonFormatVersion = 3
+
 // Run is the testable core: argv excludes the program name; stdout and
 // stderr are explicit writers. It returns the exit code.
 func Run(argv []string, stdout, stderr io.Writer) int {
@@ -203,10 +206,10 @@ func RunContext(ctx context.Context, argv []string, stdout, stderr io.Writer) (c
 			level = "word"
 		}
 		data, merr := json.Marshal(struct {
-			FormatVersion int `json:"formatVersion"`
+			FormatVersion int
 			Level         string
 			fetch.Result
-		}{FormatVersion: 2, Level: level, Result: res})
+		}{FormatVersion: jsonFormatVersion, Level: level, Result: res})
 		if merr != nil {
 			fmt.Fprintln(stderr, "error[output]:", merr)
 			return exitOutputFailed

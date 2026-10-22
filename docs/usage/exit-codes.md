@@ -3,7 +3,7 @@
 | Code | Meaning |
 |------|---------|
 | 0 | Success (warnings may be on stderr) |
-| 2 | Usage error (missing `--name`, any positional argument, unknown flag, invalid or empty `--sync-level` list, empty `--source` list, invalid `--duration`/`--timeout`/`--timeout-global` value, invalid/duplicate `--env` entry) |
+| 2 | Usage error (missing `--name`, any positional argument, unknown flag, a non-`--env` flag given more than once, invalid or empty `--sync-level` list, empty `--source` list, invalid `--duration`/`--timeout`/`--timeout-global` value, invalid/duplicate `--env` entry) |
 | 3 | Unknown `--source` name |
 | 4 | No valid result (all sources failed/skipped, or nothing matched the requested sync level) |
 | 5 | Output failure (can't create, write, sync, close, or rename the output file) |

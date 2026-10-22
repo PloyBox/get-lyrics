@@ -1,5 +1,5 @@
 // Package lyricsovh implements source.Source against the public
-// lyrics.ovh API. See docs/refs/providers/lyricsovh.md.
+// lyrics.ovh API. See docs/refs/internal/providers/lyricsovh.md.
 package lyricsovh
 
 import (
@@ -24,7 +24,8 @@ type Adapter struct {
 	// Endpoint overrides the base URL; tests point it at an httptest server.
 	Endpoint string
 
-	// HTTPClient is reused across calls. nil → http.DefaultClient.
+	// HTTPClient is used for every request when set. nil → a new client
+	// with no timeout; the request context bounds each call.
 	HTTPClient *http.Client
 }
 
@@ -68,7 +69,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 
 	// 404 is the API's "no match" signal.
 	if resp.StatusCode == http.StatusNotFound {
-		return source.Result{}, fmt.Errorf("lyricsovh: no lyrics found for %q by %q", req.Song, req.Author)
+		return source.Result{}, fmt.Errorf("lyricsovh: no lyrics found for %q by %q: %w", req.Song, req.Author, source.ErrNotFound)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return source.Result{}, fmt.Errorf("lyricsovh: HTTP %d: %s", resp.StatusCode, truncate(body, 200))
@@ -86,7 +87,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		return source.Result{}, fmt.Errorf("lyricsovh: %s", out.Error)
 	}
 	if strings.TrimSpace(out.Lyrics) == "" {
-		return source.Result{}, fmt.Errorf("lyricsovh: no lyrics found for %q by %q", req.Song, req.Author)
+		return source.Result{}, fmt.Errorf("lyricsovh: no lyrics found for %q by %q: %w", req.Song, req.Author, source.ErrNotFound)
 	}
 
 	return source.Result{
