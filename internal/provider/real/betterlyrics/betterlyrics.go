@@ -184,7 +184,7 @@ func buildQuery(req source.Request) string {
 		q.Set("al", al)
 	}
 	if req.Duration > 0 {
-		q.Set("d", strconv.FormatUint(uint64(req.Duration), 10))
+		q.Set("d", strconv.FormatInt(req.Duration, 10))
 	}
 	return q.Encode()
 }

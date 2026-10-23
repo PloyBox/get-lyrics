@@ -116,9 +116,13 @@ func (s *Service) Fetch(ctx context.Context, params Params) (Result, []Warning, 
 
 // callSource invokes src.Fetch under a per-source deadline. A zero budget
 // means no deadline; the child context never cancels the caller's context.
-func callSource(ctx context.Context, timeout uint, src source.Source, req source.Request) (source.Result, error) {
+func callSource(ctx context.Context, timeout int64, src source.Source, req source.Request) (source.Result, error) {
 	if timeout == 0 {
 		return src.Fetch(ctx, req)
+	}
+	if timeout > MaxSeconds {
+		// Saturate: callers may bypass the CLI parsers.
+		timeout = MaxSeconds
 	}
 	cctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()

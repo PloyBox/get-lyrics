@@ -101,12 +101,15 @@ parameter semantics change.
   `SyncLine`, `word` → `SyncWord`, `none` → `SyncNone`); entries trimmed, empty entries
   dropped; anything else is a usage error (exit 2). An empty result is rejected later by
   `parsedFlagsToParams`.
-- `parseDuration`: plain positive integer (`225`) or `mm:ss` (`3:45`) → `uint` whole seconds;
+- `parseDuration`: plain positive integer (`225`) or `mm:ss` (`3:45`) → `int64` whole seconds;
   whitespace-only input is treated as not provided (`0`, mirroring the `--author` whitespace
-  precedent); anything else is a usage error (exit 2).
-- `parseTimeout`: `--timeout`/`--timeout-global` value → `uint` whole seconds; empty means not
-  provided (`0`); a non-negative integer is accepted (`0` = no timeout); negative or non-numeric
-  values are usage errors (exit 2). The `--timeout` default (`10`) is the flag's raw default.
+  precedent); values outside `1`–`fetch.MaxSeconds` and anything else are usage errors (exit 2).
+  The `mm:ss` minutes are checked against the `maxMinute`/`maxSecond` tuple first, so no
+  multiplication wraps before the bound is enforced.
+- `parseTimeout`: `--timeout`/`--timeout-global` value → `int64` whole seconds; empty means not
+  provided (`0`); an integer in `0`–`fetch.MaxSeconds` is accepted (`0` = no timeout); negative,
+  non-numeric or oversized values are usage errors (exit 2). The `--timeout` default (`10`) is
+  the flag's raw default.
 - `splitTrimmed`: splits a comma-separated flag value, trimming whitespace and dropping empty
   entries.
 - `parseFlags` trims `--name` (`song`) and the scalar `--source` value; it does not split

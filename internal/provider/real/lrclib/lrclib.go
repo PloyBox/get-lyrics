@@ -175,7 +175,7 @@ func buildQuery(req source.Request) string {
 		q.Set("album_name", a)
 	}
 	if req.Duration > 0 {
-		q.Set("duration", strconv.FormatUint(uint64(req.Duration), 10))
+		q.Set("duration", strconv.FormatInt(req.Duration, 10))
 	}
 	return q.Encode()
 }

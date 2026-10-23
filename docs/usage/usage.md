@@ -80,9 +80,9 @@ get-lyrics --help
 | `--author` | `-a` | Artist / author filter |
 | `--album` | `-A` | Album filter |
 | `--isrc` | `-i` | ISRC identifier |
-| `--duration` | `-d` | Track duration filter (seconds or mm:ss) |
-| `--timeout` | `-t` | Per-source request timeout in seconds (default: `10`; `0` = no timeout) |
-| `--timeout-global` | `-T` | Overall fetch timeout in seconds (default: off) |
+| `--duration` | `-d` | Track duration filter (seconds or mm:ss; allowed range `1`–`9223372036`) |
+| `--timeout` | `-t` | Per-source request timeout in seconds (default: `10`; `0` = no timeout; maximum `9223372036`) |
+| `--timeout-global` | `-T` | Overall fetch timeout in seconds (default: off; maximum `9223372036`) |
 | `--output` | `-o` | Write lyrics to file (default: stdout; refuses to overwrite an existing file) |
 | `--overwrite` | `-O` | Overwrite an existing `--output` file |
 | `--json` | `-j` | Write the complete fetch result as JSON, including empty-string fields; keys are UpperCamelCase and `FormatVersion` is `3`, incrementing when the JSON shape or parameter semantics change |
@@ -96,6 +96,7 @@ get-lyrics --help
 
 - The song title is mandatory: pass it with `--name`/`-n`; surrounding whitespace is trimmed, so a whitespace-only value counts as missing. Positional arguments are rejected (exit 2).
 - Empty `--source`/`--sync-level` values (including comma-only lists) are usage errors (exit 2).
+- `--duration`, `--timeout` and `--timeout-global` are capped at `9223372036` seconds (the largest whole-second value that converts to `time.Duration` without overflowing); larger values are usage errors (exit 2).
 - Every flag except `--env`/`-e` may be given only once; a repeated flag is a usage error (exit 2).
 - `--help`/`--version` are honored before value validation: they exit 0 even when another flag's value is invalid or a flag is repeated. If both are given, `--help` wins.
 - `--json` keys are UpperCamelCase (`FormatVersion`, `Level`, `Lyrics`, `Title`, `Artist`, `Album`, `ISRC`, `Source`, `SubSource`).

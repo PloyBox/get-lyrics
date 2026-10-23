@@ -35,7 +35,8 @@ Timeouts:
 
 - Each `src.Fetch` call runs under a per-source deadline (`Params.Timeout`, `0` = none) derived
   from the caller's context; that child deadline expires only the single call, so the failure is
-  an ordinary `FetchFailed` warning + failover.
+  an ordinary `FetchFailed` warning + failover. `Params.Timeout` above `MaxSeconds` is saturated
+  to it first, so the `time.Duration` conversion cannot wrap.
 - When the **caller's** context ends (deadline or cancellation), fetch stops immediately —
   before classifying the interrupted call as a source failure — and returns `StoppedError` (exit
   9) instead of failing over or reporting `NoResultError`.
@@ -78,6 +79,13 @@ It produces no warnings, performs no required-param checks, and does not trigger
 is the read-only query `main` uses for the `--help` "Source parameters:" section and for the
 pre-fetch environment-variable fallback.
 
+## MaxSeconds
+
+`MaxSeconds` (`9223372036`) is the largest whole-second value whose multiplication by
+`time.Second` stays positive (`math.MaxInt64 / time.Second`). `callSource` saturates larger
+`Params.Timeout` values to it, so a library caller cannot make the conversion wrap; the CLI
+parsers reject them with a usage error (exit 2) instead.
+
 ## Params
 
 `Params` bundles all CLI inputs the fetch layer needs.
@@ -89,8 +97,9 @@ pre-fetch environment-variable fallback.
   `InvalidSyncLevelError`.
 - `Lenient` controls the precheck stage only: `false` → the first precheck problem aborts;
   `true` → problem sources are skipped with a `PreCheck` warning.
-- `Duration` — `uint` whole seconds; `0` means not provided.
-- `Timeout` — per-source call timeout in whole seconds; `0` means no deadline.
+- `Duration` — `int64` whole seconds; `0` means not provided.
+- `Timeout` — per-source call timeout in whole seconds (`int64`); `0` means no deadline;
+  values above `MaxSeconds` are saturated to it in `callSource`.
 - `UserAgent` — the HTTP `User-Agent` header to send upstream (from `--user-agent`); passed
   to every requested source; empty means the source uses its own default UA.
 - `Custom` — user-supplied `--env` keys plus process-environment fallbacks injected by the

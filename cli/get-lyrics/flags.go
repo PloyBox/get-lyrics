@@ -18,9 +18,9 @@ type parsedFlags struct {
 	author        string
 	album         string
 	isrc          string
-	duration      uint // whole seconds; normalized at parse time
-	timeout       uint // per-source request timeout in seconds; 0 = no timeout
-	timeoutGlobal uint // whole-fetch budget in seconds; 0 = off
+	duration      int64 // whole seconds; normalized at parse time
+	timeout       int64 // per-source request timeout in seconds; 0 = no timeout
+	timeoutGlobal int64 // whole-fetch budget in seconds; 0 = off
 	output        string
 	json          bool
 	syncLevels    []fetch.SyncLevel // parsed from --sync-level at parse time
@@ -166,46 +166,62 @@ func parseSyncLevels(s string) ([]fetch.SyncLevel, error) {
 	return out, nil
 }
 
-// parseDuration converts a --duration value into whole seconds: a plain
-// positive integer ("225") or mm:ss ("3:45"). Whitespace-only input means
-// not provided; any other value is a usage error (exit 2).
-func parseDuration(s string) (uint, error) {
+// maxMinute/maxSecond bound an mm:ss value to fetch.MaxSeconds without
+// multiplying first; the caller guarantees sec <= 59.
+const (
+	maxMinute = fetch.MaxSeconds / 60
+	maxSecond = fetch.MaxSeconds % 60
+)
+
+// parseDuration turns a --duration value (seconds or mm:ss) into whole
+// seconds; empty means 0 and anything outside 1-MaxSeconds is a usage error.
+func parseDuration(s string) (int64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return 0, nil
 	}
+	bad := fmt.Errorf("invalid duration value %q (want 1-%d seconds or mm:ss)",
+		s, fetch.MaxSeconds)
 	if !strings.Contains(s, ":") {
-		sec, err := strconv.ParseUint(s, 10, 64)
-		if err != nil || sec < 1 {
-			return 0, fmt.Errorf("invalid duration value %q (want seconds or mm:ss)", s)
+		sec, err := strconv.ParseInt(s, 10, 64)
+		if err != nil || sec < 1 || sec > fetch.MaxSeconds {
+			return 0, bad
 		}
-		return uint(sec), nil
+		return sec, nil
 	}
 	parts := strings.Split(s, ":")
 	if len(parts) != 2 {
-		return 0, fmt.Errorf("invalid duration value %q (want seconds or mm:ss)", s)
+		return 0, bad
 	}
-	m, errM := strconv.ParseUint(parts[0], 10, 64)
-	sec, errS := strconv.ParseUint(parts[1], 10, 64)
-	if errM != nil || errS != nil || sec > 59 || m*60+sec < 1 {
-		return 0, fmt.Errorf("invalid duration value %q (want seconds or mm:ss)", s)
+	m, errM := strconv.ParseInt(parts[0], 10, 64)
+	sec, errS := strconv.ParseInt(parts[1], 10, 64)
+	if errM != nil || errS != nil || m < 0 || sec < 0 || sec > 59 {
+		return 0, bad
 	}
-	return uint(m*60 + sec), nil
+	// Tuple compare: the overflow check must precede m*60.
+	if m > maxMinute || (m == maxMinute && sec > maxSecond) {
+		return 0, bad
+	}
+	total := m*60 + sec
+	if total < 1 {
+		return 0, bad
+	}
+	return total, nil
 }
 
-// parseTimeout converts a timeout flag value into whole seconds: empty
-// means not provided (0); otherwise a non-negative integer. 0 means no
-// timeout; negative or non-numeric values are usage errors (exit 2).
-func parseTimeout(s string) (uint, error) {
+// parseTimeout turns a timeout flag value into whole seconds; empty means
+// 0 (no timeout) and anything outside 0-MaxSeconds is a usage error.
+func parseTimeout(s string) (int64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return 0, nil
 	}
-	n, err := strconv.ParseUint(s, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("invalid timeout value %q (want a non-negative number of seconds)", s)
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || n < 0 || n > fetch.MaxSeconds {
+		return 0, fmt.Errorf("invalid timeout value %q (want 0-%d seconds)",
+			s, fetch.MaxSeconds)
 	}
-	return uint(n), nil
+	return n, nil
 }
 
 // splitTrimmed splits a comma-separated flag value, trimming whitespace

@@ -2,9 +2,15 @@ package fetch
 
 import (
 	"fmt"
+	"math"
+	"time"
 
 	"github.com/PloyBox/get-lyrics/source"
 )
+
+// MaxSeconds is the largest whole-second timeout whose multiplication by
+// time.Second stays positive; a larger value wraps in a plain multiply.
+const MaxSeconds = int64(math.MaxInt64) / int64(time.Second)
 
 // Params bundles all CLI inputs the fetch layer needs. Source and
 // SyncLevels are priority-ordered; Lenient affects the precheck only.
@@ -14,12 +20,12 @@ type Params struct {
 	Author     string
 	Album      string
 	ISRC       string
-	Duration   uint // whole seconds; 0 means not provided
+	Duration   int64 // whole seconds; 0 means not provided
 	SyncLevels []SyncLevel
 	Lenient    bool
 	UserAgent  string
 	Custom     map[string]string
-	Timeout    uint // per-source call timeout in seconds; 0 = no timeout
+	Timeout    int64 // per-source call timeout in seconds; 0 = no timeout
 }
 
 // SyncLevel classifies the lyrics content a fetch.Result carries by its

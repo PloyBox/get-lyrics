@@ -133,8 +133,8 @@ func RunContext(ctx context.Context, argv []string, stdout, stderr io.Writer) (c
 		}
 	}()
 
-	// The whole-fetch budget rides on the context: when it ends, fetch
-	// stops and reports a StoppedError.
+	// The whole-fetch budget rides on the context (ends → StoppedError);
+	// parseTimeout caps it at fetch.MaxSeconds so the multiply cannot wrap.
 	if parsed.timeoutGlobal > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(parsed.timeoutGlobal)*time.Second)
