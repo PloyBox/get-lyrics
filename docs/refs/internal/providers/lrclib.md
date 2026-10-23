@@ -9,8 +9,7 @@ GET /api/get?track_name=...&artist_name=...&album_name=...&duration=<secs>
                                                             when Song + Author are set
 ```
 
-- Both endpoints return a single track (or first hit) with `plainLyrics` and `syncedLyrics`
-  (LRC) fields.
+- Hits carry `plainLyrics` and `syncedLyrics` (LRC) fields; either may be empty.
 - `Capabilities` honors author, album and duration — album and duration only take effect on
   the `/api/get` path (author present); a search-only request drops them, so the fetch layer
   can warn the user that `--album`/`--duration` are being ignored.
@@ -20,7 +19,8 @@ GET /api/get?track_name=...&artist_name=...&album_name=...&duration=<secs>
   returns a single object, `/api/search` an array. Branching uses the same condition
   `endpoint()`/`buildQuery()` use, so a server that pretty-prints (leading
   whitespace/newline) cannot confuse the two.
-- Prefers the first hit with non-empty `plainLyrics`; lrclib commonly returns
-  instrumental/synced-only entries at the front, so it falls back to index 0 if nothing fills
-  the plain track.
+- Hit selection follows the request: a `line` request prefers the first hit with non-empty
+  `syncedLyrics`, so a plain-only result ranked above it cannot mask the richer track. Every
+  other request prefers the first hit with non-empty `plainLyrics` (lrclib commonly returns
+  instrumental or synced-only entries at the front), then falls back to index 0.
 - No timeout of its own — the fetch layer bounds each call via the context.

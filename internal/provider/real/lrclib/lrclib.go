@@ -98,13 +98,25 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		return source.Result{}, fmt.Errorf("lrclib: no lyrics found for %q: %w", req.Song, source.ErrNotFound)
 	}
 
-	// Prefer the first hit with non-empty plainLyrics; fall back to the
-	// first entry when nothing fills the plain track.
+	// A synced request prefers the first hit carrying syncedLyrics, so a
+	// plain-only entry ahead of it cannot mask the richer track.
 	best := -1
-	for i := range hits {
-		if strings.TrimSpace(hits[i].PlainLyrics) != "" {
-			best = i
-			break
+	if req.SyncLevel == source.SyncLine {
+		for i := range hits {
+			if strings.TrimSpace(hits[i].SyncedLyrics) != "" {
+				best = i
+				break
+			}
+		}
+	}
+	// Then prefer the first hit with plainLyrics over the first entry:
+	// lrclib often leads with instrumental or synced-only results.
+	if best == -1 {
+		for i := range hits {
+			if strings.TrimSpace(hits[i].PlainLyrics) != "" {
+				best = i
+				break
+			}
 		}
 	}
 	if best == -1 {
