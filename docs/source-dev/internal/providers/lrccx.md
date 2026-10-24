@@ -9,6 +9,8 @@ GET https://api.lrc.cx/jsonapi?title=<song>&artist=<author>&album=<album>
 - The response is a score-descending JSON array whose entries carry `title`, `artist`, and an
   `lrc` field (the LRC text). Note the field is named `lrc` (not `lyrics` as the legacy docs
   claim) and may be null for instrumental/missing entries — hence the pointer type.
+- `LRCCX_ENDPOINT` overrides the base URL (`https://api.lrc.cx` by default, trailing `/`
+  ignored) for self-hosted instances; the adapter appends `/jsonapi`.
 - `Capabilities` honors author and album, independently of each other.
 - The adapter takes the first hit whose `lrc` field is present and non-empty; when every hit
   lacks lyrics it falls back to the top entry so the caller sees a deterministic "no usable

@@ -48,6 +48,37 @@ func TestRequest(t *testing.T) {
 	}
 }
 
+func TestEndpoint(t *testing.T) {
+	tests := []struct {
+		name   string
+		custom map[string]string
+		host   string
+	}{
+		{"default", nil, "api.lyrics.ovh"},
+		{"custom", map[string]string{
+			"LYRICSOVH_ENDPOINT": "https://mirror.example/",
+		}, "mirror.example"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tp := &testutil.Transport{Respond: testutil.Respond(http.StatusOK,
+				`{"lyrics":"x"}`)}
+			_, err := newAdapter(tp).Fetch(context.Background(), source.Request{
+				Song: "Song", Author: "Artist", Custom: tc.custom,
+			})
+			if err != nil {
+				t.Fatalf("Fetch: %v", err)
+			}
+			got := tp.Last()
+			if got.URL.Host != tc.host ||
+				got.URL.Path != "/v1/Artist/Song" {
+				t.Errorf("URL = %s, want host %q path /v1/Artist/Song",
+					got.URL, tc.host)
+			}
+		})
+	}
+}
+
 func TestFetch(t *testing.T) {
 	tests := []struct {
 		name         string

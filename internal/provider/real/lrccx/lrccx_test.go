@@ -76,6 +76,36 @@ func TestRequest(t *testing.T) {
 	})
 }
 
+func TestEndpoint(t *testing.T) {
+	tests := []struct {
+		name   string
+		custom map[string]string
+		host   string
+		path   string
+	}{
+		{"default", nil, "api.lrc.cx", "/jsonapi"},
+		{"custom", map[string]string{
+			"LRCCX_ENDPOINT": "https://mirror.example/",
+		}, "mirror.example", "/jsonapi"},
+		{"custom base path", map[string]string{
+			"LRCCX_ENDPOINT": "https://mirror.example/lrc",
+		}, "mirror.example", "/lrc/jsonapi"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tp := &testutil.Transport{Respond: testutil.Respond(http.StatusOK, "[]")}
+			_, _ = newAdapter(tp).Fetch(context.Background(), source.Request{
+				Song: "Song", Custom: tc.custom,
+			})
+			got := tp.Last()
+			if got.URL.Host != tc.host || got.URL.Path != tc.path {
+				t.Errorf("URL = %s, want host %q path %q",
+					got.URL, tc.host, tc.path)
+			}
+		})
+	}
+}
+
 func TestFetch(t *testing.T) {
 	tests := []struct {
 		name         string

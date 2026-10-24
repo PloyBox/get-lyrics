@@ -95,6 +95,45 @@ func TestRequest(t *testing.T) {
 	}
 }
 
+func TestEndpoint(t *testing.T) {
+	tests := []struct {
+		name   string
+		custom map[string]string
+		author string
+		host   string
+		path   string
+	}{
+		{"default search", nil, "", "lrclib.net", "/api/search"},
+		{"default get", nil, "Artist", "lrclib.net", "/api/get"},
+		{"custom search", map[string]string{
+			"LRCLIB_ENDPOINT": "https://mirror.example/",
+		}, "", "mirror.example", "/api/search"},
+		{"custom get with base path", map[string]string{
+			"LRCLIB_ENDPOINT": " https://mirror.example/lrclib ",
+		}, "Artist", "mirror.example", "/lrclib/api/get"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `[{"plainLyrics":"x"}]`
+			if tc.author != "" {
+				body = `{"plainLyrics":"x"}`
+			}
+			tp := &testutil.Transport{Respond: testutil.Respond(http.StatusOK, body)}
+			_, err := newAdapter(tp).Fetch(context.Background(), source.Request{
+				Song: "Song", Author: tc.author, Custom: tc.custom,
+			})
+			if err != nil {
+				t.Fatalf("Fetch: %v", err)
+			}
+			got := tp.Last()
+			if got.URL.Host != tc.host || got.URL.Path != tc.path {
+				t.Errorf("URL = %s, want host %q path %q",
+					got.URL, tc.host, tc.path)
+			}
+		})
+	}
+}
+
 func TestFetch(t *testing.T) {
 	const (
 		plainHit = `{"trackName":"Song","artistName":"Artist",` +

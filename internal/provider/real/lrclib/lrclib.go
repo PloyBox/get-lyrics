@@ -16,6 +16,17 @@ import (
 	"github.com/PloyBox/get-lyrics/source"
 )
 
+// defaultEndpoint is the public lrclib base URL.
+const defaultEndpoint = "https://lrclib.net"
+
+// endpointParam overrides the API base URL with a self-hosted instance.
+const endpointParam = "LRCLIB_ENDPOINT"
+
+var endpointSpec = source.ParamSpec{
+	Name:        endpointParam,
+	Description: "Base URL of a self-hosted lrclib instance (default https://lrclib.net)",
+}
+
 // Adapter implements source.Source against lrclib.net.
 type Adapter struct {
 	// HTTPClient is used for every request when set. nil → a new client
@@ -30,14 +41,19 @@ func (a *Adapter) Name() string { return "lrclib" }
 // Capabilities honors author, album and duration — album and duration
 // only on the /api/get path (author present).
 func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
-	c := source.Capabilities{Filters: source.ParamAuthor | source.ParamAlbum | source.ParamDuration}
+	c := source.Capabilities{
+		Filters: source.ParamAuthor | source.ParamAlbum | source.ParamDuration,
+		Custom:  []source.ParamSpec{endpointSpec},
+	}
 	if strings.TrimSpace(req.Author) == "" {
 		c.Filters &^= source.ParamAlbum | source.ParamDuration
 	}
 	return c
 }
 
-func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
+func (a *Adapter) CustomParams() []source.ParamSpec {
+	return []source.ParamSpec{endpointSpec}
+}
 
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	if strings.TrimSpace(req.Song) == "" {
@@ -152,10 +168,14 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 }
 
 func endpointFor(req source.Request) string {
-	if strings.TrimSpace(req.Author) != "" {
-		return "https://lrclib.net/api/get"
+	base := defaultEndpoint
+	if v := strings.TrimSpace(req.Custom[endpointParam]); v != "" {
+		base = strings.TrimRight(v, "/")
 	}
-	return "https://lrclib.net/api/search"
+	if strings.TrimSpace(req.Author) != "" {
+		return base + "/api/get"
+	}
+	return base + "/api/search"
 }
 
 func (a *Adapter) client() *http.Client {

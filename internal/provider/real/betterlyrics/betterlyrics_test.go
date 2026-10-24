@@ -158,6 +158,45 @@ func TestFetch(t *testing.T) {
 	}
 }
 
+func TestEndpoint(t *testing.T) {
+	tests := []struct {
+		name   string
+		sync   source.SyncLevel
+		custom map[string]string
+		host   string
+		path   string
+	}{
+		{"default line", source.SyncLine, nil,
+			"lyrics-api.boidu.dev", "/kugou/getLyrics"},
+		{"default word", source.SyncWord, nil,
+			"lyrics-api.boidu.dev", "/ttml/getLyrics"},
+		{"custom line", source.SyncLine, map[string]string{
+			"BETTERLYRICS_ENDPOINT": "https://mirror.example/",
+		}, "mirror.example", "/kugou/getLyrics"},
+		{"custom word with base path", source.SyncWord, map[string]string{
+			"BETTERLYRICS_ENDPOINT": "https://mirror.example/api",
+		}, "mirror.example", "/api/ttml/getLyrics"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tp := &testutil.Transport{Respond: testutil.Respond(http.StatusOK,
+				`{"lyrics":"x"}`)}
+			_, err := newAdapter(tp).Fetch(context.Background(), source.Request{
+				Song: "Hello", Author: "Adele", SyncLevel: tc.sync,
+				Custom: tc.custom,
+			})
+			if err != nil {
+				t.Fatalf("Fetch: %v", err)
+			}
+			got := tp.Last()
+			if got.URL.Host != tc.host || got.URL.Path != tc.path {
+				t.Errorf("URL = %s, want host %q path %q",
+					got.URL, tc.host, tc.path)
+			}
+		})
+	}
+}
+
 func newAdapter(tp *testutil.Transport) *betterlyrics.Adapter {
 	a := betterlyrics.New()
 	a.HTTPClient = &http.Client{Transport: tp}

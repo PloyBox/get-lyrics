@@ -15,9 +15,17 @@ import (
 	"github.com/PloyBox/get-lyrics/source"
 )
 
-// defaultEndpoint is the public lyrics.ovh base path; artist and title are
-// appended (URL-escaped) to form the request URL.
-const defaultEndpoint = "https://api.lyrics.ovh/v1/"
+// defaultEndpoint is the public lyrics.ovh base URL; "/v1" and the
+// URL-escaped artist/title are appended to form the request URL.
+const defaultEndpoint = "https://api.lyrics.ovh"
+
+// endpointParam overrides the API base URL with a self-hosted instance.
+const endpointParam = "LYRICSOVH_ENDPOINT"
+
+var endpointSpec = source.ParamSpec{
+	Name:        endpointParam,
+	Description: "Base URL of a self-hosted lyrics.ovh instance (default https://api.lyrics.ovh)",
+}
 
 // Adapter implements source.Source against api.lyrics.ovh.
 type Adapter struct {
@@ -33,17 +41,24 @@ func (a *Adapter) Name() string { return "lyricsovh" }
 // Capabilities requires --author: the API has no title-only search, so a
 // fetch without an artist cannot form a valid request.
 func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
-	return source.Capabilities{Filters: source.ParamAuthor, Required: source.ParamAuthor}
+	return source.Capabilities{
+		Filters:  source.ParamAuthor,
+		Required: source.ParamAuthor,
+		Custom:   []source.ParamSpec{endpointSpec},
+	}
 }
 
-func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
+func (a *Adapter) CustomParams() []source.ParamSpec {
+	return []source.ParamSpec{endpointSpec}
+}
 
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	if strings.TrimSpace(req.Song) == "" {
 		return source.Result{}, errors.New("lyricsovh: song title is required")
 	}
 
-	reqURL := defaultEndpoint + url.PathEscape(strings.TrimSpace(req.Author)) +
+	reqURL := endpoint(req) + "/v1/" +
+		url.PathEscape(strings.TrimSpace(req.Author)) +
 		"/" + url.PathEscape(strings.TrimSpace(req.Song))
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
@@ -92,6 +107,13 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		Level:  source.SyncNone,
 		Filled: source.FieldLyrics,
 	}, nil
+}
+
+func endpoint(req source.Request) string {
+	if v := strings.TrimSpace(req.Custom[endpointParam]); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+	return defaultEndpoint
 }
 
 func (a *Adapter) client() *http.Client {

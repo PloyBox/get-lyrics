@@ -10,6 +10,8 @@ GET /api/get?track_name=...&artist_name=...&album_name=...&duration=<secs>
 ```
 
 - Hits carry `plainLyrics` and `syncedLyrics` (LRC) fields; either may be empty.
+- `LRCLIB_ENDPOINT` overrides the base URL (`https://lrclib.net` by default, trailing `/`
+  ignored) for self-hosted instances; the adapter appends `/api/get` or `/api/search`.
 - `Capabilities` honors author, album and duration — album and duration only take effect on
   the `/api/get` path (author present); a search-only request drops them, so the fetch layer
   can warn the user that `--album`/`--duration` are being ignored.

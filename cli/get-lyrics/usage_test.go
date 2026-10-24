@@ -99,6 +99,8 @@ func TestHelpVersion(t *testing.T) {
 		want := []string{
 			"lrclib", "lyricsovh", "lrccx", "musixmatch", "betterlyrics",
 			"mock-plain", "MUSIXMATCH_API_KEY", "Source parameters:",
+			"LRCLIB_ENDPOINT", "LYRICSOVH_ENDPOINT", "LRCCX_ENDPOINT",
+			"BETTERLYRICS_ENDPOINT",
 		}
 		for _, s := range want {
 			if !strings.Contains(stdout, s) {

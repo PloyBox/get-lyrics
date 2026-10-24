@@ -63,6 +63,9 @@ get-lyrics --name "Bohemian Rhapsody" --source musixmatch --env MUSIXMATCH_API_K
 
 # The same keys can come from the environment when not passed via --env
 MUSIXMATCH_API_KEY=xxx get-lyrics --name "Bohemian Rhapsody" --source musixmatch --author "Queen"
+
+# Point a self-hostable source at your own deployment
+get-lyrics --name "Bohemian Rhapsody" --source lrclib --env LRCLIB_ENDPOINT=https://lrclib.example.com
 ```
 
 **List available sources:**

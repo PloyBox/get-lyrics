@@ -19,6 +19,8 @@ GET /kugou/getLyrics?s=<song>&a=<author>...  line/plain request (SyncLine/SyncNo
 
 - A word-level request returns the raw TTML string unchanged (whitespace between spans is
   significant) with `Level = SyncWord`.
+- `BETTERLYRICS_ENDPOINT` overrides the base URL (`https://lyrics-api.boidu.dev` by default,
+  trailing `/` ignored) for self-hosted instances; the adapter appends the endpoint paths.
 - Line/plain requests produce exactly one track — `SyncLine` when the response actually
   carries timestamped lines, `SyncNone` otherwise.
 - The provider-specific endpoint reports the TTML document under different keys depending on

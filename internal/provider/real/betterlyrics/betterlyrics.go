@@ -19,8 +19,16 @@ import (
 	"github.com/PloyBox/get-lyrics/source"
 )
 
-// defaultEndpoint is the public Better Lyrics API base path.
+// defaultEndpoint is the public Better Lyrics API base URL.
 const defaultEndpoint = "https://lyrics-api.boidu.dev"
+
+// endpointParam overrides the API base URL with a self-hosted instance.
+const endpointParam = "BETTERLYRICS_ENDPOINT"
+
+var endpointSpec = source.ParamSpec{
+	Name:        endpointParam,
+	Description: "Base URL of a self-hosted Better Lyrics instance (default https://lyrics-api.boidu.dev)",
+}
 
 // ttmlPath serves syllable-level (word) lyrics.
 const ttmlPath = "/ttml/getLyrics"
@@ -59,10 +67,13 @@ func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
 	return source.Capabilities{
 		Filters:  source.ParamAuthor | source.ParamAlbum | source.ParamDuration,
 		Required: source.ParamAuthor,
+		Custom:   []source.ParamSpec{endpointSpec},
 	}
 }
 
-func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
+func (a *Adapter) CustomParams() []source.ParamSpec {
+	return []source.ParamSpec{endpointSpec}
+}
 
 // Fetch queries the endpoint matching the requested sync level and
 // returns the single lyrics track the response carries.
@@ -79,7 +90,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	}
 
 	httpReq, err := http.NewRequestWithContext(
-		ctx, http.MethodGet, defaultEndpoint+path+"?"+buildQuery(req), nil)
+		ctx, http.MethodGet, endpoint(req)+path+"?"+buildQuery(req), nil)
 	if err != nil {
 		return source.Result{}, fmt.Errorf("betterlyrics: build request: %w", err)
 	}
@@ -154,6 +165,13 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	res.SubSource = sub
 	res.Filled = source.FieldLyrics | source.FieldSubSource
 	return res, nil
+}
+
+func endpoint(req source.Request) string {
+	if v := strings.TrimSpace(req.Custom[endpointParam]); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+	return defaultEndpoint
 }
 
 func (a *Adapter) client() *http.Client {

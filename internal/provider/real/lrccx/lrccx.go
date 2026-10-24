@@ -16,8 +16,16 @@ import (
 	"github.com/PloyBox/get-lyrics/source"
 )
 
-// defaultEndpoint is the public lrc.cx base path; "/jsonapi" is appended.
+// defaultEndpoint is the public lrc.cx base URL; "/jsonapi" is appended.
 const defaultEndpoint = "https://api.lrc.cx"
+
+// endpointParam overrides the API base URL with a self-hosted instance.
+const endpointParam = "LRCCX_ENDPOINT"
+
+var endpointSpec = source.ParamSpec{
+	Name:        endpointParam,
+	Description: "Base URL of a self-hosted lrc.cx instance (default https://api.lrc.cx)",
+}
 
 // timestampTag matches one LRC time tag, e.g. [00:19.239] or [1:00.1].
 var timestampTag = regexp.MustCompile(`\[\d{1,2}:\d{1,2}(\.\d{1,3})?\]`)
@@ -39,10 +47,15 @@ func (a *Adapter) Name() string { return "lrccx" }
 
 // Capabilities honors author and album, independently of each other.
 func (a *Adapter) Capabilities(req source.Request) source.Capabilities {
-	return source.Capabilities{Filters: source.ParamAuthor | source.ParamAlbum}
+	return source.Capabilities{
+		Filters: source.ParamAuthor | source.ParamAlbum,
+		Custom:  []source.ParamSpec{endpointSpec},
+	}
 }
 
-func (a *Adapter) CustomParams() []source.ParamSpec { return nil }
+func (a *Adapter) CustomParams() []source.ParamSpec {
+	return []source.ParamSpec{endpointSpec}
+}
 
 func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result, error) {
 	if strings.TrimSpace(req.Song) == "" {
@@ -52,7 +65,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	query := buildQuery(req)
 
 	httpReq, err := http.NewRequestWithContext(
-		ctx, http.MethodGet, defaultEndpoint+"/jsonapi?"+query, nil)
+		ctx, http.MethodGet, endpoint(req)+"/jsonapi?"+query, nil)
 	if err != nil {
 		return source.Result{}, fmt.Errorf("lrccx: build request: %w", err)
 	}
@@ -126,6 +139,13 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		return source.Result{}, fmt.Errorf("lrccx: no usable lyrics for %q: %w", req.Song, source.ErrNotFound)
 	}
 	return res, nil
+}
+
+func endpoint(req source.Request) string {
+	if v := strings.TrimSpace(req.Custom[endpointParam]); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+	return defaultEndpoint
 }
 
 func (a *Adapter) client() *http.Client {
