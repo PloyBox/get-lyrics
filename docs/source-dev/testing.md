@@ -121,8 +121,11 @@ single source of truth; do not duplicate the table here.
 
 CI is release-only: `.github/workflows/simple_ci_cd.yml` runs on `v*` tag pushes,
 executes the tests and `go vet`, cross-compiles the release binaries, writes
-`checksums.txt` and publishes the release. There is no push/PR test workflow, and no
-coverage upload or gate. Run the commands above locally before releasing.
+`checksums.txt` and publishes the release. The workflow defaults to
+`contents: read`; the `build` job uploads `dist/` as an artifact and only the
+`release` job (which runs `action-gh-release`) is granted `contents: write`. There
+is no push/PR test workflow, and no coverage upload or gate. Run the commands above
+locally before releasing.
 
 ## Adding tests
 
