@@ -20,7 +20,9 @@ Prebuilt binaries are attached to each [Release](https://github.com/PloyBox/get-
 go install github.com/PloyBox/get-lyrics/cli/get-lyrics@latest
 ```
 
-Requires Go 1.26+.
+Requires Go 1.26.10+, which blocks trust in the intermediate certificates of a
+compromised CA ([CVE-2026-111943](https://pkg.go.dev/vuln/GO-2026-6809)); earlier
+releases still accept them.
 
 ### Option 3: Build from source with a downgraded Go version
 
@@ -31,7 +33,7 @@ go mod edit -go=1.22
 go install ./cli/get-lyrics
 ```
 
-No compatibility is guaranteed with older Go toolchains — the code is developed against the version pinned in `go.mod`, and downgrading may fail to build or misbehave at runtime.
+No compatibility is guaranteed with older Go toolchains — the code is developed against the version pinned in `go.mod`, and downgrading may fail to build, misbehave at runtime, or reintroduce CVE-2026-111943.
 
 ## Documentation
 
