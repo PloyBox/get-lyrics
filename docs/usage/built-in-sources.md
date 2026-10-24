@@ -15,6 +15,15 @@ Legend: `Y` = supported, `N` = not supported, `F` = required (must be given). Sy
 [^3]: Synced LRC (`line`) needs the paid Scale plan; on cheaper plans a `--sync-level line` request falls back to plain lyrics with a `warning[downgraded]`.
 [^4]: The API issues no API keys right now: cached songs need none, but a cache miss can return 401 (key required) or 429 (rate limited). Such songs surface as `warning[fetch]` and fall through to the next source.
 
+## Matching and verification
+
+The CLI forwards the query to the selected upstream and returns the lyrics it serves; it does
+not verify that the result belongs to the requested title or artist. Sources differ in matching
+strictness — some fall back to title-only or fuzzy matches — and in a failover chain the first
+source returning lyrics wins. When the match matters, use `--json` and check `Source`, `Title`
+and `Artist` against your query; fields the upstream did not return stay empty, and some sources
+return no metadata at all, so their result cannot be verified from the CLI.
+
 Self-hostable sources accept a custom `--env` key overriding their API base URL: `LRCLIB_ENDPOINT`, `LYRICSOVH_ENDPOINT`, `LRCCX_ENDPOINT` and `BETTERLYRICS_ENDPOINT`. The value is the base URL of your deployment (e.g. `https://lrclib.example.com`); the adapter appends its own API paths, and a trailing `/` is ignored.
 
 `musixmatch` declares `MUSIXMATCH_API_KEY` (required, fallback to the `MUSIXMATCH_API_KEY` environment variable). Get a free Basic key at <https://developer.musixmatch.com>.
