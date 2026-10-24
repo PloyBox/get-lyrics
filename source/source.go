@@ -1,5 +1,5 @@
 // Package source defines the pluggable lyrics-source abstraction.
-// See docs/refs/source.md.
+// See docs/library/source.md.
 package source
 
 import (

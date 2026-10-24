@@ -1,5 +1,5 @@
 // Package bootstrap registers every built-in source adapter.
-// See docs/refs/bootstrap.md.
+// See docs/library/bootstrap.md.
 package bootstrap
 
 import (

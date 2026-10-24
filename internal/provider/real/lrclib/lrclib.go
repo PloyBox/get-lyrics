@@ -1,5 +1,5 @@
 // Package lrclib implements source.Source against the public lrclib.net API.
-// See docs/refs/internal/providers/lrclib.md.
+// See docs/source-dev/internal/providers/lrclib.md.
 package lrclib
 
 import (
@@ -18,10 +18,6 @@ import (
 
 // Adapter implements source.Source against lrclib.net.
 type Adapter struct {
-	// Endpoint overrides the API base URL; tests point it at an httptest
-	// server.
-	Endpoint string
-
 	// HTTPClient is used for every request when set. nil → a new client
 	// with no timeout; the request context bounds each call.
 	HTTPClient *http.Client
@@ -48,12 +44,12 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		return source.Result{}, errors.New("lrclib: song title is required")
 	}
 
-	endpoint := a.endpoint(req)
+	apiURL := endpointFor(req)
 	client := a.client()
 
 	query := buildQuery(req)
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+query, nil)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL+"?"+query, nil)
 	if err != nil {
 		return source.Result{}, fmt.Errorf("lrclib: build request: %w", err)
 	}
@@ -155,10 +151,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	return res, nil
 }
 
-func (a *Adapter) endpoint(req source.Request) string {
-	if a.Endpoint != "" {
-		return a.Endpoint
-	}
+func endpointFor(req source.Request) string {
 	if strings.TrimSpace(req.Author) != "" {
 		return "https://lrclib.net/api/get"
 	}

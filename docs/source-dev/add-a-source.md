@@ -5,6 +5,7 @@ Backends are pluggable via the `source.Source` interface. Use an existing adapte
 1. Create `internal/provider/real/<name>/` implementing `source.Source` (`Name` / `Capabilities` / `Fetch` / `CustomParams`), modeled on the template.
 2. Modify it to fit your needs — endpoint, filters, required params, output behavior.
 3. Add an import and `r.Register(<name>.New())` in `bootstrap/bootstrap.go`.
+4. Add the two black-box adapter tests, `TestRequest` and `TestFetch`, modeled on the template's test file (see [`docs/source-dev/testing.md`](testing.md)).
 
 To declare custom input keys:
 

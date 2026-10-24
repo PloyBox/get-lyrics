@@ -1,5 +1,5 @@
 // Package fetch orchestrates precheck, failover and sync-level matching
-// over the registered sources. See docs/refs/fetch.md.
+// over the registered sources. See docs/library/fetch.md.
 package fetch
 
 import (

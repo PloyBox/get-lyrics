@@ -17,7 +17,7 @@ GET /api/get?track_name=...&artist_name=...&album_name=...&duration=<secs>
   the plain track — exactly one lyrics track per `Fetch`, with `Level` declaring which.
 - The response shape is dictated by the endpoint, not by sniffing the body: `/api/get`
   returns a single object, `/api/search` an array. Branching uses the same condition
-  `endpoint()`/`buildQuery()` use, so a server that pretty-prints (leading
+  `endpointFor()`/`buildQuery()` use, so a server that pretty-prints (leading
   whitespace/newline) cannot confuse the two.
 - Hit selection follows the request: a `line` request prefers the first hit with non-empty
   `syncedLyrics`, so a plain-only result ranked above it cannot mask the richer track. Every

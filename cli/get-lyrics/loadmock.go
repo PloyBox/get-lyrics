@@ -1,6 +1,6 @@
 //go:build test
 
-// Test-only wiring: calls bootstrap.RegisterAllMock, currently a no-op.
+// Test-only wiring: registers every mock adapter via RegisterAllMock.
 // Production builds exclude this file.
 package main
 

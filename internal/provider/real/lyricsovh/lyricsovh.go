@@ -1,5 +1,5 @@
 // Package lyricsovh implements source.Source against the public
-// lyrics.ovh API. See docs/refs/internal/providers/lyricsovh.md.
+// lyrics.ovh API. See docs/source-dev/internal/providers/lyricsovh.md.
 package lyricsovh
 
 import (
@@ -21,9 +21,6 @@ const defaultEndpoint = "https://api.lyrics.ovh/v1/"
 
 // Adapter implements source.Source against api.lyrics.ovh.
 type Adapter struct {
-	// Endpoint overrides the base URL; tests point it at an httptest server.
-	Endpoint string
-
 	// HTTPClient is used for every request when set. nil → a new client
 	// with no timeout; the request context bounds each call.
 	HTTPClient *http.Client
@@ -46,7 +43,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		return source.Result{}, errors.New("lyricsovh: song title is required")
 	}
 
-	reqURL := a.endpoint() + url.PathEscape(strings.TrimSpace(req.Author)) +
+	reqURL := defaultEndpoint + url.PathEscape(strings.TrimSpace(req.Author)) +
 		"/" + url.PathEscape(strings.TrimSpace(req.Song))
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
@@ -95,13 +92,6 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 		Level:  source.SyncNone,
 		Filled: source.FieldLyrics,
 	}, nil
-}
-
-func (a *Adapter) endpoint() string {
-	if a.Endpoint != "" {
-		return strings.TrimRight(a.Endpoint, "/") + "/"
-	}
-	return defaultEndpoint
 }
 
 func (a *Adapter) client() *http.Client {

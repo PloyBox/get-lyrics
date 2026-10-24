@@ -1,5 +1,5 @@
 // Command get-lyrics fetches song lyrics from a registered source.
-// See docs/refs/cli.md.
+// See docs/source-dev/cli.md.
 package main
 
 import (

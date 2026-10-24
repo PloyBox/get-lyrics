@@ -1,5 +1,5 @@
 // Package lrccx implements source.Source against the legacy lrc.cx lyrics
-// API. See docs/refs/internal/providers/lrccx.md.
+// API. See docs/source-dev/internal/providers/lrccx.md.
 package lrccx
 
 import (
@@ -28,10 +28,6 @@ var metaTag = regexp.MustCompile(`\[[^\[\]]*\]`)
 
 // Adapter implements source.Source against the lrc.cx /jsonapi endpoint.
 type Adapter struct {
-	// Endpoint overrides the base URL; tests point it at an httptest
-	// server, and self-hosted LrcApi instances can set it too.
-	Endpoint string
-
 	// HTTPClient is used for every request when set. nil → a new client
 	// with no timeout; the request context bounds each call.
 	HTTPClient *http.Client
@@ -56,7 +52,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	query := buildQuery(req)
 
 	httpReq, err := http.NewRequestWithContext(
-		ctx, http.MethodGet, a.endpoint()+"/jsonapi?"+query, nil)
+		ctx, http.MethodGet, defaultEndpoint+"/jsonapi?"+query, nil)
 	if err != nil {
 		return source.Result{}, fmt.Errorf("lrccx: build request: %w", err)
 	}
@@ -132,13 +128,6 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	return res, nil
 }
 
-func (a *Adapter) endpoint() string {
-	if a.Endpoint != "" {
-		return strings.TrimSuffix(a.Endpoint, "/")
-	}
-	return defaultEndpoint
-}
-
 func (a *Adapter) client() *http.Client {
 	if a.HTTPClient != nil {
 		return a.HTTPClient
@@ -193,7 +182,6 @@ func truncate(b []byte, n int) string {
 // consumes. LRC is a pointer so a literal "lrc": null decodes to nil
 // instead of an empty-string hit.
 type lrccxHit struct {
-	ID     string  `json:"id"`
 	Title  string  `json:"title"`
 	Artist string  `json:"artist"`
 	LRC    *string `json:"lrc"`

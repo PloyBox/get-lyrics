@@ -138,8 +138,8 @@ parameter semantics change.
 
 - `outputExistsError` — `--output` points to an existing file while `--overwrite` was not
   given; `Run` maps it to exit code 7.
-- `outputSink` embeds `io.Writer` plus `commit()` and `abort()`. stdout uses no-op hooks; a
-  file sink writes to a temp file.
+- `outputSink` embeds `io.Writer` plus `commit()` and `abort()`. The stdout sink's hooks
+  do nothing; a file sink writes to a temp file.
 - `openOutput(path, overwrite, fallback)` returns the sink. Without `--overwrite`, an existing
   target is rejected before the fetch. The temp file is created in the target directory
   (`os.CreateTemp`) so the final `os.Rename` stays on one filesystem. The target's permission
@@ -147,8 +147,8 @@ parameter semantics change.
 - `commit` runs `Sync` → `Close` → a final existence check (without `--overwrite`) →
   `Rename`. Any failure removes the temp file and leaves the target untouched; a concurrent
   create still loses the final check-to-rename race (as did the previous `O_EXCL` approach).
-- `abort` closes and removes the temp file; it is a no-op after a successful commit and runs
-  from `Run`'s defer, so Ctrl-C and every failure path clean up.
+- `abort` closes and removes the temp file; it does nothing after a successful commit and
+  runs from `Run`'s defer, so Ctrl-C and every failure path clean up.
 
 ## render.go
 
@@ -187,5 +187,9 @@ keys and their descriptions. When `reg` is non-nil it lists the available source
 
 ## loadmock.go
 
-Build tag `test`. Calls the no-op `bootstrap.RegisterAllMock`; kept as test-only
-wiring for future mock adapters. Production builds exclude this file.
+Build tag `test`. Its `init()` calls `bootstrap.RegisterAllMock(registry)`, which
+registers every adapter from `internal/provider/mock`; production builds exclude the
+file, so they carry no mock sources.
+
+The CLI black-box tests live in this same directory: `package main_test`, build tag
+`test`, importing the command package as `app` and calling only `Run`/`RunContext`.

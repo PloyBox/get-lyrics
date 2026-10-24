@@ -12,4 +12,4 @@ Rules:
 - **Unrecognized keys**: never hard-fail; each produces one `warning[unsupported]` per source (order between multiple keys is unspecified).
 - **Multiple sources sharing a key** all consume the same value.
 
-See [Add a New Source](add-a-source.md) for declaring keys from an adapter.
+See [Add a New Source](../source-dev/add-a-source.md) for declaring keys from an adapter.

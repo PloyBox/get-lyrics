@@ -1,7 +1,7 @@
 // Package betterlyrics implements source.Source against the Better Lyrics
 // API. It is an aggregate adapter: it fronts two upstream endpoints and
 // reports the served one via Result.SubSource.
-// See docs/refs/internal/providers/betterlyrics.md.
+// See docs/source-dev/internal/providers/betterlyrics.md.
 package betterlyrics
 
 import (
@@ -44,9 +44,6 @@ var metaTag = regexp.MustCompile(`\[[^\[\]]*\]`)
 
 // Adapter implements source.Source against the Better Lyrics API.
 type Adapter struct {
-	// Endpoint overrides the base URL; tests point it at an httptest server.
-	Endpoint string
-
 	// HTTPClient is used for every request when set. nil → a new client
 	// with no timeout; the request context bounds each call.
 	HTTPClient *http.Client
@@ -82,7 +79,7 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	}
 
 	httpReq, err := http.NewRequestWithContext(
-		ctx, http.MethodGet, a.endpoint()+path+"?"+buildQuery(req), nil)
+		ctx, http.MethodGet, defaultEndpoint+path+"?"+buildQuery(req), nil)
 	if err != nil {
 		return source.Result{}, fmt.Errorf("betterlyrics: build request: %w", err)
 	}
@@ -157,13 +154,6 @@ func (a *Adapter) Fetch(ctx context.Context, req source.Request) (source.Result,
 	res.SubSource = sub
 	res.Filled = source.FieldLyrics | source.FieldSubSource
 	return res, nil
-}
-
-func (a *Adapter) endpoint() string {
-	if a.Endpoint != "" {
-		return strings.TrimSuffix(a.Endpoint, "/")
-	}
-	return defaultEndpoint
 }
 
 func (a *Adapter) client() *http.Client {

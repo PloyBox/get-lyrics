@@ -39,7 +39,7 @@ No compatibility is guaranteed with older Go toolchains — the code is develope
 - [Exit Codes](docs/usage/exit-codes.md)
 - [Source Parameters](docs/usage/source-parameters.md) — the `--env` keys sources declare
 - [Built-in Sources](docs/usage/built-in-sources.md) — supported filters and sync levels per source
-- [Add a New Source](docs/usage/add-a-source.md) — writing a pluggable adapter
+- [Add a New Source](docs/source-dev/add-a-source.md) — writing a pluggable adapter
 
 ## License
 

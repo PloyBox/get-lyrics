@@ -1,5 +1,5 @@
 // Package musixmatch implements source.Source against the Musixmatch API.
-// See docs/refs/internal/providers/musixmatch.md.
+// See docs/source-dev/internal/providers/musixmatch.md.
 package musixmatch
 
 import (
@@ -25,10 +25,6 @@ const apiKeyParam = "MUSIXMATCH_API_KEY"
 
 // Adapter implements source.Source against api.musixmatch.com.
 type Adapter struct {
-	// Endpoint overrides the REST base path; tests point it at an httptest
-	// server.
-	Endpoint string
-
 	// HTTPClient is used for every request when set. nil → a new client
 	// with no timeout; the request context bounds each call.
 	HTTPClient *http.Client
@@ -243,7 +239,7 @@ func (a *Adapter) fetchTrackSubtitle(ctx context.Context, apiKey, ua string, tra
 // do issues one GET against method, injecting the API key, and decodes the
 // JSON envelope.
 func (a *Adapter) do(ctx context.Context, apiKey, ua, method string, q url.Values, out any) error {
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, a.endpoint()+"/"+method+"?"+q.Encode(), nil)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, defaultEndpoint+"/"+method+"?"+q.Encode(), nil)
 	if err != nil {
 		return fmt.Errorf("musixmatch: build request: %w", err)
 	}
@@ -327,13 +323,6 @@ func decodeResponse(body []byte, httpStatus int, out any) error {
 		}
 		return fmt.Errorf("musixmatch: API status %d: %s", code, truncate(body, 200))
 	}
-}
-
-func (a *Adapter) endpoint() string {
-	if a.Endpoint != "" {
-		return strings.TrimSuffix(a.Endpoint, "/")
-	}
-	return defaultEndpoint
 }
 
 func (a *Adapter) client() *http.Client {
