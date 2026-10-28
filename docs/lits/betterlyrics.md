@@ -58,11 +58,8 @@ The documentation notes that new API keys are not currently being issued
 (retrieved 2026-10-24); without a key, an uncached lookup fails with `401` until
 the track is cached.
 
-Per the documentation, `/getLyrics` and `/ttml/getLyrics` require a key on cache
-misses when `API_KEY_REQUIRED` is enabled. `/kugou/getLyrics` and
-`/qq/getLyrics` are documented as never requiring one, but the `boidu.dev`
-deployment was observed returning `401` for an uncached `/kugou` request, so key
-requirements are deployment-specific.
+Every lyrics endpoint requires a key on cache misses when `API_KEY_REQUIRED`
+is enabled.
 
 Response headers report state: `X-Auth-Mode` on `/getLyrics` and
 `/ttml/getLyrics` (`authenticated`/`invalid`/`cache`), `X-Cache-Status` on every
